@@ -1,0 +1,59 @@
+# gitpro config. Docs: https://github.com/sandeepshelke/gitpro
+#
+# [default] applies to every repo. Each [[identity]] overrides it for repos with
+# a remote URL on `host` under one of `owners` (GitHub users/orgs, GitLab groups
+# or subgroups). When several identities match, the later one wins.
+#
+# 1. Replace every placeholder below. Emails and hosts on example domains
+#    (*.example, example.com) are rejected, so nothing is left over by accident.
+# 2. Delete the identities you don't need.
+# 3. Run: gitpro plan
+#
+# This file decides which commands git runs (sshCommand, credential helpers), so
+# it must be owned by you and not group/world-writable (chmod 600).
+
+[default]
+# Used in every repo that no identity matches. Leave name and email out to make
+# git refuse to commit there instead: the safest choice when work and personal
+# commits must never mix.
+name = "Jane Doe"
+email = "jane@personal.example"       # GitHub no-reply form: 12345+janedoe@users.noreply.github.com
+ssh_key = "~/.ssh/id_ed25519"         # optional
+ssh_hosts = ["github.com"]            # optional: always use ssh_key for these hosts
+sign = false                          # true: SSH-sign commits and tags (register the .pub as a *signing* key too)
+
+# Optional extra git config: section -> [subsection ->] key = value or [values].
+# For example, the GitHub CLI as HTTPS credential helper:
+# [default.git.credential."https://github.com"]
+# helper = ["", "!gh auth git-credential"]
+
+
+# A work GitLab: its own name and email, the default SSH key.
+[[identity]]
+id = "work-gitlab"                    # generated file: ~/.gitconfig-work-gitlab
+name = "Jane Doe"
+email = "jane.doe@corp.example"
+host = "gitlab.corp.example"
+owners = ["corp"]                     # exact case as in the remote URL; omit to match the whole host
+
+
+# A second GitHub account with its own SSH key.
+[[identity]]
+id = "work-github"
+name = "Jane Doe"
+email = "jane.doe@corp.example"
+host = "github.com"
+owners = ["janedoe-corp", "corp-org"] # the account itself and each org you reach through it
+ssh_key = "~/.ssh/id_ed25519_work"
+ssh_alias = "github-work"             # ssh Host that offers only ssh_key; test: ssh -T git@github-work
+# Optional, with their defaults:
+# rewrite = true                      # send git@github.com:<owner>/... through ssh_alias
+# rewrite_https = false               # also send https://github.com/<owner>/... over SSH through ssh_alias
+# ssh_user = "git"
+# ssh_port = 2222                     # only for a non-standard SSH port (default: 22)
+# sign = false                        # default: same as [default].sign
+# file = "~/.gitconfig-work-github"   # must be inside your home directory
+
+# Optional extra git config for the identity above it:
+# [identity.git.pull]
+# ff = "only"
