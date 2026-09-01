@@ -1,0 +1,97 @@
+"""Desired state: every managed file with its full content. Reads the disk, never writes."""
+from __future__ import annotations
+
+from dataclasses import dataclass
+from pathlib import Path
+
+from . import render
+from .config import Default, Identity, check, signs
+
+MANAGED_GITCONFIG = ".gitconfig-identities"
+MANAGED_SSH = "config.d/git-identities"  # relative to ~/.ssh, as ssh's Include expects
+ALLOWED_SIGNERS = ".config/git/allowed_signers"
+
+
+@dataclass(frozen=True)
+class Env:
+    home: Path
+
+    def expand(self, p: str) -> Path:
+        return self.home / p[2:] if p.startswith("~/") else Path(p)
+
+    def tilde(self, p: Path) -> str:
+        if self.home == Path.home().resolve() and self.home in p.parents:
+            return "~/" + str(p.relative_to(self.home))
+        return str(p)
+
+
+@dataclass(frozen=True)
+class Target:
+    path: Path
+    text: str | None  # None: remove the file
+    mode: int = 0o644
+    strict: bool = False  # force mode; otherwise keep the existing mode minus group/world write
+
+
+def _read(p: Path) -> str:
+    return p.read_text() if p.exists() else ""
+
+
+def _signers(d: Default, ids: list[Identity], env: Env) -> list[tuple[str, str]] | None:
+    pairs = [(d.email, d.ssh_key)] if d.sign else []
+    pairs += [(i.email, i.ssh_key or d.ssh_key) for i in ids if signs(i, d)]
+    if not pairs:
+        return None
+    entries = []
+    for email, key in dict.fromkeys(pairs):
+        pub = render.pub_path(env.expand(key))
+        if pub.exists():
+            entries.append((email, " ".join(pub.read_text().split()[:2])))
+    return entries
+
+
+def build(d: Default, ids: list[Identity], env: Env) -> tuple[list[Target], list[Path]]:
+    """Return (targets, stale generated files to remove)."""
+    for i in ids:
+        check(env.home in env.expand(i.file).resolve().parents,
+              f"identity {i.id!r}: file must be inside {env.home}")
+
+    extra = [Target(env.expand(i.file), render.identity_gitconfig(i, d, env.expand)) for i in ids]
+    signers = _signers(d, ids, env)
+    signers_path = env.home / ALLOWED_SIGNERS
+    if signers is not None:
+        extra.append(Target(signers_path, render.allowed_signers(signers)))
+    manifest = sorted(env.tilde(t.path) for t in extra)
+
+    managed = env.home / MANAGED_GITCONFIG
+    gitconfig = env.home / ".gitconfig"
+    ssh_dir = env.home / ".ssh"
+    targets = [
+        Target(managed, render.managed_gitconfig(
+            d, ids, env.expand, str(signers_path) if signers is not None else None, manifest)),
+        *extra,
+        # Last in ~/.gitconfig so it overrides anything hand-written above it.
+        Target(gitconfig, render.with_block(
+            _read(gitconfig), f"[include]\n\tpath = {env.tilde(managed)}", first=False, where="~/.gitconfig")),
+        Target(ssh_dir / MANAGED_SSH, render.ssh_config(d, ids), 0o600, strict=True),
+        # First in ~/.ssh/config; "Match all" stops a Host block prepended above it from scoping the Include.
+        Target(ssh_dir / "config", render.with_block(
+            _read(ssh_dir / "config"), f"Match all\nInclude {MANAGED_SSH}", first=True,
+            where="~/.ssh/config"), 0o600, strict=True),
+    ]
+    stale = [env.expand(p) for p in render.manifest_of(_read(managed)) if p not in manifest]
+    return targets, stale
+
+
+def teardown(env: Env) -> tuple[list[Target], list[Path]]:
+    """Undo build without needing the config: (files to strip our block from, generated files)."""
+    managed = env.home / MANAGED_GITCONFIG
+    targets = []
+    for path, where in ((env.home / ".gitconfig", "~/.gitconfig"), (env.home / ".ssh/config", "~/.ssh/config")):
+        text = _read(path)
+        if render.has_block(text):
+            # A file holding nothing but our block was created by apply: remove it (never a symlink's target).
+            rest = render.strip_block(text, where)
+            targets.append(Target(path, rest if rest or path.is_symlink() else None))
+    generated = [env.expand(p) for p in render.manifest_of(_read(managed))]
+    return targets, [managed, env.home / ".ssh" / MANAGED_SSH, *generated]
