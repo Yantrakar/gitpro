@@ -132,7 +132,8 @@ be owned by you and not group/world-writable.
 | `check` | Exit 1 if `apply` would change anything. |
 | `keys [--generate]` | List each SSH key, its public key and where to register it. `--generate` creates the missing ones. |
 | `which [DIR]` | Show the identity git uses in a repo, and which file each setting comes from. |
-| `uninstall [-y]` | Remove everything `apply` wrote. Keeps your config and SSH keys. |
+| `pin [DIR]`, `unpin [DIR]` | Copy the repo's name and email into its `.git` directory, for [dev containers](#dev-containers). `unpin` removes it. |
+| `uninstall [-y]` | Remove everything `apply` wrote. Keeps your config and SSH keys. Pinned repos stay pinned. |
 
 ## Example: a second GitHub account
 
@@ -144,6 +145,21 @@ be owned by you and not group/world-writable.
    *Signing key*.
 4. Check with `ssh -T git@github-work`. GitHub replies with the account name.
 5. Clone as usual: `git clone git@github.com:employer-org/app.git`.
+
+## Dev containers
+
+VS Code Dev Containers copy `~/.gitconfig` into the container, but not the
+files it includes, so no identity applies inside. The same happens when a
+container mounts only `~/.gitconfig`. Fix it per repo, on the host:
+
+```sh
+gitpro pin    # in the repo
+```
+
+This writes the repo's current name and email to `.git/git-identities` and
+includes it from `.git/config`. The container sees both because they are part
+of the mounted repo. Run `pin` again after you change your config. Commit
+signing and the choice of SSH key are not pinned.
 
 ## Troubleshooting
 

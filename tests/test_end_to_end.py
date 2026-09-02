@@ -188,7 +188,42 @@ def test_clone_uses_identity_key_without_alias(home, tmp_path, monkeypatch):
     assert "git@github.com" in log.read_text()
 
 
+def test_pin_carries_identity_into_a_container(home, tmp_path, monkeypatch):
+    write_config(home, CONFIG)
+    run("apply", "-y")
+    repo = repo_with_remote(tmp_path, "app", "git@github.com:corp-org/app.git")
+    before = (repo / ".git/config").read_text()
+    assert run("pin", str(repo)) == 0
+    assert run("pin", str(repo)) == 0  # re-pinning replaces, never stacks
+    assert git(repo, "config", "--local", "--get-all", "include.path") == "git-identities"
+
+    # What VS Code Dev Containers do: copy ~/.gitconfig alone into a fresh home.
+    container = tmp_path / "container-home"
+    container.mkdir()
+    (container / ".gitconfig").write_text((home / ".gitconfig").read_text())
+    monkeypatch.setenv("HOME", str(container))
+    assert git(repo, "config", "user.email") == "me@corp.test"
+    assert git(repo, "config", "user.name") == "Work Me"
+
+    monkeypatch.setenv("HOME", str(home))
+    assert run("unpin", str(repo)) == 0
+    assert (repo / ".git/config").read_text() == before
+    assert not (repo / ".git/git-identities").exists()
+    assert run("unpin", str(repo)) == 0  # nothing to do
 
 
+def test_pin_refuses_without_identity(home, tmp_path, capsys):
+    write_config(home, CONFIG.split("[[identity]]")[0].replace('name = "Personal Me"\nemail = "me@personal.test"\n', ""))
+    run("apply", "-y")
+    repo = repo_with_remote(tmp_path, "app", "git@github.com:someone/app.git")
+    assert run("pin", str(repo)) == 2
+    assert "nothing to pin" in capsys.readouterr().err
+    assert not (repo / ".git/git-identities").exists()
 
 
+def test_pin_refuses_identity_not_from_us(home, tmp_path, capsys):
+    """Inside a container only a copied ~/.gitconfig is left; pinning its hand-written [user] would be wrong."""
+    (home / ".gitconfig").write_text('[user]\n\tname = Old\n\temail = old@corp.test\n')
+    repo = repo_with_remote(tmp_path, "app", "git@github.com:corp-org/app.git")
+    assert run("pin", str(repo)) == 2
+    assert "not from gitpro" in capsys.readouterr().err

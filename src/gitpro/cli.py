@@ -5,7 +5,7 @@ git picks it from the repo's remote URL via includeIf hasconfig (git >= 2.36).
 Every command is idempotent: a second 'apply' changes nothing.
 
 config file (first match wins):
-  -c PATH, $GIT_IDENTITIES_CONFIG, ~/.config/gitpro.toml
+  -c PATH, $GITPRO_CONFIG, ~/.config/gitpro.toml
 
 first run on a new machine:
   gitpro init              # then edit ~/.config/gitpro.toml
@@ -24,7 +24,7 @@ import sys
 from importlib import resources
 from pathlib import Path
 
-from . import __version__, config, files, keys, lint, plan
+from . import __version__, config, files, keys, lint, pin, plan
 
 PROG = "gitpro"
 MIN_GIT = (2, 36)
@@ -51,6 +51,10 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     k.add_argument("--generate", action="store_true", help="create missing keys (ed25519, never overwrites)")
     k.add_argument("--no-passphrase", action="store_true", help="with --generate: empty passphrase (not advised)")
     sub.add_parser("which", help="show which identity git uses in a repo") \
+        .add_argument("dir", nargs="?", default=".", help="repo directory (default: .)")
+    sub.add_parser("pin", help="copy the repo's name and email into its .git (for dev containers)") \
+        .add_argument("dir", nargs="?", default=".", help="repo directory (default: .)")
+    sub.add_parser("unpin", help="undo pin") \
         .add_argument("dir", nargs="?", default=".", help="repo directory (default: .)")
     u = sub.add_parser("uninstall", parents=[confirm],
                        help="remove everything apply wrote (keeps your config file and SSH keys)")
@@ -188,6 +192,22 @@ def cmd_which(args) -> int:
     return 0
 
 
+def cmd_pin(args) -> int:
+    name, email, path = pin.pin(args.dir)
+    print(f"pinned {name} <{email}> in {path}")
+    got = subprocess.run(["git", "-C", args.dir, "config", "--show-origin", "--get", "user.email"],
+                         capture_output=True, text=True).stdout.strip()
+    if not got.endswith("\t" + email):
+        print(f"WARNING: git resolves {got!r}; a repo-local setting overrides the pin", file=sys.stderr)
+    print("signing and SSH key selection are not pinned; re-run after changing the config")
+    return 0
+
+
+def cmd_unpin(args) -> int:
+    print("unpinned" if pin.unpin(args.dir) else "not pinned: nothing to do")
+    return 0
+
+
 def cmd_uninstall(args) -> int:
     changes = files.diff(*plan.teardown(_env(args)))
     files.show(changes, diffs=False)
@@ -202,7 +222,8 @@ def cmd_uninstall(args) -> int:
 
 
 COMMANDS = {"init": cmd_init, "plan": cmd_plan, "apply": cmd_apply, "check": cmd_check,
-            "keys": cmd_keys, "which": cmd_which, "uninstall": cmd_uninstall}
+            "keys": cmd_keys, "which": cmd_which, "pin": cmd_pin, "unpin": cmd_unpin,
+            "uninstall": cmd_uninstall}
 
 
 def main(argv: list[str] | None = None) -> int:
