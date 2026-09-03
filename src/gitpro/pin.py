@@ -15,7 +15,7 @@ from .config import ConfigError, check
 FILE = "git-identities"  # in the repo's common git dir; .git/config includes it by this relative path
 
 
-def _git(repo: str, *args: str, ok: tuple[int, ...] = (0,)) -> str:
+def git(repo: str, *args: str, ok: tuple[int, ...] = (0,)) -> str:
     r = subprocess.run(["git", "-C", repo, *args], capture_output=True, text=True)
     if r.returncode not in ok:
         raise ConfigError(r.stderr.strip() or f"git {' '.join(args)} failed ({r.returncode})")
@@ -23,12 +23,12 @@ def _git(repo: str, *args: str, ok: tuple[int, ...] = (0,)) -> str:
 
 
 def _pin_file(repo: str) -> Path:
-    return Path(_git(repo, "rev-parse", "--path-format=absolute", "--git-common-dir")) / FILE
+    return Path(git(repo, "rev-parse", "--path-format=absolute", "--git-common-dir")) / FILE
 
 
 def _resolved(repo: str, key: str) -> str:
     """key's value, if it comes from a file we generated (not, say, a hand-written ~/.gitconfig in a container)."""
-    origin, _, value = _git(repo, "config", "--show-origin", "--get", key, ok=(0, 1)).partition("\t")
+    origin, _, value = git(repo, "config", "--show-origin", "--get", key, ok=(0, 1)).partition("\t")
     check(value, f"git resolves no {key} for this repo; nothing to pin")
     src = Path(origin[len("file:"):]) if origin.startswith("file:") else None
     check(src is not None and src.is_file() and render.is_generated(src.read_text()),
@@ -41,12 +41,12 @@ def unpin(repo: str) -> bool:
     """Remove the pin; return whether there was one."""
     path = _pin_file(repo)
     # --get-all exits 1 when the value is absent: not pinned.
-    had = _git(repo, "config", "--local", "--fixed-value", "--get-all", "include.path", FILE, ok=(0, 1)) != ""
+    had = git(repo, "config", "--local", "--fixed-value", "--get-all", "include.path", FILE, ok=(0, 1)) != ""
     if had:
-        _git(repo, "config", "--local", "--fixed-value", "--unset-all", "include.path", FILE)
-        if not _git(repo, "config", "--local", "--get-regexp", r"^include\.", ok=(0, 1)):
+        git(repo, "config", "--local", "--fixed-value", "--unset-all", "include.path", FILE)
+        if not git(repo, "config", "--local", "--get-regexp", r"^include\.", ok=(0, 1)):
             # Older git leaves the emptied [include] header behind; newer git already dropped it (exit 128).
-            _git(repo, "config", "--local", "--remove-section", "include", ok=(0, 128))
+            git(repo, "config", "--local", "--remove-section", "include", ok=(0, 128))
     if path.is_file() and render.is_generated(path.read_text()):
         path.unlink()
         had = True
@@ -60,6 +60,6 @@ def pin(repo: str) -> tuple[str, str, Path]:
     unpin(repo)  # resolve without a previous pin
     name, email = (_resolved(repo, key) for key in ("user.name", "user.email"))
     path.write_text(f"{render.HEADER}\n# Re-run 'gitpro pin' after changing the config.\n"
-                    f"[user]\n\tname = {render.gval(name)}\n\temail = {render.gval(email)}\n")
-    _git(repo, "config", "--local", "--add", "include.path", FILE)
+                    f"[user]\n{render.INDENT}name = {render.gval(name)}\n{render.INDENT}email = {render.gval(email)}\n")
+    git(repo, "config", "--local", "--add", "include.path", FILE)
     return name, email, path

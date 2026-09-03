@@ -46,7 +46,7 @@ def test_gval_escapes():
 def test_extra_git_config():
     lines = render.git_lines({"credential": {"https://github.com": {"helper": ["", "!gh auth git-credential"]}},
                               "pull": {"ff": "only"}}, "w")
-    assert lines == ['[credential "https://github.com"]', '\thelper = ""', '\thelper = "!gh auth git-credential"',
-                     "[pull]", '\tff = "only"']
+    assert lines == ['[credential "https://github.com"]', '    helper = ""', '    helper = "!gh auth git-credential"',
+                     "[pull]", '    ff = "only"']
     with pytest.raises(ConfigError, match="bad git key"):
         render.git_lines({"core": {"bad key": 1}}, "w")

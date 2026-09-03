@@ -72,7 +72,7 @@ def build(d: Default, ids: list[Identity], env: Env) -> tuple[list[Target], list
         *extra,
         # Last in ~/.gitconfig so it overrides anything hand-written above it.
         Target(gitconfig, render.with_block(
-            _read(gitconfig), f"[include]\n\tpath = {env.tilde(managed)}", first=False, where="~/.gitconfig")),
+            _read(gitconfig), f"[include]\n{render.INDENT}path = {env.tilde(managed)}", first=False, where="~/.gitconfig")),
         Target(ssh_dir / MANAGED_SSH, render.ssh_config(d, ids), 0o600, strict=True),
         # First in ~/.ssh/config; "Match all" stops a Host block prepended above it from scoping the Include.
         Target(ssh_dir / "config", render.with_block(

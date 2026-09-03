@@ -32,6 +32,7 @@ gitpro keys --generate   # optional: create SSH keys that don't exist yet
 gitpro plan              # show every change as a diff
 gitpro apply             # write the changes
 gitpro keys              # public keys to add to each account
+gitpro scan              # every repo under ~ and the identity git uses there
 ```
 
 `plan` and `apply` refuse to run until you have replaced the example's
@@ -132,6 +133,7 @@ be owned by you and not group/world-writable.
 | `check` | Exit 1 if `apply` would change anything. |
 | `keys [--generate]` | List each SSH key, its public key and where to register it. `--generate` creates the missing ones. |
 | `which [DIR]` | Show the identity git uses in a repo, and which file each setting comes from. |
+| `scan [--fix] [--suggest] [DIR…]` | Find the repos under each `DIR` (default `~`) and list them by the identity git uses. `--fix` removes [repo-level overrides](#repo-level-overrides); `--suggest` prints identities that would keep them. |
 | `pin [DIR]`, `unpin [DIR]` | Copy the repo's name and email into its `.git` directory, for [dev containers](#dev-containers). `unpin` removes it. |
 | `uninstall [-y]` | Remove everything `apply` wrote. Keeps your config and SSH keys. Pinned repos stay pinned. |
 
@@ -145,6 +147,39 @@ be owned by you and not group/world-writable.
    *Signing key*.
 4. Check with `ssh -T git@github-work`. GitHub replies with the account name.
 5. Clone as usual: `git clone git@github.com:employer-org/app.git`.
+
+## Repo-level overrides
+
+A `user.name` or `user.email` in a repo's own `.git/config` wins over gitpro,
+so an old one keeps committing with an old address. `gitpro scan` lists them,
+grouped by the identity they'd use without the override:
+
+```text
+2 repos set their own user.name/user.email, which beats gitpro. Without it they use:
+
+Jane <jane@personal.example>  (2 repos)
+├── from Jane <old@personal.example>:  app
+└── unchanged: tools
+```
+
+`gitpro scan` changes nothing. `gitpro scan --fix` removes the overrides. If
+gitpro was installed with the `tui` extra
+(`pipx install 'gitpro[tui] @ git+https://github.com/sandeepshelke/gitpro.git'`),
+it opens a list where you tick the repos to fix. Without the extra, or with
+`--plain`, it asks y/N. Either way it saves an undo script under
+`~/.local/state/gitpro/` and prints the command to run it. It keeps any
+override whose removal would leave the repo with no identity.
+
+To keep a repo's current identity instead, add a gitpro identity for it before
+fixing. `gitpro scan --suggest` prints a ready-to-paste `[[identity]]` block
+for each such identity (in the list: press `s`). Paste the ones you want into
+your config and run `gitpro apply`. An identity applies to every repo of its
+owners, so each block says how many other repos it would change. gitpro never
+edits your config itself.
+
+Name directories to scan only the repos under them (`gitpro scan ~/work`),
+or `--repo PATH` for exactly one repo. `-v` adds full paths and the remote
+owners behind each identity. `--json` is for scripts and the VS Code extension.
 
 ## Dev containers
 
@@ -168,8 +203,8 @@ signing and the choice of SSH key are not pinned.
 - **Push or clone signs in as the wrong account**: register the identity's key
   with that account (`gitpro keys`). With an `ssh_alias`, ssh offers only
   that key, so you get an error instead of the wrong account.
-- **One repo ignores the config**: a repo-local `user.email` overrides it
-  (`git config --local --unset user.email`).
+- **One repo ignores the config**: a repo-level `user.email` overrides it.
+  `gitpro scan DIR` shows it; `gitpro scan --fix DIR` removes it.
 
 ## Development
 

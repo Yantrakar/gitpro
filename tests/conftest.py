@@ -15,7 +15,7 @@ def home(tmp_path, monkeypatch):
     h = tmp_path / "home"
     h.mkdir()
     monkeypatch.setenv("HOME", str(h))
-    for var in ("GITPRO_CONFIG", "GIT_CONFIG_GLOBAL", "XDG_CONFIG_HOME"):
+    for var in ("GITPRO_CONFIG", "GIT_CONFIG_GLOBAL", "XDG_CONFIG_HOME", "XDG_STATE_HOME"):
         monkeypatch.delenv(var, raising=False)
     monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
     monkeypatch.setattr("sys.stdin", io.StringIO(""))  # not a terminal
