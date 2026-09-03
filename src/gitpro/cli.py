@@ -13,18 +13,21 @@ first run on a new machine:
   gitpro plan              # review every change as a diff
   gitpro apply             # write the changes
   gitpro keys              # public keys to register with each account
+  gitpro scan              # every repo and the identity git uses there
 """
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 from importlib import resources
 from pathlib import Path
 
-from . import __version__, config, files, keys, lint, pin, plan
+from . import __version__, config, files, keys, lint, pin, plan, scan, view
 
 PROG = "gitpro"
 MIN_GIT = (2, 36)
@@ -52,6 +55,15 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     k.add_argument("--no-passphrase", action="store_true", help="with --generate: empty passphrase (not advised)")
     sub.add_parser("which", help="show which identity git uses in a repo") \
         .add_argument("dir", nargs="?", default=".", help="repo directory (default: .)")
+    s = sub.add_parser("scan", parents=[confirm], help="list repos and the identity git uses in each")
+    s.add_argument("dirs", nargs="*", type=Path, metavar="DIR", help="where to look (default: your home directory)")
+    s.add_argument("--fix", action="store_true", help="remove repo-level user.name/user.email that override gitpro")
+    s.add_argument("--suggest", action="store_true", help="print [[identity]] blocks that keep each repo's identity")
+    s.add_argument("-v", "--verbose", action="store_true", help="full paths, and the remote owners behind each identity")
+    s.add_argument("--repo", action="append", type=Path, metavar="PATH",
+                   help="only this repo, not the repos under it (repeatable)")
+    s.add_argument("--json", action="store_true", help="machine-readable output (with --fix: what was removed)")
+    s.add_argument("--plain", action="store_true", help="with --fix: a y/N question instead of the interactive list")
     sub.add_parser("pin", help="copy the repo's name and email into its .git (for dev containers)") \
         .add_argument("dir", nargs="?", default=".", help="repo directory (default: .)")
     sub.add_parser("unpin", help="undo pin") \
@@ -87,7 +99,7 @@ def _load(args: argparse.Namespace):
 
 def _warn(d, ids, env) -> None:
     for msg in lint.warnings(d, ids, env):
-        print(f"WARNING: {msg}", file=sys.stderr)
+        view.warn(msg)
 
 
 def _confirm(question: str, yes: bool) -> bool:
@@ -95,7 +107,7 @@ def _confirm(question: str, yes: bool) -> bool:
         return True
     if not sys.stdin.isatty():
         raise config.ConfigError("no terminal to confirm on; re-run with --yes")
-    return input(f"{question} [y/N] ").strip().lower() in ("y", "yes")
+    return view.confirm(question)
 
 
 def cmd_status(p: argparse.ArgumentParser, subs: dict[str, argparse.ArgumentParser]) -> int:
@@ -118,7 +130,7 @@ def cmd_status(p: argparse.ArgumentParser, subs: dict[str, argparse.ArgumentPars
 def cmd_init(args) -> int:
     target = (args.path or Path.home() / config.USER_CONFIG).expanduser()
     if target.exists():
-        print(f"{target} already exists -- left unchanged")
+        view.ok(f"{target} already exists, left unchanged")
         return 0
     target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     text = resources.files(__package__).joinpath("example.toml").read_text()
@@ -126,7 +138,8 @@ def cmd_init(args) -> int:
     with os.fdopen(fd, "w") as f:
         f.write(text)
     extra = "" if args.path is None else f" -c {target}"
-    print(f"created {target}\nnext: replace the placeholders in it, then run: {PROG} plan{extra}")
+    view.ok(f"created {target}")
+    view.step(f"replace the placeholders in it, then run: {PROG} plan{extra}")
     return 0
 
 
@@ -145,13 +158,13 @@ def cmd_apply(args) -> int:
     files.show(changes, diffs=False)
     if changes:
         if not _confirm(f"apply {len(changes)} change(s)? ('{PROG} plan' shows the diffs)", args.yes):
-            print("aborted: nothing written")
+            view.aborted()
             return 1
         files.apply(changes)
-        print("done")
+        view.ok(f"applied {len(changes)} change(s)")
     _warn(d, ids, env)
     if keys.inventory(d, ids):
-        print(f"SSH keys: '{PROG} keys' lists the public keys to register with each account")
+        view.step(f"SSH keys: '{PROG} keys' lists the public keys to register with each account")
     return 0
 
 
@@ -192,19 +205,94 @@ def cmd_which(args) -> int:
     return 0
 
 
+def cmd_scan(args) -> int:
+    home = Path.home().resolve()
+    managed = str(home / plan.MANAGED_GITCONFIG)
+
+    def show(p) -> str:
+        p = Path(p)
+        return "~" if p == home else plan.Env(home).tilde(p)
+
+    def label(src: str) -> str:
+        return "[default]" if src == managed else show(src) if src.startswith("/") else src
+
+    ask = args.fix and not args.yes and not args.json
+    if ask and not sys.stdin.isatty():
+        raise config.ConfigError("no terminal to confirm on; re-run with --yes")
+    if args.repo:
+        roots = [p.expanduser().resolve() for p in args.repo]
+        paths = roots
+    else:
+        roots = [d.expanduser().resolve() for d in args.dirs] or [home]
+        paths = scan.find(roots)
+    repos, failed = scan.inspect_all(paths)
+    rep = scan.report(roots, repos, failed, label)
+    fixable = [r for r in repos if any(k in r.beneath for k in r.local)]
+
+    if ask and fixable and not args.plain and sys.stdout.isatty():
+        try:
+            from . import tui
+        except ImportError:  # the optional textual extra is not installed
+            pass
+        else:
+            chosen = tui.choose(rep, show)
+            if not chosen:
+                view.aborted()
+                return 1
+            return _fix(args, [r for r in fixable if str(r.path) in chosen], home)
+
+    if args.json and not args.fix:
+        print(json.dumps(rep, indent=2))
+        return 0
+    if not args.json:
+        where = "".join(f" --repo {_sh(show(p))}" for p in roots) if args.repo else \
+            "".join(f" {_sh(show(d))}" for d in roots if args.dirs)
+        view.scan(rep, show, verbose=args.verbose, suggest=args.suggest, fix=args.fix, prog=PROG,
+                  again=f"{PROG} scan --fix{where}", exact=bool(args.repo))
+    if not args.fix:
+        return 0
+    if not fixable:
+        print(json.dumps({"removed": [], "undo": None}) if args.json else "\n✓ nothing to fix")
+        return 0
+    n = sum(k in r.beneath for r in fixable for k in r.local)
+    if ask:
+        print()
+        if not _confirm(f"Remove {view.plural(n, 'setting')} from {view.plural(len(fixable), 'repo')}?", False):
+            view.aborted()
+            return 1
+    return _fix(args, fixable, home)
+
+
+def _sh(path: str) -> str:
+    """Quote a path for the shell, leaving a leading ~ unquoted so the shell still expands it."""
+    return path if path == "~" else "~/" + shlex.quote(path[2:]) if path.startswith("~/") else shlex.quote(path)
+
+
+def _fix(args, repos: list, home: Path) -> int:
+    state = Path(os.environ.get("XDG_STATE_HOME") or home / ".local/state") / PROG
+    pairs, undo = scan.fix(repos, state, PROG)
+    if args.json:
+        print(json.dumps({"removed": [{"path": str(r.path), "key": k, "value": r.local[k]} for r, k in pairs],
+                          "undo": str(undo) if undo else None}, indent=2))
+    elif pairs:
+        env = plan.Env(home)
+        view.fixed([(env.tilde(r.path), k, r.local[k], r.beneath[k]) for r, k in pairs], env.tilde(undo))
+    return 0
+
+
 def cmd_pin(args) -> int:
     name, email, path = pin.pin(args.dir)
-    print(f"pinned {name} <{email}> in {path}")
+    view.ok(f"pinned {name} <{email}> in {path}")
     got = subprocess.run(["git", "-C", args.dir, "config", "--show-origin", "--get", "user.email"],
                          capture_output=True, text=True).stdout.strip()
     if not got.endswith("\t" + email):
-        print(f"WARNING: git resolves {got!r}; a repo-local setting overrides the pin", file=sys.stderr)
-    print("signing and SSH key selection are not pinned; re-run after changing the config")
+        view.warn(f"git resolves {got!r}; a repo-local setting overrides the pin")
+    view.step("signing and SSH key selection are not pinned; re-run after changing the config")
     return 0
 
 
 def cmd_unpin(args) -> int:
-    print("unpinned" if pin.unpin(args.dir) else "not pinned: nothing to do")
+    view.ok("unpinned" if pin.unpin(args.dir) else "not pinned, nothing to do")
     return 0
 
 
@@ -214,38 +302,38 @@ def cmd_uninstall(args) -> int:
     if not changes:
         return 0
     if not _confirm(f"undo {len(changes)} change(s)?", args.yes):
-        print("aborted: nothing written")
+        view.aborted()
         return 1
     files.apply(changes)
-    print("done -- your config file and SSH keys were left in place")
+    view.ok(f"removed {len(changes)} change(s); your config file and SSH keys were left in place")
     return 0
 
 
 COMMANDS = {"init": cmd_init, "plan": cmd_plan, "apply": cmd_apply, "check": cmd_check,
-            "keys": cmd_keys, "which": cmd_which, "pin": cmd_pin, "unpin": cmd_unpin,
+            "keys": cmd_keys, "which": cmd_which, "scan": cmd_scan, "pin": cmd_pin, "unpin": cmd_unpin,
             "uninstall": cmd_uninstall}
 
 
 def main(argv: list[str] | None = None) -> int:
     if os.name != "posix":
-        print(f"ERROR: {PROG} supports Linux and macOS only", file=sys.stderr)
+        view.error(f"{PROG} supports Linux and macOS only")
         return 2
     p, subs = build_parser()
     args = p.parse_args(argv)
     if os.geteuid() == 0:
-        print("ERROR: run as the user who owns these identities, not root", file=sys.stderr)
+        view.error("run as the user who owns these identities, not root")
         return 2
     os.umask(0o077)
     try:
         return COMMANDS[args.command](args) if args.command else cmd_status(p, subs)
     except config.ConfigError as e:
-        print(f"ERROR: {e}", file=sys.stderr)
+        view.error(str(e))
         return 2
     except subprocess.CalledProcessError as e:
-        print(f"ERROR: {' '.join(e.cmd)} failed ({e.returncode})", file=sys.stderr)
+        view.error(f"{' '.join(e.cmd)} failed ({e.returncode})")
         return 2
     except (OSError, UnicodeError) as e:
-        print(f"ERROR: {e}", file=sys.stderr)
+        view.error(str(e))
         return 2
     except (KeyboardInterrupt, EOFError):
         print(file=sys.stderr)
