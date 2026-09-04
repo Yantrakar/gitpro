@@ -9,3 +9,6 @@ dist/
 # Personal configs never belong in this repo.
 gitpro.toml
 identities*.toml
+
+# Agent worktrees (local only).
+.worktrees/
