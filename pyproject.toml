@@ -29,7 +29,7 @@ tui = ["textual>=0.80"]  # interactive scan --fix
 Homepage = "https://github.com/sandeepshelke/gitpro"
 
 [project.scripts]
-gitpro = "gitpro.cli:main"
+gitpro = "gitpro.hot:main"
 
 [tool.hatch.version]
 path = "src/gitpro/__init__.py"

@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from . import render
-from .config import Default, Identity, check, signs
+from .config import Config, Default, Identity, check, signs
 
 MANAGED_GITCONFIG = ".gitconfig-identities"
 MANAGED_SSH = "config.d/git-identities"  # relative to ~/.ssh, as ssh's Include expects
@@ -50,8 +50,10 @@ def _signers(d: Default, ids: list[Identity], env: Env) -> list[tuple[str, str]]
     return entries
 
 
-def build(d: Default, ids: list[Identity], env: Env) -> tuple[list[Target], list[Path]]:
-    """Return (targets, stale generated files to remove)."""
+def build(cfg: Config, env: Env) -> tuple[list[Target], list[Path]]:
+    """Return (targets, stale generated files to remove). Callers holding (Default, list[Identity])
+    wrap them: build(Config(d, ids), env)."""
+    d, ids = cfg.default, list(cfg.identities)
     for i in ids:
         check(env.home in env.expand(i.file).resolve().parents,
               f"identity {i.id!r}: file must be inside {env.home}")

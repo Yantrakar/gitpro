@@ -21,6 +21,14 @@ email = "jane@personal.example"       # GitHub no-reply form: 12345+janedoe@user
 ssh_key = "~/.ssh/id_ed25519"         # optional
 ssh_hosts = ["github.com"]            # optional: always use ssh_key for these hosts
 sign = false                          # true: SSH-sign commits and tags (register the .pub as a *signing* key too)
+# gh_account = "janedoe"              # optional: the gh login that matches this identity (gitpro clone, forge)
+# glab_account = "janedoe"            # optional: the same for glab
+# clone_dir = "~/src"                 # optional: where gitpro clone puts repos of this identity
+
+# Optional: what commit trailers may say (identities inherit this unless they set their own).
+# [default.trailers]
+# co_authored_by = "allow"            # "allow", "forbid" or "require"
+# forbid_emails = ["*@corp.example"]  # Co-authored-by emails that are never allowed (globs)
 
 # Optional extra git config: section -> [subsection ->] key = value or [values].
 # For example, the GitHub CLI as HTTPS credential helper:
@@ -50,10 +58,45 @@ ssh_alias = "github-work"             # ssh Host that offers only ssh_key; test:
 # rewrite = true                      # send git@github.com:<owner>/... through ssh_alias
 # rewrite_https = false               # also send https://github.com/<owner>/... over SSH through ssh_alias
 # ssh_user = "git"
-# ssh_port = 2222                     # only for a non-standard SSH port (default: 22)
+# ssh_port = 22                       # change only for a non-standard SSH port
 # sign = false                        # default: same as [default].sign
 # file = "~/.gitconfig-work-github"   # must be inside your home directory
+# Optional, no default:
+# gh_account = "janedoe-corp"         # the gh login for this identity
+# glab_account = "jdoe"               # the glab login for this identity
+# clone_dir = "~/work"                # where gitpro clone puts this identity's repos
+# policy = "~/work/policy.toml"       # team policy file for repos of this identity
+# [identity.trailers]                 # same keys as [default.trailers]
+# co_authored_by = "forbid"
 
 # Optional extra git config for the identity above it:
 # [identity.git.pull]
 # ff = "only"
+
+
+# Optional tables, shown with their defaults.
+
+# [scan]                              # gitpro scan / lost
+# roots = ["~"]                       # where to look for repos (~/... or absolute)
+# exclude = []                        # globs to skip, e.g. ["~/.cache/**"]
+# stale_days = 180                    # repos untouched this long count as stale
+
+# [guard]                             # git hooks that check the identity before each commit/push
+# hooks = false
+# on_mismatch = "block"               # "block" or "warn"
+# chain_to = ""                       # your own hooks dir to run afterwards (~/... or absolute)
+
+# [clone]                             # gitpro clone
+# dir = "~/src"                       # default: none (the current directory)
+# layout = "{host}/{owner}/{repo}"    # may use {host} {owner} {repo} {id}
+
+# [forge]                             # online checks through gh / glab
+# online = false
+# similar = false
+
+# [agents]                            # AI coding agents
+# hook = "block"                      # "block", "warn" or "off"
+# bot_emails = ["*[bot]@users.noreply.github.com", "noreply@anthropic.com"]
+
+# [policy]
+# files = []                          # team policy files (~/... or absolute)
