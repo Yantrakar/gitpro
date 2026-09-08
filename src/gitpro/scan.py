@@ -10,12 +10,12 @@ import json
 import os
 import re
 import shlex
-import time
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
+from . import undo
 from .config import HOST_RE, OWNER_RE, ConfigError
 from .pin import FILE as PIN_FILE, git
 
@@ -251,19 +251,12 @@ def fix(repos: list[Repo], state: Path, prog: str = "gitpro") -> tuple[list[tupl
     pairs = [(r, k) for r in repos for k in r.local if k in r.beneath]
     if not pairs:
         return [], None
-    state.mkdir(parents=True, exist_ok=True)
-    undo = state / f"scan-undo-{time.strftime('%Y%m%d-%H%M%S')}.sh"
-    n = 0
-    while undo.exists():  # two fixes in one second
-        n += 1
-        undo = undo.with_name(f"scan-undo-{time.strftime('%Y%m%d-%H%M%S')}-{n}.sh")
     # Written first, so an interrupted fix can still be undone.
-    undo.write_text(f"#!/bin/sh\n# puts back what '{prog} scan --fix' removed on {time.strftime('%Y-%m-%d %H:%M')}\n"
-                    + "".join(f"git -C {shlex.quote(str(r.path))} config {k} {shlex.quote(r.local[k])}\n"
-                              for r, k in pairs))
+    script = undo.write("scan --fix", [f"git -C {shlex.quote(str(r.path))} config {k} {shlex.quote(r.local[k])}"
+                                       for r, k in pairs], what="removed repo-local user settings", state=state)
     for r, k in pairs:
         remove(r, k)
-    return pairs, undo
+    return pairs, script
 
 
 def remove(repo: Repo, key: str) -> None:

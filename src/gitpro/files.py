@@ -9,9 +9,25 @@ import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from .plan import Target
-from .render import has_block, is_generated, without_block
+if TYPE_CHECKING:  # plan and render load lazily, so modules that only need atomic_write stay cheap
+    from .plan import Target
+
+
+def is_generated(text: str) -> bool:
+    from .render import is_generated as _is_generated
+    return _is_generated(text)
+
+
+def has_block(text: str) -> bool:
+    from .render import has_block as _has_block
+    return _has_block(text)
+
+
+def without_block(text: str) -> str:
+    from .render import without_block as _without_block
+    return _without_block(text)
 
 
 @dataclass(frozen=True)
@@ -71,7 +87,10 @@ def _backup(path: Path) -> Path:
     raise OSError(f"no free backup name for {path}")
 
 
-def _atomic_write(path: Path, text: str, mode: int) -> None:
+def atomic_write(path: Path, text: str, mode: int) -> None:
+    """Replace path's content atomically: temp file in the same directory, fsync, rename.
+    A symlink is never replaced: the write goes to its target, in the target's directory."""
+    path = Path(os.path.realpath(path)) if Path(path).is_symlink() else Path(path)
     path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.")
     try:
@@ -85,6 +104,9 @@ def _atomic_write(path: Path, text: str, mode: int) -> None:
         with contextlib.suppress(FileNotFoundError):
             os.unlink(tmp)
         raise
+
+
+_atomic_write = atomic_write  # the pre-0.2 name; kept for one release
 
 
 def _hand_written(text: str) -> list[str]:
@@ -107,4 +129,4 @@ def apply(changes: list[Change]) -> None:
         else:
             if _needs_backup(c):
                 print(f"  backup  {_backup(c.path)}")
-            _atomic_write(c.path, c.new, c.mode)
+            atomic_write(c.path, c.new, c.mode)

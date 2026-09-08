@@ -85,11 +85,18 @@ def _owner_prefixes(i: Identity) -> list[str]:
     return [o.strip("/") + "/" for o in i.owners] or [""]
 
 
+def _scp_patterns(user: str, host: str, owner: str) -> list[str]:
+    # In git's wildmatch "**" crosses "/" only as a whole path component, so "host:**" would stop at the
+    # first "/": an owner-less identity needs "host:*" (one segment) and "host:*/**" (nested).
+    return [f"{user}@{host}:{owner}**"] if owner else [f"{user}@{host}:*", f"{user}@{host}:*/**"]
+
+
 def url_patterns(i: Identity) -> list[str]:
+    """The includeIf hasconfig:remote.*.url patterns for i (resolve.match_url uses the same list)."""
     pats = []
     for o in _owner_prefixes(i):
         for h in [i.host] + ([i.ssh_alias] if i.ssh_alias else []):
-            pats += [f"{i.ssh_user}@{h}:{o}**", f"ssh://{i.ssh_user}@{h}/{o}**"]
+            pats += [*_scp_patterns(i.ssh_user, h, o), f"ssh://{i.ssh_user}@{h}/{o}**"]
         if i.ssh_port:
             pats.append(f"ssh://{i.ssh_user}@{i.host}:{i.ssh_port}/{o}**")
         pats.append(f"https://{i.host}/{o}**")
@@ -106,15 +113,7 @@ def _sign_cfg(key: Path) -> dict:
 def managed_gitconfig(d: Default, ids: list[Identity], expand: Expand,
                       signers_file: str | None, manifest: list[str]) -> str:
     lines = [HEADER, *(MANIFEST + m for m in manifest), "# Later includeIf blocks win when several match.", ""]
-    # Never fall back to a guessed user@hostname identity.
-    base: dict = {"user": {"useConfigOnly": True}}
-    if d.name:
-        base["user"].update(name=d.name, email=d.email)
-    if d.sign:
-        base = merge(base, _sign_cfg(expand(d.ssh_key)))
-    if signers_file:
-        base = merge(base, {"gpg": {"ssh": {"allowedSignersFile": signers_file}}})
-    lines += git_lines(merge(base, d.git), "default.git")
+    lines += git_lines(default_settings(d, expand, signers_file), "default.git")
     for i in ids:
         lines += ["", f"# {i.id}: {i.host} {' '.join(i.owners) or '(all owners)'}"]
         for p in url_patterns(i):
@@ -132,7 +131,22 @@ def managed_gitconfig(d: Default, ids: list[Identity], expand: Expand,
     return "\n".join(lines) + "\n"
 
 
-def identity_gitconfig(i: Identity, d: Default, expand: Expand) -> str:
+def default_settings(d: Default, expand: Expand, signers_file: str | None = None) -> dict:
+    """The git settings the managed file gives every repo: gitpro's base with [default.git] over it.
+    resolve reads the same dict, so `why` expects exactly what apply writes."""
+    # Never fall back to a guessed user@hostname identity.
+    base: dict = {"user": {"useConfigOnly": True}}
+    if d.name:
+        base["user"].update(name=d.name, email=d.email)
+    if d.sign:
+        base = merge(base, _sign_cfg(expand(d.ssh_key)))
+    if signers_file:
+        base = merge(base, {"gpg": {"ssh": {"allowedSignersFile": signers_file}}})
+    return merge(base, d.git)
+
+
+def identity_settings(i: Identity, d: Default, expand: Expand) -> dict:
+    """The git settings of i's generated file: gitpro's base with [identity.git] over it."""
     base: dict = {"user": {"name": i.name, "email": i.email}}
     if i.ssh_key:
         base["core"] = {"sshCommand": f"ssh -i {_shell_path(i.ssh_key)} -o IdentitiesOnly=yes"}
@@ -140,7 +154,11 @@ def identity_gitconfig(i: Identity, d: Default, expand: Expand) -> str:
         base = merge(base, _sign_cfg(expand(i.ssh_key or d.ssh_key)))
     elif d.sign:
         base = merge(base, {"commit": {"gpgsign": False}, "tag": {"gpgsign": False}})
-    return "\n".join([HEADER, *git_lines(merge(base, i.git), f"identity {i.id!r}.git")]) + "\n"
+    return merge(base, i.git)
+
+
+def identity_gitconfig(i: Identity, d: Default, expand: Expand) -> str:
+    return "\n".join([HEADER, *git_lines(identity_settings(i, d, expand), f"identity {i.id!r}.git")]) + "\n"
 
 
 def _ssh_block(name: str, key: str, host: str | None = None, user: str | None = None,
@@ -172,7 +190,11 @@ def allowed_signers(entries: list[tuple[str, str]]) -> str:
 # ---------------------------------------------------------------- generated files, marked blocks in user files
 
 def is_generated(text: str) -> bool:
-    return bool(_GENERATED_RE.match(text))
+    """The marker on line 1, or on line 2 after a #! line (hook scripts)."""
+    if _GENERATED_RE.match(text):
+        return True
+    first, nl, rest = text.partition("\n")
+    return bool(nl) and first.startswith("#!") and bool(_GENERATED_RE.match(rest))
 
 
 def has_block(text: str) -> bool:
