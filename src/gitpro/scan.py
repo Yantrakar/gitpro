@@ -6,6 +6,8 @@ without them; fix removes them.
 """
 from __future__ import annotations
 
+import fnmatch
+import glob
 import json
 import os
 import re
@@ -16,11 +18,12 @@ from pathlib import Path
 from typing import Callable
 
 from . import undo
-from .config import HOST_RE, OWNER_RE, ConfigError
+from .config import HOST_RE, OWNER_RE, ConfigError, Scan
 from .pin import FILE as PIN_FILE, git
 
 KEYS = ("user.name", "user.email")
 SKIP = {"node_modules"}  # and every hidden directory
+_GLOB = re.compile(r"[*?[]")  # where an exclude pattern's literal prefix ends
 _USER = r"^user\.(name|email)$"
 # scp-like (git@host:owner/x), ssh://user@host:port/owner/x, https://host/owner/x
 _URL = re.compile(r"^(?:[a-z][a-z0-9+.-]*://)?(?:[^@/]+@)?([^/:]+)(?::\d+(?=/))?[:/]([^/]+)")
@@ -53,15 +56,90 @@ class Repo:
         return {k: self.now[k][0] for k in KEYS if k in self.now}
 
 
-def find(roots: list[Path]) -> list[Path]:
-    """Every directory holding a .git (repo, worktree or submodule), nested ones included."""
+def find(roots, *, exclude=(), max_depth: int | None = None, excluded: set | None = None) -> list[Path]:
+    """Every directory holding a .git (repo, worktree or submodule), nested ones included.
+
+    Hidden directories and node_modules are always skipped. exclude: patterns as in [scan] exclude
+    (see excluded_by); a directory one matches is not entered, and is added to `excluded` when given.
+    A root that is itself excluded is skipped. max_depth: how many levels below each root to look
+    (None: no limit)."""
+    pats = _patterns(exclude)
     found = set()
     for root in roots:
+        root = Path(root)
+        if pats and _match(str(root), pats):
+            continue
+        base = len(root.parts)
         for dirpath, dirnames, filenames in os.walk(root):
             if ".git" in dirnames or ".git" in filenames:
                 found.add(Path(dirpath))
-            dirnames[:] = [d for d in dirnames if not d.startswith(".") and d not in SKIP]
+            if max_depth is not None and len(Path(dirpath).parts) - base >= max_depth:
+                dirnames[:] = []
+                continue
+            keep = []
+            for d in dirnames:
+                if d.startswith(".") or d in SKIP:
+                    continue
+                full = os.path.join(dirpath, d)
+                if pats and _match(full, pats):
+                    if excluded is not None:
+                        excluded.add(Path(full))
+                    continue
+                keep.append(d)
+            dirnames[:] = keep
     return sorted(found)
+
+
+def _normalise(pattern: str, home: str) -> str:
+    """A [scan] exclude pattern as an fnmatch pattern over absolute, resolved paths: ~/ is the home
+    directory, a relative pattern matches at any depth (**/ in front), ** is fnmatch's * (which
+    crosses /). An absolute pattern's part before its first glob character is resolved (roots are,
+    so ~/work/old still matches when ~/work is a symlink) and escaped (a [ in a path is literal)."""
+    p = pattern.rstrip("/") or "/"
+    if p == "~" or p.startswith("~/"):
+        lit, p = home, p[1:]  # the home directory is literal, whatever it contains
+    elif p.startswith("/"):
+        lit = ""
+    else:
+        return ("**/" + p).replace("**", "*")
+    m = _GLOB.search(p)
+    cut = len(p) if m is None else p.rfind("/", 0, m.start())
+    head, tail = os.path.realpath(lit + p[:cut] or "/"), p[cut:]
+    if head == "/" and tail:
+        head = ""
+    return glob.escape(head) + tail.replace("**", "*")
+
+
+def _patterns(exclude) -> list[tuple[str, str]]:
+    home = str(Path.home())
+    return [(pat, _normalise(pat, home)) for pat in exclude]
+
+
+def _match(path: str, pats: list[tuple[str, str]]) -> str | None:
+    return next((pat for pat, norm in pats if fnmatch.fnmatchcase(path, norm)), None)
+
+
+def excluded_by(path: Path, exclude) -> str | None:
+    """The first exclude pattern (as written) that matches the absolute directory path, else None."""
+    return _match(str(path), _patterns(exclude))
+
+
+def effective_roots(args_roots: list[str], cfg_scan: Scan | None) -> tuple[list[Path], list[str], str]:
+    """-> (roots, exclude, source): the command line's directories ("args"), else [scan] roots from a
+    config that loaded ("config"), else the home directory ("default"). exclude comes from the config
+    in every case; --repo never consults this. Roots are absolute and resolved, duplicates dropped."""
+    if args_roots:
+        roots, source = args_roots, "args"
+    elif cfg_scan is not None and cfg_scan.roots:  # roots = [] counts as unset (scanroots warns)
+        roots, source = list(cfg_scan.roots), "config"
+    else:
+        roots, source = ["~"], "default"
+    out: list[Path] = []
+    for r in roots:
+        p = Path(r).expanduser().resolve()
+        if p not in out:
+            out.append(p)
+    return out, list(cfg_scan.exclude) if cfg_scan is not None else [], source
 
 
 def _entries(repo: str, *scope: str) -> list[tuple[str, str, str]]:
@@ -144,16 +222,29 @@ def skipped(bad: list[dict]) -> str:
 
 
 def host_owner(url: str) -> tuple[str, str] | None:
-    m = _URL.match(url)
+    """(host, owner) of a remote URL, parsed from its redacted form: a userinfo secret never ends up in either."""
+    from .resolve import redact_url
+    m = _URL.match(redact_url(url) or url)
     return (m[1], m[2]) if m else None
 
 
 def owner(url: str) -> str:
-    """'host/owner' of a remote URL; the URL itself when it has no host (a local path)."""
+    """'host/owner' of a remote URL; the URL itself (redacted) when it has no host (a local path)."""
     if not url:
         return "no remote"
+    from .resolve import redact_url
+    url = redact_url(url) or url
     ho = host_owner(url)
     return "/".join(ho) if ho else url
+
+
+def derive_id(owner: str, host: str, taken: set) -> str:
+    """The [[identity]] id for an owner: lowercase, other characters as '-', then '-<first host label>'
+    until it is not in taken. taken is not changed; the caller adds the id it uses."""
+    ident = re.sub(r"[^A-Za-z0-9._-]", "-", owner).lower()
+    while ident in taken:
+        ident += "-" + host.split(".")[0]
+    return ident
 
 
 def suggest(repos: list[Repo]) -> tuple[list[dict], list[Repo]]:
@@ -178,9 +269,7 @@ def suggest(repos: list[Repo]) -> tuple[list[dict], list[Repo]]:
         names = sorted(owners, key=lambda o: (-owners[o], o))
         others = sum(1 for r in repos if host_owner(r.remote) in {(host, o) for o in names}
                      and r.after_fix().get("user.email") != email and r.using().get("user.email") != email)
-        ident = re.sub(r"[^A-Za-z0-9._-]", "-", names[0]).lower()
-        while ident in ids:
-            ident += "-" + host.split(".")[0]
+        ident = derive_id(names[0], host, ids)
         ids.add(ident)
         repos_note = ", ".join(f"{o} {owners[o]}" for o in names)
         blocks.append({"id": ident, "name": name, "email": email, "host": host, "owners": names, "changes_others": others,
@@ -227,6 +316,7 @@ def report(roots: list[Path], repos: list[Repo], failed: list[tuple[Path, str, s
     short = short_names([r.path for r in over])
     blocks, unmatched = suggest(repos)
     pair = lambda d: {"name": d.get("user.name", ""), "email": d.get("user.email", "")}  # noqa: E731
+    from .resolve import redact_url
     return {
         "roots": [str(p) for p in roots],
         "repos": len(repos),
@@ -236,7 +326,7 @@ def report(roots: list[Path], repos: list[Repo], failed: list[tuple[Path, str, s
              "owners": dict(sorted(c.items(), key=lambda kv: (-kv[1], kv[0])))}
             for (n, e, src), c in sorted(groups.items(), key=lambda kv: (kv[0][2] == "repo", -sum(kv[1].values())))],
         "overrides": [
-            {"path": str(r.path), "short": short[r.path], "remote": r.remote, "owner": owner(r.remote),
+            {"path": str(r.path), "short": short[r.path], "remote": redact_url(r.remote) or "", "owner": owner(r.remote),
              "now": pair(r.using()), "after": pair(r.after_fix()),
              "settings": [{"key": k, "value": v, "without": r.beneath.get(k)} for k, v in r.local.items()],
              "fixable": [k for k in r.local if k in r.beneath]}

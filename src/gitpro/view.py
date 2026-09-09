@@ -67,7 +67,10 @@ def scan(rep: dict, show: Callable[[str], str], *, verbose: bool, suggest: bool,
     bad = rep["unreadable"]
     head = Text(plural(rep["repos"], "repo") + ("" if exact else f" under {', '.join(map(show, rep['roots']))}"),
                 style="bold")
-    head.append(("" if exact else "  hidden directories and node_modules skipped")
+    n = rep.get("skipped_excluded", 0)
+    skips = f"hidden directories, node_modules and {plural(n, 'excluded dir')}" if n else \
+        "hidden directories and node_modules"
+    head.append(("" if exact else f"  {skips} skipped")
                 + (f" · {skipped(bad)}" + ("" if verbose else " (-v lists them)") if bad else ""), style="dim")
     out.print(head, soft_wrap=True)
     if verbose:

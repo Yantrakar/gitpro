@@ -354,14 +354,18 @@ def cmd_scan(args) -> int:
     ask = args.fix and not args.yes and not args.json
     if ask and not sys.stdin.isatty():
         raise config.ConfigError("no terminal to confirm on; re-run with --yes")
+    # scanroots (02) sets roots_effective, exclude, roots_source and roots_hint; --repo ignores them.
+    exclude, excluded = getattr(args, "exclude", ()), set()
     if args.repo:
         roots = [p.expanduser().resolve() for p in args.repo]
         paths = roots
     else:
-        roots = [d.expanduser().resolve() for d in args.dirs] or [home]
-        paths = scan.find(roots)
+        roots = getattr(args, "roots_effective", None) or [d.expanduser().resolve() for d in args.dirs] or [home]
+        paths = scan.find(roots, exclude=exclude, excluded=excluded)
     repos, failed = scan.inspect_all(paths)
     rep = scan.report(roots, repos, failed, label)
+    rep.update(exclude=list(exclude), skipped_excluded=len(excluded),
+               roots_source=getattr(args, "roots_source", "args" if args.repo or args.dirs else "default"))
     fixable = [r for r in repos if any(k in r.beneath for k in r.local)]
 
     if ask and fixable and not args.plain and sys.stdout.isatty():
@@ -384,6 +388,9 @@ def cmd_scan(args) -> int:
             "".join(f" {_sh(show(d))}" for d in roots if args.dirs)
         view.scan(rep, show, verbose=args.verbose, suggest=args.suggest, fix=args.fix, prog=PROG,
                   again=f"{PROG} scan --fix{where}", exact=bool(args.repo))
+        if getattr(args, "roots_hint", None) and not args.fix:
+            print()
+            view.step(args.roots_hint)
     if not args.fix:
         return 0
     if not fixable:
