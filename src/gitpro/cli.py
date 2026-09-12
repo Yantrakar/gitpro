@@ -456,6 +456,7 @@ def cmd_uninstall(args) -> int:
         view.aborted()
         return 1
     files.apply(changes)
+    plan.prune_hooks_dir(_env(args))   # 06: the guard's hooks dir, when empty
     view.ok(f"removed {len(changes)} change(s); your config file and SSH keys were left in place")
     return 0
 
