@@ -240,6 +240,7 @@ def test_extensions_list():
 
 def test_hot_falls_through_without_module(home, capsys, monkeypatch):  # 27
     monkeypatch.setitem(hot.HOT, "guard", "gitpro.not_built_guard")
+    monkeypatch.setattr(cli, "EXTENSIONS", [m for m in cli.EXTENSIONS if m != "gitpro.guard"])  # 06 is built
     with pytest.raises(SystemExit) as e:
         hot.main(["guard", "check"])
     assert e.value.code == 2 and "invalid choice" in capsys.readouterr().err

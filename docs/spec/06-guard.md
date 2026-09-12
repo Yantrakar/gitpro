@@ -91,12 +91,12 @@ Nothing is installed until one of those happens.
 | path | content |
 |---|---|
 | `~/.config/gitpro/hooks/pre-commit`, `pre-push`, `commit-msg` (0700; line 1 `#!/bin/sh`, line 2 the generated marker as a comment, accepted by `render.is_generated` per 01 §5.8) | the chain script (3.2) |
-| `~/.config/gitpro/hooks/<every other name in render.HOOK_NAMES>` (0700, same header) | the pass-through stub (3.3): `applypatch-msg`, `pre-applypatch`, `post-applypatch`, `prepare-commit-msg`, `post-commit`, `pre-merge-commit`, `pre-rebase`, `post-checkout`, `post-merge`, `pre-receive`, `update`, `proc-receive`, `post-receive`, `post-update`, `push-to-checkout`, `pre-auto-gc`, `post-rewrite`, `sendemail-validate` — the githooks(5) hooks for git 2.43 that a repo or a tool plausibly installs. **Not** forwarded: `reference-transaction` and `post-index-change` (run on every ref/index change, many times per command; a stub there costs a `sh` + `git rev-parse` each time and nobody installs them by hand), `fsmonitor-watchman` (git runs it only when `core.fsmonitor` names it; a stub there would break the protocol), `p4-*` (git-p4 only). A user who needs one of those keeps the repo's own `core.hooksPath` and uses repo mode (3.5). |
+| `~/.config/gitpro/hooks/<every other name in render.HOOK_NAMES>` (0700, same header) | the pass-through stub (3.3): `applypatch-msg`, `pre-applypatch`, `post-applypatch`, `prepare-commit-msg`, `post-commit`, `pre-merge-commit`, `pre-rebase`, `post-checkout`, `post-merge`, `pre-receive`, `update`, `proc-receive`, `post-receive`, `post-update`, `pre-auto-gc`, `post-rewrite`, `sendemail-validate` — the githooks(5) hooks for git 2.43 that a repo or a tool plausibly installs. **Not** forwarded: `push-to-checkout` (git skips its built-in `receive.denyCurrentBranch = updateInstead` deploy whenever that hook exists, so a stub would stop pushes from updating the checked-out tree), `reference-transaction` and `post-index-change` (run on every ref/index change, many times per command; a stub there costs a `sh` + `git rev-parse` each time and nobody installs them by hand), `fsmonitor-watchman` (git runs it only when `core.fsmonitor` names it; a stub there would break the protocol), `p4-*` (git-p4 only). A user who needs one of those keeps the repo's own `core.hooksPath` and uses repo mode (3.5). |
 | `~/.config/gitpro/hooks/README` | one paragraph: what these are, how to bypass, `gitpro guard uninstall`, the list of hooks not forwarded |
 | `~/.gitconfig-gitpro-guard` (managed, 0600) | `[core]\n\thooksPath = /abs/home/.config/gitpro/hooks\n` (absolute; git does not expand `~` reliably in every path context) |
 | `~/.gitconfig-identities` | gains `[include] path = ~/.gitconfig-gitpro-guard` at the end of the generated section (`render.hooks_gitconfig`; `plan.build` adds it when `cfg.guard.hooks` or when `~/.gitconfig-gitpro-guard` exists, see §3) |
 
-`render.HOOK_NAMES` is the one list (3 chain scripts + 18 stubs = 21
+`render.HOOK_NAMES` is the one list (3 chain scripts + 17 stubs = 20
 files); every count in this spec and in `guard status` is derived from
 it, never typed.
 
@@ -174,7 +174,21 @@ Facts the script relies on (verified in a scratch HOME, git 2.43):
 `shlex.quote(sys.argv[0] resolved)` of the installing gitpro (R-013).
 `chain_to` is validated at install: must be an absolute directory after
 `~` expansion, must not resolve to `~/.config/gitpro/hooks`, must be owned
-by the user and not group/world-writable (README §8 rule 2).
+by the user and not group/world-writable (README §8 rule 2). `apply` (with
+`[guard] hooks = true`) re-checks it on every render with the same refusals,
+except that a chain_to deleted after install is a `⚠ [guard] chain_to … does
+not exist; the hooks run without it → create it, or remove chain_to …` line:
+the hooks render with `chain=''` and unrelated changes still apply. doctor
+shows the same warning. `guard install` still refuses a missing dir.
+
+The script runs `unset CDPATH` first and prefixes a relative
+`--git-common-dir` with `./` before `cd -P` (stdout to /dev/null), so an
+exported CDPATH cannot redirect the common dir. pre-commit removes
+`<common dir>/gitpro-guard-warned` on every run before its check and
+commit-msg removes it after reading it, so commit-msg only trusts a note
+written by this commit's own pre-commit. Uninstall does not visit repos, so
+a note left by an aborted commit stays behind (harmless; the hooks README
+says it is safe to delete).
 
 `pre-push` reads stdin once and feeds it to every hook:
 
@@ -379,7 +393,7 @@ created it and nothing else is in it), via the same undo mechanism.
 ```
 guard: installed (global, ~/.config/gitpro/hooks)  on_mismatch = block
   pre-commit ✓   pre-push ✓   commit-msg ✓ (trailers: 08 not installed → no-op; policy: not installed)
-  18 pass-through hooks ✓   (not forwarded: reference-transaction, post-index-change, fsmonitor-watchman, p4-*)
+  17 pass-through hooks ✓   (not forwarded: push-to-checkout, reference-transaction, post-index-change, fsmonitor-watchman, p4-*)
   chain_to: (none)
   gitpro on PATH: ~/.local/bin/gitpro
   git lfs: filter.lfs.process set globally; stubs call 'git lfs <hook>' unless the repo hook already does
@@ -421,17 +435,17 @@ overrides it; set chain_to to keep it` (R-026). Install refuses without
   create  ~/.config/gitpro/hooks/pre-commit
   create  ~/.config/gitpro/hooks/pre-push
   create  ~/.config/gitpro/hooks/commit-msg
-  create  ~/.config/gitpro/hooks/post-checkout … (18 pass-through hooks)
+  create  ~/.config/gitpro/hooks/post-checkout … (17 pass-through hooks)
   create  ~/.config/gitpro/hooks/README
   create  ~/.gitconfig-gitpro-guard
   update  ~/.gitconfig-identities        (+ include ~/.gitconfig-gitpro-guard)
-install guard hooks (23 files, 1 change)?  [y/n]
+install guard hooks (22 files, 1 change)?  [y/n]
 ✓ guard installed; test it: gitpro guard test
 ↩ undo: gitpro guard uninstall
 → 'gitpro apply' keeps these hooks; gitpro guard uninstall removes them (or set [guard] hooks = true to make the TOML the source of truth)
 ```
 
-(Counts come from `render.HOOK_NAMES`: 21 hook files + README +
+(Counts come from `render.HOOK_NAMES`: 20 hook files + README +
 `~/.gitconfig-gitpro-guard`.)
 
 ## 4. `--json`
@@ -474,6 +488,7 @@ dir, undo script `guard-undo-<ts>.sh`.
 | hook: mismatch, warn | `⚠ gitpro:` block | 0 |
 | install: foreign hooksPath, no chain_to | `✗ core.hooksPath is already … (<scope>)` | 2 |
 | install: chain_to is gitpro's own dir / not a dir / world-writable | `✗ chain_to …` | 2 |
+| apply: chain_to deleted after install | `⚠ [guard] chain_to … does not exist; …` (renders without it) | 0 |
 | install --repo: hook file tracked | `✗ <file> is tracked by git; …` | 2 |
 | install --repo: hook dir is ignored or `…/_/` (husky 9, lefthook, pre-commit cache) | `✗ <dir> is managed by <tool>; add this block to the hook that tool runs: …` | 2 |
 | install --repo: not a shell script | `✗ <file> is not a shell script; add this block yourself: …` | 2 |
@@ -507,9 +522,9 @@ so hooks find a real gitpro on PATH; `bare_remote("origin")` for pushes;
 `commit(repo, …, author=, committer=)` for identities.
 
 1. `guard install -y` creates `pre-commit`, `pre-push`, `commit-msg`, one
-   stub per remaining name in `render.HOOK_NAMES` (18; the set equals the
+   stub per remaining name in `render.HOOK_NAMES` (17; the set equals the
    list in 3.1 and contains `pre-merge-commit` and not
-   `reference-transaction`, `post-index-change`, `fsmonitor-watchman`,
+   `push-to-checkout`, `reference-transaction`, `post-index-change`, `fsmonitor-watchman`,
    `p4-changelist`) and `README` (`0700`, marker on line 2,
    `render.is_generated` true), `~/.gitconfig-gitpro-guard` (0600, absolute
    path), the include in `~/.gitconfig-identities`; `git config

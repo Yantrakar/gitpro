@@ -233,3 +233,242 @@ def strip_block(text: str, where: str) -> str:
 
 def manifest_of(text: str) -> list[str]:
     return [line[len(MANIFEST):] for line in text.splitlines() if line.startswith(MANIFEST)]
+
+
+# ---------------------------------------------------------------- guard hooks (06)
+
+GUARD_HOOKS = ("pre-commit", "pre-push", "commit-msg")   # run `gitpro guard check <name>`, then chain
+# githooks(5) names a repo or a tool plausibly installs; with a global core.hooksPath git runs only the
+# hooks in that dir, so each one forwards to the repo's own hook and to chain_to.
+STUB_HOOKS = ("applypatch-msg", "pre-applypatch", "post-applypatch", "prepare-commit-msg", "post-commit",
+              "pre-merge-commit", "pre-rebase", "post-checkout", "post-merge", "pre-receive", "update",
+              "proc-receive", "post-receive", "post-update", "pre-auto-gc", "post-rewrite",
+              "sendemail-validate")
+HOOK_NAMES = GUARD_HOOKS + STUB_HOOKS
+# push-to-checkout: git skips its built-in receive.denyCurrentBranch=updateInstead deploy whenever the hook
+# exists, so a stub would stop pushes from updating a checked-out tree.
+NOT_FORWARDED = ("push-to-checkout", "reference-transaction", "post-index-change", "fsmonitor-watchman", "p4-*")
+STDIN_HOOKS = ("pre-push", "pre-receive", "proc-receive", "post-receive", "post-rewrite")
+LFS_HOOKS = ("pre-push", "post-checkout", "post-commit", "post-merge")   # what `git lfs install` writes
+MAX_HOOK_DEPTH = 8   # nested hook runs before a script assumes a loop and stops forwarding
+GUARD_INCLUDE_COMMENT = "# guard hooks: gitpro guard install, or [guard] hooks = true"
+
+_HOOK_HEAD = """\
+#!/bin/sh
+{header}
+# gitpro {what}: {name}. Skip gitpro once: GITPRO_SKIP=1 git ...  (git --no-verify skips every hook)
+# {after}
+
+depth=${{GITPRO_HOOK_DEPTH:-0}}
+case $depth in ''|*[!0-9]*) depth=0 ;; esac
+if [ "$depth" -ge {max_depth} ]; then
+  echo "⚠ gitpro guard: hooks nested $depth deep (a hook loop?); not running {name} hooks" >&2
+  exit 0
+fi
+GITPRO_HOOK_DEPTH=$((depth + 1)); export GITPRO_HOOK_DEPTH
+# An exported CDPATH makes cd search it (and print the dir) for a relative path like .git.
+unset CDPATH
+
+own_dir=$(cd -P -- "$(dirname -- "$0")" >/dev/null 2>&1 && pwd)
+# --git-common-dir may be relative to the cwd (.git); cd -P makes it absolute on every git (no
+# --path-format, which git < 2.31 lacks). ./ keeps cd from searching CDPATH even if it were set.
+common=$(git rev-parse --git-common-dir 2>/dev/null) || common=""
+case $common in ''|/*) ;; *) common="./$common" ;; esac
+if [ -n "$common" ]; then common=$(cd -P -- "$common" >/dev/null 2>&1 && pwd) || common=""; fi
+repo_hook="$common/hooks/{name}"
+run_repo=""
+# Never run a hook from gitpro's own dir, nor one that is (a link to) this script: that would loop.
+# test -ef is not POSIX but dash, bash, zsh, ksh and busybox sh all have it.
+if [ -n "$common" ] && [ -x "$repo_hook" ] && [ "$(cd -P -- "$(dirname -- "$repo_hook")" >/dev/null 2>&1 && pwd)" != "$own_dir" ] \
+   && ! [ "$repo_hook" -ef "$own_dir/{name}" ]; then
+  run_repo=1
+fi
+chain={chain}
+run_chain=""
+if [ -n "$chain" ] && [ -x "$chain/{name}" ] && [ "$(cd -P -- "$chain" >/dev/null 2>&1 && pwd)" != "$own_dir" ] \
+   && ! [ "$chain/{name}" -ef "$own_dir/{name}" ]; then
+  run_chain=1
+fi
+"""
+
+_STDIN_ALWAYS = """
+tmp=$(mktemp "${TMPDIR:-/tmp}/gitpro-hook.XXXXXX" 2>/dev/null) || tmp=""
+if [ -n "$tmp" ]; then trap 'rm -f "$tmp"' EXIT; trap 'exit 129' HUP; trap 'exit 130' INT; trap 'exit 143' TERM
+  cat >"$tmp"; fi
+in_tmp() { if [ -n "$tmp" ]; then "$@" <"$tmp"; else "$@"; fi; }
+"""
+
+# A stub keeps stdin only when two hooks need it; one hook reads git's stdin directly (proc-receive talks
+# to git over stdin/stdout, so it must never be buffered).
+_STDIN_SHARED = """
+tmp=""
+if [ -n "$run_repo" ] && [ -n "$run_chain" ]; then
+  tmp=$(mktemp "${TMPDIR:-/tmp}/gitpro-hook.XXXXXX" 2>/dev/null) || tmp=""
+  if [ -n "$tmp" ]; then trap 'rm -f "$tmp"' EXIT; trap 'exit 129' HUP; trap 'exit 130' INT; trap 'exit 143' TERM
+    cat >"$tmp"; fi
+fi
+in_tmp() { if [ -n "$tmp" ]; then "$@" <"$tmp"; else "$@"; fi; }
+"""
+
+_NO_STDIN = """
+in_tmp() { "$@"; }
+"""
+
+# The fail-open warning prints once per git command: pre-commit clears $once on every run and notes git's
+# pid ($PPID) in it when it warns; commit-msg of the same git process then stays quiet and removes the
+# file. GITPRO_GIT_PID / GITPRO_WARNED_FILE let `guard check` do the same for its own warnings. A file
+# left by an aborted commit is cleared by the next pre-commit; gitpro guard uninstall does not visit repos.
+_CHECK = """
+if [ -z "${{GITPRO_SKIP:-}}" ]; then
+  gp=""
+  if command -v gitpro >/dev/null 2>&1; then gp=gitpro
+  elif [ -x "$HOME/.local/bin/gitpro" ]; then gp="$HOME/.local/bin/gitpro"
+  elif [ -x {gitpro_bin} ]; then gp={gitpro_bin}
+  fi
+  if [ -n "$gp" ]; then
+    once=""; if [ -n "$common" ]; then once="$common/gitpro-guard-warned"; fi
+    GITPRO_GIT_PID=$PPID; GITPRO_WARNED_FILE=$once; export GITPRO_GIT_PID GITPRO_WARNED_FILE
+{clear}    rc=0
+{run}
+    if [ "$rc" -eq 3 ]; then exit 1; fi
+    if [ "$rc" -ne 0 ]; then
+{warn}
+    fi
+{consume}  fi
+fi
+"""
+_RUN_TIMEOUT = """\
+    if command -v timeout >/dev/null 2>&1; then in_tmp {timeout} "$gp" guard check {name} "$@" || rc=$?
+    else in_tmp "$gp" guard check {name} "$@" || rc=$?
+    fi"""
+_RUN_PLAIN = """\
+    in_tmp "$gp" guard check {name} "$@" || rc=$?"""
+_CLEAR_ONCE = """\
+    if [ -n "$once" ] && [ -e "$once" ]; then rm -f "$once" 2>/dev/null; fi
+"""
+_WARN = """\
+      echo "⚠ gitpro guard: exited $rc; not blocking" >&2"""
+_WARN_FIRST = _WARN + """
+      if [ -n "$once" ]; then { echo "$PPID" >"$once"; } 2>/dev/null; fi"""
+_WARN_AGAIN = """\
+      if [ -z "$once" ] || [ "$(cat "$once" 2>/dev/null)" != "$PPID" ]; then
+        echo "⚠ gitpro guard: exited $rc; not blocking" >&2
+      fi"""
+
+# `git lfs install` writes .git/hooks/<name> calling `git lfs <name>`; under a global core.hooksPath those
+# files would not run, so the hook calls it unless the repo's own hook already does.
+_LFS = """
+if [ -n "$(git config filter.lfs.process 2>/dev/null)" ] && command -v git-lfs >/dev/null 2>&1; then
+  if [ ! -f "$repo_hook" ] || ! grep -q -e 'git lfs' -e 'git-lfs' "$repo_hook" 2>/dev/null; then
+    in_tmp git lfs {name} "$@" || exit $?
+  fi
+fi
+"""
+
+_TAIL = """
+if [ -n "$run_repo" ]; then in_tmp "$repo_hook" "$@" || exit $?; fi
+if [ -n "$run_chain" ]; then in_tmp "$chain/{name}" "$@" || exit $?; fi
+exit 0
+"""
+
+
+def _hook(name: str, chain_to: str | None, gitpro_bin: str | None, check_first: bool, timeout: str = "") -> str:
+    chain = shlex.quote(str(chain_to)) if chain_to else "''"
+    after = ("After the gitpro check, the repo's own hook runs (<common dir>/hooks/{n}), then the chain_to hook."
+             if check_first else "Runs the repo's own hook (<common dir>/hooks/{n}), then the chain_to hook.")
+    text = _HOOK_HEAD.format(header=HEADER, what="guard hook" if check_first else "pass-through hook",
+                             name=name, after=after.format(n=name), max_depth=MAX_HOOK_DEPTH, chain=chain)
+    if check_first and name == "pre-push":
+        text += _STDIN_ALWAYS
+    elif name in STDIN_HOOKS:
+        text += _STDIN_SHARED
+    else:
+        text += _NO_STDIN
+    if check_first:
+        run = (_RUN_TIMEOUT.format(timeout=timeout, name=name) if timeout else _RUN_PLAIN.format(name=name))
+        warn = {"pre-commit": _WARN_FIRST, "commit-msg": _WARN_AGAIN}.get(name, _WARN)
+        text += _CHECK.format(gitpro_bin=shlex.quote(str(gitpro_bin)) if gitpro_bin else "''", run=run,
+                              warn=warn, clear=_CLEAR_ONCE if name == "pre-commit" else "",
+                              consume=_CLEAR_ONCE if name == "commit-msg" else "")
+    if name in LFS_HOOKS:
+        text += _LFS.format(name=name)
+    return text + _TAIL.format(name=name)
+
+
+def hook_script(name: str, chain_to: str | None, gitpro_bin: str | None, timeout: str = "") -> str:
+    """The global chain script for pre-commit / pre-push / commit-msg: `gitpro guard check <name>` (only
+    exit 3 blocks; any other failure warns and continues), then the repo's own hook, then chain_to's.
+    timeout: a command prefix that bounds the check (`timeout --foreground 30`), "" for none."""
+    check(name in GUARD_HOOKS, f"not a guard hook: {name}")
+    return _hook(name, chain_to, gitpro_bin, True, timeout)
+
+
+def hook_stub(name: str, chain_to: str | None) -> str:
+    """The pass-through script for every other hook name: the repo's own hook, then chain_to's."""
+    check(name in STUB_HOOKS, f"not a pass-through hook: {name}")
+    return _hook(name, chain_to, None, False)
+
+
+def hooks_readme() -> str:
+    return (f"{HEADER}\n\n"
+            "These are gitpro's guard hooks, used by git for every repo through core.hooksPath. pre-commit and "
+            "pre-push refuse a commit or push whose committer email is not the identity the remote belongs "
+            "to; every hook then runs the repo's own hook (.git/hooks/<name>) and the [guard] chain_to hook. "
+            "If gitpro fails, the commit goes through. Skip gitpro's check once with GITPRO_SKIP=1 git ...; "
+            "git --no-verify skips every hook. Remove them with: gitpro guard uninstall. To warn once per "
+            "commit, pre-commit may leave <git dir>/gitpro-guard-warned behind (cleared on the next commit; "
+            "uninstall leaves it, it is safe to delete). Not forwarded "
+            f"(repos that need them keep their own core.hooksPath): {', '.join(NOT_FORWARDED)}.\n")
+
+
+def hooks_gitconfig(hooks_dir: Path) -> str:
+    """~/.gitconfig-gitpro-guard: the absolute core.hooksPath."""
+    return f"{HEADER}\n[core]\n{INDENT}hooksPath = {gval(str(hooks_dir))}\n"
+
+
+def _guard_section(include: str) -> list[str]:
+    return [GUARD_INCLUDE_COMMENT, "[include]", f"{INDENT}path = {gval(include)}"]
+
+
+def without_guard_include(text: str, include: str, paths: list[str]) -> str:
+    """The managed gitconfig without the guard include section and without `paths` in its manifest."""
+    lines = text.splitlines()
+    sec = _guard_section(include)
+    for n in range(len(lines) - len(sec), -1, -1):
+        if lines[n:n + len(sec)] == sec:
+            del lines[n:n + len(sec)]
+            if n and n <= len(lines) and not lines[n - 1].strip():
+                del lines[n - 1]
+    drop = {MANIFEST + p for p in paths}
+    lines = [ln for ln in lines if ln not in drop]
+    return "\n".join(lines) + "\n" if lines else ""
+
+
+def with_guard_include(text: str, include: str, paths: list[str]) -> str:
+    """The managed gitconfig with `paths` merged into its sorted manifest and the include of the guard
+    gitconfig as its last section. Applying it twice changes nothing."""
+    lines = without_guard_include(text, include, paths).rstrip("\n").splitlines()
+    idx = [n for n, ln in enumerate(lines) if ln.startswith(MANIFEST)]
+    entries = sorted(set(manifest_of("\n".join(lines))) | set(paths))
+    at = idx[0] if idx else 1
+    lines = [ln for ln in lines if not ln.startswith(MANIFEST)]
+    lines[at:at] = [MANIFEST + p for p in entries]
+    return "\n".join(lines + [""] + _guard_section(include)) + "\n"
+
+
+def guard_block(name: str) -> str:
+    """The repo-mode managed block for a hand-written hook (fails open; only exit 3 refuses)."""
+    if name == "pre-push":
+        body = ("if [ -z \"${GITPRO_SKIP:-}\" ] && command -v gitpro >/dev/null 2>&1; then\n"
+                "  rc=0; tmp=$(mktemp \"${TMPDIR:-/tmp}/gitpro-prepush.XXXXXX\" 2>/dev/null) || tmp=\"\"\n"
+                "  if [ -n \"$tmp\" ]; then cat >\"$tmp\"; gitpro guard check pre-push \"$@\" <\"$tmp\" || rc=$?; "
+                "exec <\"$tmp\"; rm -f \"$tmp\"\n"
+                "  else gitpro guard check pre-push \"$@\" || rc=$?; fi\n"
+                "  if [ \"$rc\" -eq 3 ]; then exit 1; fi\n"
+                "fi\n")
+    else:
+        body = ("if [ -z \"${GITPRO_SKIP:-}\" ] && command -v gitpro >/dev/null 2>&1; then\n"
+                f"  rc=0; gitpro guard check {name} \"$@\" || rc=$?\n"
+                "  if [ \"$rc\" -eq 3 ]; then exit 1; fi\n"
+                "fi\n")
+    return f"{BLOCK_BEGIN} -- keep first\n{body}{BLOCK_END}\n"
