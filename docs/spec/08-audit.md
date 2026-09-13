@@ -47,7 +47,9 @@ call; records are split on `\x1e` first, then each record on `\x00`
 (a subject or trailer cannot contain either byte; `%x1e` is the record
 separator because `--format` emits no trailing newline marker that is
 safe). "Pushed" = commit is in the set `git rev-list --remotes` computed
-once.
+once, i.e. reachable from a remote-tracking ref **as of the last fetch**.
+Commits published only through a tag, `git push <url>` (no tracking ref)
+or Gerrit's `refs/for/*` count as unpushed; `--help` says so.
 
 What counts as wrong (same rule as 06 §2): committer email ≠ expected, or
 author email ≠ expected **and** author email is one of the user's own
