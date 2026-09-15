@@ -35,10 +35,13 @@ Steps:
 2. Identity = `--identity ID` or `resolve.match_url`. No match → `[default]`.
 3. Clone URL. The user's scheme is kept unless the identity says otherwise:
    - identity has `ssh_alias` and `rewrite = true` and `--no-rewrite` is
-     absent → `<ssh_user>@<alias>:<owner>/<repo>.git` (or
-     `ssh://<ssh_user>@<alias>:<port>/<owner>/<repo>.git` when `ssh_port`);
-     this is exactly what git's generated `insteadOf` would do after the
-     clone, so the stored remote URL and the used one agree;
+     absent → `<ssh_user>@<alias>:<owner>/<repo>.git`, also when the
+     identity has `ssh_port`: the alias' generated ssh `Host` block carries
+     the port, and an `ssh://<alias>:<port>/...` URL would match none of
+     the identity's `includeIf` patterns (`render.url_patterns` gives the
+     scp form for the alias). This is exactly what git's generated
+     `insteadOf` would do after the clone, so the stored remote URL and
+     the used one agree;
    - https URL and `--ssh` given → `<ssh_user>@<host>:<owner>/<repo>.git`;
    - otherwise the URL as given. An https clone against an identity with
      an `ssh_key` is allowed: the identity's `includeIf` matches
@@ -89,6 +92,9 @@ Requires `-y` (or `--dry-run`). `{"ok": true, "command": "clone", "url":
 "<as given>", "clone_url": "git@github-work:corp-org/app.git", "dir":
 "/abs", "identity": "work-github"|null, "auth": "ssh-alias"|"ssh"|"https",
 "dry_run": false, "problems": [...resolve problems...], "git_exit": 0}`.
+`url` and `clone_url` are redacted (`resolve.redact_url`: a userinfo password
+or http(s) token and secret query values such as `access_token` become `***`)
+and are for display only; never run or store them as the clone URL.
 
 ## 4. Config keys
 
