@@ -27,7 +27,7 @@ gone. I push or archive them, run it again, and it says `✓ nothing lost`."
 
 ```
 gitpro lost [DIR…] [--repo PATH]… [-c PATH] [--json] [-v]
-            [--only KIND[,KIND…]] [--online] [--stale-days N]
+            [--only KIND[,KIND…]] [--online | --offline] [--stale-days N]
 ```
 
 ### 2.1 Roots
@@ -48,8 +48,29 @@ def _roots(args, cfg):
 `--repo PATH…` skips discovery. Linked worktrees of one repo share a
 common dir (`git rev-parse --path-format=absolute --git-common-dir`); the
 command groups by common dir and reports each repo once, listing all its
-worktree paths under `-v`. Bare repos are skipped. Repos in `scan.find`'s
-`skip_reason` list are reported under `skipped`.
+worktree paths under `-v`. Bare repos are skipped (their linked worktrees,
+when under the roots, are found on their own); `--repo` on a bare repo
+checks its linked worktrees, or prints `⚠ <path>: bare repository with no
+worktrees; nothing to check`. A DIR or `--repo` path that does not exist
+exits 2 with `✗ <path>: no such directory`. A submodule is reported at its
+checkout (`rev-parse --show-toplevel`), not at `.git/modules/<name>`. Repos
+in `scan.find`'s `skip_reason` list are reported under `skipped`.
+
+Note: a bare clone with linked worktrees (`git clone --bare`, then
+`git worktree add`) usually has no `remote.origin.fetch` refspec, so it has
+no `refs/remotes/*` and its branches have no upstream: every branch with a
+commit shows as `N commits, no upstream` until the user adds the refspec
+(`git config remote.origin.fetch '+refs/heads/*:refs/remotes/origin/*'`)
+and fetches. `lost` reports what git knows; it never fetches.
+
+Read-only: git runs with `--no-optional-locks`, gc, maintenance and
+fsmonitor off, every transport protocol disallowed (`-c protocol.allow=never`
+and per protocol) and `GIT_NO_LAZY_FETCH=1`, so even a partial clone's lazy
+fetch cannot reach the remote (git < 2.44 ignores the variable; the protocol
+ban still stops it). `status` runs with `--no-renames` (rename detection would
+need blobs a partial clone lacks), `core.splitIndex=false` and the LFS filter
+emptied; a clean filter of another driver can still run when a file's stat
+data changed. Each git call runs in its own process group, killed on timeout.
 
 ### 2.2 Kinds
 
@@ -116,13 +137,29 @@ remote gone (2 repos)
 ```
 
 `--online` requires a usable account (01 `forge.accounts(cfg)`): `gh` or
-`glab` on PATH and a login for the host. When no account exists for a host,
-that host's repos are `unknown` with warning `⚠ no gh login for
-<host>; remote check skipped`. When `gh`/`glab` are both missing,
-`--online` exits 2 through `forge.no_online_error("lost", "remote check",
-...)` (01 §5.5) so a script that asked for the network cannot mistake a
-silent skip for "all remotes exist" (reviewer R-053; same rule in 05 and
-09). `[forge] online = true` makes `--online` the default.
+`glab` on PATH and a login for the host. A remote is asked as the identity
+that owns its URL (`resolve.match_url`), with that identity's
+`gh_account`/`glab_account` on its own host, else as `[default]`'s
+`gh_account` (github.com) / `glab_account` (gitlab.com); another identity's
+login is never borrowed. Remotes no account can ask, and remotes gh/glab
+could not answer, are `unknown`, summed up in one warning per host:
+`⚠ remote check failed for <host>: <reason>; N repos unknown`, or
+`⚠ remote check not supported for <host>; N repos unknown` for a host that
+is neither GitHub nor GitLab (Bitbucket etc.). Tokens (`ghp_`, `gho_`,
+`github_pat_`, `glpat-` …) and URL credentials are redacted from every
+detail and URL shown. When `gh`/`glab` are both missing, an explicit
+`--online` exits 2 (`✗ lost --online needs gh or glab on PATH …`) so a
+script that asked for the network cannot mistake a silent skip for "all
+remotes exist" (reviewer R-053; same rule in 05 and 09).
+`[forge] online = true` makes online the default; when it comes from the
+config and neither CLI is on PATH, `lost` warns
+(`⚠ [forge] online = true, but neither gh nor glab is on PATH; checking
+offline (remote gone skipped)`) and runs offline. `--offline` wins over the
+config.
+
+When no lost work is found but some checks failed, the summary reads
+`nothing lost found under <roots> (N checks failed)` instead of `✓`. A
+duplicate group's detail lists at most 10 comparisons, then `and N more`.
 
 Exit codes: 0 nothing lost, 1 something listed (any list except `stale`,
 `empty`, `skipped`), 2 error.
@@ -165,19 +202,21 @@ Lists sorted by repo path then branch/ref. `remote_gone` with status
 15 already declares the view `gitpro.lost` ("Lost Work") in the `gitpro`
 container, the commands `gitpro.lostRefresh`, `gitpro.lostOpenRepo`,
 `gitpro.lostCopyFix`, their view-title/item menus, and the welcome text
-`✓ nothing lost`. `features.ts` calls `registerLost(context, cli)` from
+`✓ nothing lost`. `features.ts` calls `registerLost(context, cli, caps)` from
 `./lost`. This package replaces `vscode/src/lost.ts` and exports:
 
 ```ts
 export function lostTree(json: LostJson): KindNode[];
-export function registerLost(context: vscode.ExtensionContext, cli: Cli): void;
+export function registerLost(context: vscode.ExtensionContext, cli: Cli, caps: Capabilities): void;
 ```
 
 Tree: kind → repo → item (branch / stash / detail). `lostOpenRepo` opens
 the folder in a new window or reveals it; `lostCopyFix` copies the `fix`
-command to the clipboard (the extension never runs push). No `--online`
-from the extension in this package. The command runs `lost --json` with no
-positional roots (the TOML decides) in the home dir, 600 s timeout.
+command to the clipboard (the extension never runs push); the copied
+command is quoted for a POSIX shell (sh, bash, zsh). The extension never
+goes online: it runs `lost --json --offline` (so `[forge] online = true`
+cannot make it ask a forge) with no positional roots (the TOML decides) in
+the home dir, 600 s timeout.
 
 ## 6. Files created/changed
 
@@ -189,7 +228,10 @@ None. Read-only command.
 |---|---|
 | a repo errors in one check | `⚠ <repo>: git <sub> failed: <first stderr line>`; other checks continue |
 | `--online`, neither gh nor glab on PATH | `✗ lost --online needs gh or glab on PATH (remote check); install one or run without --online`, exit 2 |
-| `--online`, host without a login | `⚠ no gh login for <host>; remote check skipped`, status `unknown` |
+| `--online`, host without a login or gh/glab error | `⚠ remote check failed for <host>: <reason>; N repos unknown`, status `unknown` |
+| `--online`, host not GitHub/GitLab | `⚠ remote check not supported for <host>; N repos unknown`, status `unknown` |
+| `[forge] online = true`, neither gh nor glab on PATH | `⚠ [forge] online = true, but neither gh nor glab is on PATH; checking offline (remote gone skipped)` |
+| DIR or `--repo` path missing | `✗ <path>: no such directory`, exit 2 |
 | `--only foo` | `✗ unknown kind 'foo' (unpushed, merged_gone, stash, dirty, no_remote, remote_gone, duplicate, stale, empty)` exit 2 |
 | per-repo git call > 10 s | `⚠ <repo>: timed out; skipped` |
 | duplicate objects not comparable | `diverged: null`, detail `HEADs differ; could not compare` |
@@ -242,17 +284,24 @@ Setup: 01's fixtures `cfg`, `repo_with_remote(..., commits=N)`,
     `worktrees` maps the main path to the worktree path; `-v` text shows it.
 12. `--only unpushed,stash` → only those keys non-empty; JSON still has all
     keys.
-13. `--online` with fake `gh` that prints `{"nameWithOwner":"me/tool-cli"}`
-    for `me/tool` and exits 1 with `Could not resolve to a Repository` for
-    `me/oldlib` → `remote_gone` two entries, statuses `renamed` and
-    `missing`, fix command for the renamed one. `fake_bin.calls("gh")`
-    shows `repo view me/tool --json nameWithOwner` and `env:GH_TOKEN=unset`.
-    First stdout line starts with `online:`.
+13. `--online` with fake `gh` that prints
+    `{"nameWithOwner":"corp-org/tool-cli"}` for `corp-org/tool` and exits 1
+    with `Could not resolve to a Repository` for `corp-org/oldlib` (both
+    owned by the work identity, `gh_account = "me-work"`) →
+    `remote_gone` statuses `renamed` and `missing`, fix command for the
+    renamed one. `fake_bin.calls("gh")` shows `repo view corp-org/tool
+    --json nameWithOwner` asked as `me-work` and `env:GH_TOKEN=unset`. A
+    `me/mine` remote of the personal identity (no `gh_account`) is
+    `unknown` with `identity personal has no gh_account`, never asked as
+    `me-work`. First stdout line starts with `online:`.
 14. `--online` with no `gh`/`glab` on PATH → exit 2, stderr contains
     `needs gh or glab`; JSON `ok: false`.
 15. `--online` with `gh` present but `gh auth status` reporting no login for
-    github.com → entry `status == "unknown"`, warning `no gh login`, exit
-    per other kinds.
+    github.com → entry `status == "unknown"`, warning `remote check failed
+    for github.com: gh has no login …; N repos unknown`, exit per other kinds.
+    A remote owned by an identity without `gh_account` is never asked as
+    another identity's login (13 checks this); `[default] gh_account` is
+    used when set.
 16. Roots from `[scan].roots` are used; with `gitpro.scan.effective_roots`
     monkeypatched away (`monkeypatch.delattr("gitpro.scan.effective_roots",
     raising=False)`) the fallback still uses `[scan].roots`; with
@@ -262,6 +311,15 @@ Setup: 01's fixtures `cfg`, `repo_with_remote(..., commits=N)`,
     crash.
 18. Thread pool: 6 repos → output order equals sorted path order on three
     consecutive runs.
+19. Partial clone (`--filter=blob:none` from a `file://` remote with
+    `uploadpack.allowFilter`, sparse): a staged delete of a never-fetched
+    blob plus a similar add, and a duplicate clone whose HEAD exists nowhere
+    locally → no upload-pack call (logging `uploadpack` wrapper) and no new
+    pack file; the duplicate is `could not compare`.
+20. Branch `release` plus tag `release` → listed as `release`; the fix
+    pushes `refs/heads/release`; `merged_gone` likewise.
+21. `[forge] online = true` without gh/glab → ⚠ and offline; explicit
+    `--online` exits 2; `--offline` wins over the config.
 
 node:test (`vscode/src/test/lost.test.ts`): `lostTree(json)` groups by
 kind, sorts repos, labels `feature/login · 4 commits, no upstream`;
