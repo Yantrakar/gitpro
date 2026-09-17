@@ -55,7 +55,7 @@ enable `history` or `gh`/`glab` without their flags).
 | `jetbrains` | `~/.config/JetBrains/*/options/recentProjects.xml` (macOS `~/Library/Application Support/JetBrains/*/options/`) | `<entry key="$USER_HOME$/…">` paths → same as vscode |
 | `ssh` | `~/.ssh/config`, then every file named by an `Include` directive (glob expanded relative to `~/.ssh`, read-only, depth 1), and `~/.ssh/config.d/*`; only `Host`, `HostName`, `User`, `IdentityFile`, `Port`, `Include` directives; the gitpro managed block is skipped | aliases whose `HostName` is a known forge host (`github.com`, `gitlab.com`, `bitbucket.org`, `codeberg.org`, `*.visualstudio.com`, `dev.azure.com`, `ssh.dev.azure.com`, or any host also seen in another source) → `ssh_alias`, `ssh_key`, `ssh_user`, `ssh_port` |
 | `includeif` | `git config --global --show-origin --get-regexp '^includeif\.'` | `gitdir:` and `hasconfig:remote.*.url:` conditions → roots (gitdir) and host/owner patterns; the included file's `user.name`/`user.email` (via `git config -f <file> --get`) → identity name/email |
-| `repos` | repos under the candidate roots found above plus `[scan].roots` from an existing config (`config.load_scan`), `scan.find(roots, exclude=…, max_depth=3)`, then `scan.inspect` | raw remote URLs → host/owner; local `user.email`/`user.name` per host/owner → name/email candidates |
+| `repos` | repos under the candidate roots found above plus `[scan].roots` from an existing config (`config.load_scan`); when there are none of either, `~` itself (hidden directories, `node_modules`, `~/Library`, `~/snap`, `~/go/pkg` and `__pycache__` skipped); `scan.find(roots, exclude=…, max_depth=3)`, then `scan.inspect` | raw remote URLs → host/owner; local `user.email`/`user.name` per host/owner → name/email candidates |
 | `gh`, `glab` | **`--online` only**: `forge.run(acc, ["auth", "status", "--json", "hosts"])` falling back to parsing the text of `gh auth status` when `--json` is rejected; `glab auth status`; tokens never read | logged-in accounts per host → `gh_account` / `glab_account`; the verified emails when `gh api user/emails` succeeds (needs the `user:email` scope; a 403/404 is a `⚠` with `gh auth refresh -s user:email`) |
 
 Hosts seen in one source make an ssh alias for that host count in another:
@@ -160,7 +160,15 @@ Capabilities registered: `discover`, `init.discover`.
 ```
 
 With `--history`, `sources.history` is `{"files": [...], "lines": 412,
-"secrets_skipped": 1}`.
+"secrets_skipped": 1, "truncated": [...]}`: `files` lists only the files
+actually read, `truncated` those of which only the newest lines were read.
+
+Suggested roots are directories that exist, never `/`, a parent of `~`, or
+a temp directory (`/tmp`, `/var/tmp`, `$TMPDIR`) outside `~`. An ssh `Host`
+alias applies only to scp-style and `ssh://` remotes, never to https ones; a
+`Host` that is itself a forge host, or whose `HostName` is `ssh.github.com`
+or `altssh.gitlab.com` (the forge over port 443), is not proposed as an
+`ssh_alias`.
 
 ## 4. Config keys
 
@@ -193,8 +201,9 @@ copy is made.
 | `--source bogus` | `✗ unknown source 'bogus' (history, vscode, jetbrains, ssh, includeif, repos, gh, glab)` exit 2 |
 | `--source history` without `--history` | `✗ history is read only with --history` exit 2 |
 
-Each source has a 5 s budget; history files are read line by line with a
-cap of 200 000 lines; `repos` walks at most depth 3 under each root.
+Each source has a 5 s budget (each history file has its own); of each
+history file only the newest 200 000 lines are read; `repos` walks at most
+depth 3 under each root.
 
 ## 8. Security / privacy
 
