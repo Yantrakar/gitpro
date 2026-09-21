@@ -29,8 +29,12 @@ Two rules from DECISIONS.md Q6 shape everything below:
 
 - the hook **never emits an allow decision**. Either it says nothing (the
   agent's normal permission flow continues) or it denies.
-- `warn` mode = no decision at all plus a visible message on stderr; the
-  agent's permission flow is unchanged.
+- `warn` mode = no decision at all plus a visible message (Claude Code:
+  a top-level `systemMessage`; stderr too); the agent's permission flow
+  is unchanged.
+- the deny reason never teaches a bypass: the agent is told to ask the
+  user. `GITPRO_SKIP=1` is documented for humans only (`agent status`,
+  `--help`, these docs).
 
 ## 2. CLI surface
 
@@ -94,6 +98,31 @@ Logic (`agents.decide(payload, cfg, agent) -> Decision | None`):
    - a `cd X` earlier in the same simple-command chain (`cd X && git
      …`) moves the repo dir for the commands after it; relative `X` is
      joined to `cwd`.
+   - the line context: what earlier commands change for later ones is
+     tracked with shell scoping (a `( … )` subshell, each part of a
+     pipeline and a `&` job keep their changes to themselves): `cd X`,
+     `cd -` (OLDPWD), `pushd`/`popd` (a directory stack), `export`,
+     `declare -x`/`typeset -x`, `export -n`/`declare +x`, `unset`,
+     `env -u`/`env -i`, and plain `NAME=value` shell variables.
+     `$NAME`/`${NAME}` in a `cd` target, `git -C`, `--git-dir`,
+     `--work-tree`, `env -C` and assignment values are expanded when the
+     value is known (set earlier in the line, else the hook's own
+     environment); a child shell (`sh -c`) sees only exported ones, `eval`
+     and `$( … )` see all. An unknown part (`$(…)`, an unset `$VAR`) cuts
+     the path there and the known prefix (in the end `cwd`) is judged.
+   - `for NAME in W1 … Wn; do BODY; done` with plain words (no glob,
+     braces or `$( … )`) and n ≤ 20 is judged once per word with NAME
+     bound; any other loop is judged once with NAME unknown.
+   - a here-document outside parentheses is the command's stdin, like a
+     here-string: `sh <<'EOF' … EOF`, `bash -s <<EOF`, `cat <<EOF | sh`
+     run the body as a script; an unquoted delimiter's body is scanned for
+     `$( … )` and backticks. `git -c alias.X='!…' X` parses (never runs)
+     the alias's shell command.
+   - `--dry-run`, `-n` (push), `-h`/`--help`, `--abort`/`--quit`/`--skip`
+     exempt a command only in option position: the value of an option
+     that takes one (`-m`, `-F`, `-C`, `--author`, … also glued or at the
+     end of a short cluster such as `-am`) and anything after `--` are not
+     options, so `git commit -m --dry-run` is judged.
 3. Repo dir = `-C` arg (a relative `-C` is joined to the `cd` dir, else
    to `cwd`), else `cd` prefix, else `--cwd`, else payload `cwd`. Not a
    repo → nothing (git will complain itself).
@@ -107,7 +136,8 @@ Logic (`agents.decide(payload, cfg, agent) -> Decision | None`):
    `pin_stale`, `no_identity`, `env_override` → decision per `[agents]
    hook`:
    - `block` (default once installed) → **deny**
-   - `warn` → no decision; text on stderr; exit 0
+   - `warn` → no decision; a `systemMessage` (Claude Code) and text on
+     stderr; exit 0
    - `off` → nothing
    Forge commands: checked for the identity problems above only (no `gh
    auth status` call; the agent's `gh` runs with whatever env it has;
@@ -119,22 +149,31 @@ Deny output for Claude Code (stdout, exit 0 — Claude reads the JSON):
 
 ```json
 {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
- "permissionDecisionReason": "gitpro: this commit would be committed as me@personal.test but origin (git@github.com:corp-org/app.git) belongs to identity work-github <me@corp.test>. cause: user.email is set in the repo's .git/config. Ask the user before changing anything; the fix is `git -C /home/me/work/app config --unset user.email`; the user can bypass with GITPRO_SKIP=1."}}
+ "permissionDecisionReason": "gitpro: this commit would be committed as me@personal.test but origin (git@github.com:corp-org/app.git) belongs to identity work-github <me@corp.test>. cause: user.email is set in the repo's .git/config. Ask the user before changing anything; the fix is `git -C /home/me/work/app config --unset user.email`."}}
 ```
 
 The reason always ends with the three parts *cause*, *ask the user*, *fix
-command* in that order, so the agent proposes rather than acts. The same
+command* in that order, so the agent proposes rather than acts. It does
+not mention `GITPRO_SKIP` or any other bypass (DECISIONS Q6: the message
+does not teach a bypass; an earlier draft of this example did). A fix for
+an identity variable inherited from the user's shell is the command with
+the right value as a prefix (`GIT_COMMITTER_EMAIL=<expected> git commit
+...`), never a bare `unset`, which would change nothing outside the
+hook. The same
 text is also written to stderr prefixed `✗ gitpro:` (visible in the
 transcript). gitpro does **not** use exit 2 (Claude's older "block"
 signal) because the JSON form carries the reason; see §12.
 
-Warn output: stderr only:
+Warn output: for Claude Code a top-level `systemMessage` on stdout (shown
+to the user, no permission decision), and the same line on stderr:
 
 ```
-⚠ gitpro: this commit would be committed as me@personal.test but origin … belongs to work-github <me@corp.test>; fix: git -C … config --unset user.email
+{"systemMessage": "⚠ gitpro: this commit would be committed as me@personal.test but origin … belongs to work-github <me@corp.test>; fix: git -C … config --unset user.email"}
 ```
 
-exit 0, **nothing on stdout**. Off: nothing at all.
+exit 0. Other agents: stderr only. Off: nothing at all. (Earlier drafts
+had warn stderr-only; Claude Code does not show a successful hook's
+stderr, so the warning was invisible.)
 
 There is no code path that prints `"allow"`, `"permissionDecision":
 "allow"`, `additionalContext`, or any other positive decision (test 16).
@@ -151,10 +190,13 @@ implementer checks them against the tool's docs (README §13):
 | `generic` | `{"command": "...", "cwd": "..."}` | stderr text, exit 1 | stderr, exit 0 |
 
 `agent install --agent cursor|gemini` prints `⚠ experimental: field names
-unverified; check the hook JSON against <tool>'s docs` first and needs
-`--experimental` to proceed. Codex and opencode: `agent install --agent
-codex` prints `⚠ codex has no pre-tool hook; use the git guard (gitpro
-guard install) and the MCP server (gitpro mcp) instead`, exit 0.
+unverified; check the hook JSON against <tool>'s docs` first (also when
+the `✗ … add --experimental` error follows) and needs `--experimental` to
+proceed. Codex and opencode: `agent install --agent codex` prints `⚠ codex
+has no pre-tool hook; use the git guard (gitpro guard install) and the MCP
+server (gitpro mcp) instead`, exit 0; with `--json` it is an error
+envelope, exit 2 (nothing was installed). An unknown `--agent` is `✗
+unknown agent` (JSON-aware), exit 2.
 
 ### 2.2 `agent install`
 
@@ -302,6 +344,23 @@ Hooks for MCP tool calls (agents that commit through an MCP git server
 are covered by the git guard), Windows, Codex/opencode (no pre-tool hook
 at spec time).
 
+### 9.1 Parser limits
+
+The hook reads the command; it does not run a shell, so some forms are
+judged with less than the full picture (never with a wrong "allow": the
+hook has no allow):
+
+- nesting of `sh -c` / `$( … )` / `eval` deeper than 4 levels is not
+  followed;
+- `find … -exec git …`, functions defined earlier in the line, `source`
+  of a script, and `read VAR` are not followed;
+- a repo `alias.X` from git config is expanded by a read-only `git config
+  --get` (3 s timeout; slow → no opinion); a `!` alias from config is not
+  followed;
+- commands over 64 KB skip the tokeniser and get the regex scan, which
+  reads at most 1 MB;
+- `env -i` still judges with the user's effective git config.
+
 ## 10. Acceptance tests (`tests/test_agents.py`)
 
 Use `cfg()` and `repo_with_remote`. Run checks through `agents.main`
@@ -314,10 +373,12 @@ with `monkeypatch.setattr("sys.stdin", io.StringIO(payload))` and
 3. `git commit -m x` in a correct repo → no output (**not** an allow
    JSON), exit 0.
 4. Repo-local wrong `user.email` → stdout JSON `permissionDecision ==
-   "deny"`, reason contains `config --unset user.email`, `Ask the user`
-   and `GITPRO_SKIP`; stderr starts `✗ gitpro:`; exit 0.
-5. `[agents] hook = "warn"` → **stdout empty**, stderr `⚠ gitpro:`, exit
-   0; `"off"` → no output at all.
+   "deny"`, reason contains `config --unset user.email` and `Ask the
+   user`, and does **not** contain `GITPRO_SKIP` (DECISIONS Q6); stderr
+   starts `✗ gitpro:`; exit 0.
+5. `[agents] hook = "warn"` → stdout `{"systemMessage": "⚠ gitpro: …"}`
+   (no permission decision), stderr `⚠ gitpro:`, exit 0; `"off"` → no
+   output at all.
 6. Command parsing: `cd /other/repo && git push origin main` → repo from
    `cd`; `git -C /r push` → from `-C`; `GIT_AUTHOR_EMAIL=x@y git commit`
    → author `x@y` (own email → deny; foreign email → no decision);
@@ -388,8 +449,8 @@ New `agents.py` (`ADAPTERS`, `parse_command(cmd) -> list[Call]`,
   also block but loses the structured reason.
 - No allow, ever (Q6). gitpro's silence means "no opinion"; the agent's
   own permission settings apply.
-- `warn` is stderr-only so the message reaches the user without altering
-  the agent's decision.
+- `warn` is a `systemMessage` (plus stderr) so the message reaches the
+  user without altering the agent's decision.
 - Fail open: a broken gitpro must never stop an agent; the git guard is
   the second line.
 - Project scope writes `settings.local.json` (untracked by convention).
