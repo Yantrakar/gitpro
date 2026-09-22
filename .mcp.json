@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "gitpro": {
+      "type": "stdio",
+      "command": "gitpro",
+      "args": ["mcp"]
+    }
+  }
+}
