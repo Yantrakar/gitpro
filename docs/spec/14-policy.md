@@ -34,9 +34,16 @@ a contractor's gmail address with a message pointing at the policy."
 
 ## 2. Policy file format
 
-TOML; same permission rules as the config (owned by the user, not
-group/world-writable) when loaded locally; in CI the file comes from the
-checkout and the permission check is skipped (`--range` mode).
+TOML; same permission rules as the config when loaded locally: owned by
+the user and not group/world-writable (0600 and 0644 are both accepted;
+0664 or 0666 is refused). In CI the file comes from the repository and
+the permission check is skipped (`--range` mode; see §3.1 for which
+version of an in-repo file is read). A policy file loaded from a repo
+(`.gitpro-policy.toml`) must be a regular file inside that repo: a symlink
+whose target leaves the repo is refused, and its `allowed_signers` must be
+a relative path that stays inside the repo (`~/` and `/` paths are
+refused there). A deeply nested or otherwise unparseable TOML file is an
+invalid policy (exit 2), never a crash.
 
 ```toml
 # gitpro policy — distributed by the org; users reference it from their identity
@@ -48,7 +55,7 @@ allowed_signers = "allowed_signers"       # optional: path (relative to this fil
 
 [[rule]]
 host = "github.com"
-owners = ["example-corp", "example-corp-*"]   # globs; empty = every owner on host
+owners = ["example-corp", "example-corp-*"]   # globs (case-insensitive); empty = every owner on host
 allowed_email_domains = ["example.corp", "contractors.example.corp"]
 allowed_emails = []                            # explicit exceptions (full addresses or globs)
 require_signing = true                         # commits must be signed
@@ -61,8 +68,17 @@ require_verified_email = false                 # 05: forge email must be verifie
 Validation (`policy.load(path) -> Policy`): allowed keys only, `host`
 `HOST_RE`, owners `OWNER_RE`/globs, domains `[A-Za-z0-9.-]+`, enums,
 `version` int, `allowed_signers` `PATH_RE`. Several rules may match a repo
-(host + owner); all apply. Loaded policies are cached in-process by
-`(path, mtime_ns, size)` so hooks and `team` do not re-parse.
+(host + owner); all apply. Loaded policies are cached by
+`(path, mtime_ns, size)` so one command (a `team` run, one hook run) does
+not re-parse the same file; the cache lives in the process only (R-063),
+so every hook invocation, being a new process, parses its policy once.
+
+Owner globs follow git's wildmatch with pathname rules: `*`, `?` and
+`[...]` match within one path segment and never cross `/`; `**` as a whole
+segment crosses segments (`corp/**/sub`). A rule also covers subgroups of
+an owner it matches: `owners = ["corp"]` applies to `gitlab.com/corp/team/app`
+(GitLab nested groups), and `corp/*` to `corp/team/sub/app`; `corp*sub`
+does not match `corp/team/sub`.
 
 Which policies apply to a repo: `[policy].files` (all repos) plus the
 matched identity's `policy`.
@@ -103,7 +119,36 @@ With `--range A..B` (CI mode): the commits in the range of `--repo` (or
 cwd) are checked against the policies matching the repo's `origin`. When
 no policy applies and `--policy` is not given, the check looks for
 `.gitpro-policy.toml` in the repo root, then fails `✗ no policy applies
-to <remote>`.
+to <remote>`. A user config that does not load is a warning in this mode
+(`⚠ config not used: …`) and the check goes on with the repo's policy.
+
+**The base version judges a range.** A policy file inside the repo —
+`.gitpro-policy.toml`, a `--policy FILE` whose path is inside the repo, or
+an identity's `policy` that points into it — and a relative
+`allowed_signers` it names are read from the range's base commit (`git
+show <base>:<path>`), never from the working tree, so a pull request
+cannot widen the policy that judges it (add `gmail.com`, list its own
+key). The base is the one commit the range excludes (`A` of `A..B`, the
+merge base of `A...B`); a range with no single base (`HEAD`, `A B ^C ^D`)
+is an error (exit 2) unless the policy comes from outside the repo.
+The base must be a commit of a protected branch: the Action's default
+range (`pull_request` `base.sha..head.sha`) is; a custom range whose base
+the PR author can choose is not, since the base's policy is the one that
+judges. `--policy FILE` outside the repo is read as given; a path counts
+as inside when its resolved path is in the resolved repo (any symlinked
+spelling) or its plain spelling is (a symlink in the checkout pointing
+out is then refused from the base tree). Changes made by merge commits
+count (diffed against their first parent). When the range changes
+the policy file or its `allowed_signers` (a commit in the range touches
+it, or the checkout differs from the base), the output says `⚠ this range
+changes <file>; it is judged by the base version (<base>)`; when the base
+has no policy file yet, `⚠ <file>: policy added in this range; not
+enforced until merged` and no repo policy applies (exit 0 unless another
+policy applies). The warnings go to stderr and to `warnings` in the JSON.
+Protect the policy with CODEOWNERS (`/.gitpro-policy.toml
+@example-corp/security`, the same for `allowed_signers`) and a branch
+protection rule requiring code owner review, so changes to it are
+reviewed before they start to judge.
 
 ```
 policy Example Corp engineering for github.com/example-corp/app, 4 commits in origin/main..HEAD
@@ -128,12 +173,38 @@ Signing check: `git log --format=%H%x00%G?%x00%GK%x00%GS` with
 | `X` | good, expired | signed, `⚠ expired` |
 | `Y` | good, expired key | signed, `⚠ expired key` |
 | `R` | good, revoked key | **violation** `signed with a revoked key` |
-| `E` | cannot check (missing key / no allowed signers) | signed with `⚠ unverifiable here`; a **violation** when the policy ships `allowed_signers` (then the key should be known) |
+| `E` | cannot check (missing key / no allowed signers) | signed with `⚠ unverifiable here`; a **violation** when the policy ships `allowed_signers` and requires signing: `signed by a key that is not in the policy's allowed_signers` for ssh, `gpg signature cannot be checked: the policy's allowed_signers lists ssh keys only` for gpg/x509 |
 | `B` | bad signature | violation |
 | `N` | no signature | violation |
 
-`signing_formats` is checked from `%GS`/`%GK` shape (ssh keys show the
-key type in `%GK`; gpg a fingerprint).
+`signing_formats` is checked from the signature header of each commit
+(`gpgsig` starting `-----BEGIN SSH SIGNATURE-----` is ssh, `PGP` gpg,
+`SIGNED MESSAGE` x509). Every `E` counts as unverifiable; the summary
+then adds `⚠ N signature(s) could not be verified in this environment`
+(JSON `unverifiable`).
+
+Signer and committer: git does not bind an ssh signature's principal to
+the committer email — a key listed for `alice@` verifies a commit whose
+committer claims `bob@` as `G`. Nor is `%GS` the principals field: `ssh-keygen
+-Y find-principals` prints one principal per line and git records only
+the first one that verifies, so `%GS` never shows the rest of a list or
+its `!` exclusions. gitpro therefore ignores `%GS` here and reads the
+shipped `allowed_signers` itself (in `--range` mode the base copy): every
+line whose key fingerprint (`SHA256:` + unpadded base64 of the SHA-256 of
+the decoded key blob) equals `%GK` contributes its principal patterns
+(option fields such as `namespaces="git"` and `valid-after=` and quoted
+principals are parsed; lines whose `namespaces` exclude `git`, and
+`cert-authority` lines, are skipped). On that union, OpenSSH pattern-list
+rules apply: any matching `!pattern` denies, otherwise any matching
+pattern allows (`*`/`?` globs; compared case-insensitively). When the
+policy ships `allowed_signers`, an ssh signature (`G`/`U`) whose committer
+email is not allowed this way is a violation with rule `allowed_signers`:
+`signed by <principals> (allowed_signers), but committed as <email>`.
+When no line matches `%GK` (a key certified by a `cert-authority` line),
+`%GS` alone is compared. `valid-after`/`valid-before` are left to
+ssh-keygen's own verification and not re-checked per line. gpg/x509 signatures are
+checked against this machine's keyring only; their signer identity is
+not compared with the committer (a limit of this package).
 
 Exit 1 on any violation, 0 clean, 2 errors.
 
@@ -156,61 +227,57 @@ policy: …")`, 0). Import rule as 08: stdlib + `gitpro.config` +
 
 ```
 team status (this machine)
-  identity      policy                       email  signing  key registered  trailers
-  work-github   Example Corp engineering     ✓      ✗        ⚠ (--online)    ✓
-  gitlab-work   (none)                       ·      ·        ·               ·
+  identity      policy                       email  signing  key registered  verified      trailers
+  work-github   Example Corp engineering     ✓      ✗        ⚠ (--online)    ⚠ (--online)  ✓
+  gitlab-work   (none)                       ·      ·        ·               ·             ·
 guard: installed (block)     agent hook: claude ✓
 1 identity violates its policy → gitpro check --policy
 ```
 
-`--online` adds the registered-key (09) and verified-email (05) columns
-when those modules import; without gh/glab → `forge.no_online_error`.
+`--online` fills the registered-key (09) and verified-email (05) columns
+(`verified` is `·` when no rule has `require_verified_email`). It opens
+one `forge.Session` for the identities (and `[default]` when it has an
+account) and its gate (`explicit=True`) prints the single announce line
+for every forge call of the run — the key lists and `user/emails` — first
+on stdout, on stderr under `--json` (so the JSON stays valid);
+`health.check_keys` runs with `announce=False`. A result the forge did not
+give (an account that did not answer, a token without the email scope) is
+unknown: `⚠ could not check (<reason>)`, never "not verified"; the reasons
+are `⚠` lines on stderr and `warnings` in the JSON. Without gh/glab, or
+with no identity that has a `gh_account`/`glab_account`, exit 2.
 `guard`/`agents` rows come from `gitpro.guard`/`gitpro.agents` when
 importable, else `· not installed`.
 
 ### 3.4 GitHub Action (`action.yml` at the repo root, composite)
 
-```yaml
-name: gitpro policy check
-description: Verify the commits of a pull request against a gitpro policy file
-inputs:
-  policy:
-    description: path to the policy TOML
-    default: .gitpro-policy.toml
-  range:
-    description: commit range
-    default: ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}
-  comment:
-    description: post the violations as a PR comment (needs pull-requests write permission)
-    default: "false"
-runs:
-  using: composite
-  steps:
-    - shell: bash
-      run: |
-        python3 -m venv "$RUNNER_TEMP/gitpro"
-        "$RUNNER_TEMP/gitpro/bin/pip" install --quiet "$GITHUB_ACTION_PATH"
-    - shell: bash
-      env:
-        GITPRO_POLICY: ${{ inputs.policy }}
-        GITPRO_RANGE: ${{ inputs.range }}
-      run: |
-        case "$GITPRO_RANGE" in
-          ..*|*..|"") echo "::error::gitpro: commit range is empty ($GITPRO_RANGE); run on pull_request events or pass 'range'"; exit 2 ;;
-        esac
-        if [ "$(git rev-parse --is-shallow-repository)" = true ]; then
-          echo "::error::gitpro: shallow clone; use actions/checkout with fetch-depth: 0"; exit 2
-        fi
-        "$RUNNER_TEMP/gitpro/bin/gitpro" check --policy "$GITPRO_POLICY" --range "$GITPRO_RANGE" --json | tee gitpro-policy.json
-    - if: ${{ inputs.comment == 'true' && failure() }}
-      uses: actions/github-script@v7
-      with:
-        script: |
-          const fs = require('fs');
-          const r = JSON.parse(fs.readFileSync('gitpro-policy.json', 'utf8'));
-          const body = ['gitpro policy check failed:', ...r.violations.map(v => `- ${v.sha.slice(0,7)} ${v.message}`), `contact: ${r.contact}`].join('\n');
-          await github.rest.issues.createComment({...context.repo, issue_number: context.issue.number, body});
-```
+`action.yml` is the source of truth; its header comment is the usage
+example. Inputs: `policy` (default `.gitpro-policy.toml`), `range`
+(default `${{ github.event.pull_request.base.sha }}..${{
+github.event.pull_request.head.sha }}`), `comment` (default `"false"`)
+and `working-directory` (default `.`: the checkout to check). Steps:
+
+1. `python3 -m venv "$RUNNER_TEMP/gitpro"` and `pip install --quiet
+   "$GITHUB_ACTION_PATH"`.
+2. With `GITPRO_POLICY`, `GITPRO_RANGE`, `GITPRO_WORKDIR` in `env:`: `cd`
+   to the working directory, refuse an empty range and a shallow clone
+   (`::error::`, exit 2), then `gitpro check --policy="$GITPRO_POLICY"
+   --range="$GITPRO_RANGE" --json | tee "$RUNNER_TEMP/gitpro-policy.json"`
+   (the `=` form: an input starting with `-` cannot be read as an option).
+3. `if: inputs.comment == 'true' && failure()`, `actions/github-script`:
+   skips with a notice outside pull requests and on fork PRs (their
+   `GITHUB_TOKEN` is read-only; the check step still fails the job); posts
+   `gitpro did not produce a result; see the check step` when the JSON
+   file is missing or unreadable; otherwise one line per violation (at
+   most 50). Commit-derived text (messages, warnings, contact) goes into
+   code spans with backticks and newlines replaced and every `@` followed
+   by a zero-width space, so a commit cannot inject markdown, links or
+   @mentions. A failed `createComment` (missing permission) is a notice,
+   not a second failure.
+
+The policy that judges a PR is the base version (§3.1): recommend
+CODEOWNERS on `.gitpro-policy.toml` and `allowed_signers`, and keep the
+range base a protected-branch commit (the default `base.sha..head.sha`
+is safe; the action.yml header says so).
 
 Installation from the Action's own checkout (`$GITHUB_ACTION_PATH`,
 DECISIONS Q7) into a venv under `$RUNNER_TEMP` (V-012): the runner's
@@ -227,9 +294,38 @@ with a clear `::error::` instead of letting `git rev-list ..` mean
 range incomplete. The workflow must check out with `fetch-depth: 0`. No config file is
 needed in CI mode: identity matching is skipped, rules match on the
 remote URL alone. The policy file's permission check is skipped in
-`--range` mode. GitLab CI: a documented job snippet with `pip install
-git+https://github.com/sandeepshelke/gitpro.git@<ref>` and the same
-command. License: MIT, same as the repo (Q1).
+`--range` mode. License: MIT, same as the repo (Q1).
+
+GitLab CI (merge request pipelines), ready to paste into `.gitlab-ci.yml`.
+The base version of the policy judges here too. With
+`CI_MERGE_REQUEST_DIFF_BASE_SHA` (always set) the base is the MR's fork
+point, so the policy as of the fork point judges it — a policy tightened
+on the target branch since then is not applied. Merged results pipelines
+also set `CI_MERGE_REQUEST_TARGET_BRANCH_SHA` (the target branch tip):
+the snippet prefers it, so the current target-branch policy judges. Both
+are commits of the protected target branch, as the base must be. gitpro
+refuses to run as root and most CI images run as root, so the job runs it
+as an ordinary user; `pipefail` keeps `tee` from hiding the exit code:
+
+```yaml
+gitpro-policy:
+  image: python:3.12
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  variables:
+    GIT_DEPTH: "0"                # the whole history; a shallow clone is refused
+  script:
+    - git fetch --quiet origin "$CI_MERGE_REQUEST_TARGET_BRANCH_NAME"
+    - useradd --create-home ci && chown -R ci "$CI_PROJECT_DIR"
+    - su ci -c 'python3 -m venv ~/gitpro && ~/gitpro/bin/pip install --quiet "git+https://github.com/sandeepshelke/gitpro.git@<ref>"'
+    - su ci -s /bin/bash -c 'set -o pipefail; ~/gitpro/bin/gitpro check --policy .gitpro-policy.toml --range "${CI_MERGE_REQUEST_TARGET_BRANCH_SHA:-$CI_MERGE_REQUEST_DIFF_BASE_SHA}..$CI_COMMIT_SHA" --json | tee gitpro-policy.json'
+  artifacts:
+    when: always
+    paths: [gitpro-policy.json]
+```
+
+Protect `.gitpro-policy.toml` with a CODEOWNERS entry and "require code
+owner approval" on the protected branch.
 
 Capabilities registered: `policy`, `check.policy`, `team`.
 
@@ -249,7 +345,9 @@ Capabilities registered: `policy`, `check.policy`, `team`.
 Machine mode: `"mode": "machine", "identities": [{"id", "policy",
 "checks": [{"name": "signing", "ok": false, "message", "fix"}]}]`.
 `team --json`: `{"ok", "command": "team", "identities": [...same...],
-"guard": {...06 status...}|null, "agents": {...10 status...}|null}`.
+"guard": {...06 status...}|null, "agents": {...10 status...}|null,
+"warnings": [...forge warnings, --online...]}`. `check --policy --range`
+also carries `"unverifiable": N` and `"warnings": [...]` (§3.1).
 `policy show --json`: the matching rules. `policy lint --json`: `{"ok",
 "errors": [...]}`.
 
@@ -266,7 +364,10 @@ None in this package. 15's tooltip shows `policy: <name> ✓/✗` when `why
 `check_report(report) -> list[Problem]` yields problems with code
 `policy`. `cli.build_parser` imports `gitpro.policy` through
 `EXTENSIONS`, so every command that calls `resolve.compare` after parsing
-(`why`, `scan`, `check`) sees policy problems; the hot path (`guard
+(`why`, and the other commands built on `resolve.compare`) sees policy
+problems; `scan` does not call `compare`. Plain `gitpro check` (no
+`--policy`/`--range`/`--repo`) stays the "would `apply` change anything"
+check of 00 §4.4 and does not look at policies; the hot path (`guard
 check`) gets them through `HOOKS` entries instead and does not import
 `policy` for `compare`. There is no try-import in `resolve`.
 
@@ -279,18 +380,29 @@ None. All commands are read-only. `action.yml` is repo content.
 | situation | message | exit |
 |---|---|---|
 | policy file missing | `✗ policy <path>: not found (identity work-github)` | 2 |
-| policy file world-writable (local mode) | same message as config | 2 |
+| policy file group/world-writable (local mode) | same message as config | 2 |
+| policy file not valid TOML (also: nested too deeply) | `✗ <path>: invalid TOML: …` | 2 |
+| repo policy or its `allowed_signers` leaves the repo (symlink, `~/`, `/`) | `✗ … leaves the repo (a symlink?); refused` / `allowed_signers must be a path inside the repo` | 2 |
+| `--range` without a single base and an in-repo policy | `✗ the range … has no single base commit to read <file> from; …` | 2 |
+| `--range` changes the policy / `allowed_signers` | `⚠ this range changes <file>; it is judged by the base version (<base>)` | (as judged) |
+| `--range` adds the policy | `⚠ <file>: policy added in this range; not enforced until merged` | 0 |
+| `--range` with a broken user config | `⚠ config not used: …`, the repo policy applies | (as judged) |
 | invalid policy | `✗ <path>: <where>: <problem>` | 2 |
 | `--range` with no policy | `✗ no policy applies to <remote>; pass --policy FILE or add .gitpro-policy.toml` | 2 |
 | `allowed_signers` path missing | `✗ <policy>: allowed_signers <path> not found` | 2 |
 | no commits in range | `✓ no commits in <range>` | 0 |
-| `team --online` without gh/glab | `forge.no_online_error` | 2 |
+| `team --online` without gh/glab | `✗ team --online needs gh or glab on PATH …` | 2 |
+| `team --online`, no identity has a forge account | `✗ team: no identity has a gh_account or glab_account; nothing to ask` | 2 |
 
 ## 9. Security / privacy
 
 Policy files are data, never executed. CI mode reads commit metadata only.
 `require_verified_email` needs `--online` and goes through 05's rules. The
-Action uses the default token only for the optional comment step.
+Action uses the default token only for the optional comment step, and
+puts commit-derived text into code spans there (§3.4). In `--range` mode
+an in-repo policy and its `allowed_signers` come from the range base, so
+the reviewed, merged version judges a PR (§3.1); the remaining trust is in
+who may merge changes to the policy file (CODEOWNERS).
 
 ## 10. Out of scope / future
 
@@ -322,9 +434,12 @@ and an allowed_signers file.
    expected `rule` values and `which`; exit 1; JSON has `contact`; the
    signed commit has `signing.status == "G"`.
 6. Range mode without a config file (CI) and `--policy` → works, matches
-   by remote only; policy file mode 0644 accepted in `--range` mode,
-   refused in machine mode.
-7. `.gitpro-policy.toml` in the repo root and no `--policy` → found.
+   by remote only; policy file mode 0644 accepted (in every mode);
+   group/world-writable (0664) refused in machine mode, accepted in
+   `--range` mode.
+7. `.gitpro-policy.toml` committed in the range base and no `--policy` →
+   found; a policy the range widens is judged by the base version; a
+   policy the range adds is not enforced (warning).
 8. No policy applies and none found → exit 2.
 9. `%G?` table: a commit signed with a key **not** in the allowed signers
    (`E`) → signed with `⚠` when the policy has no `allowed_signers`,
@@ -369,7 +484,13 @@ New `policy.py` (`load`, `applicable(repo_or_url, cfg)`, `check_machine`,
 
 > Teams describe their rules once in a policy TOML (allowed email domains
 > per owner, signing required, trailer rules). Point an identity's
-> `policy` at it: `gitpro check` reports what this machine violates, the
-> guard blocks offending commits, and `gitpro check --policy FILE --range
-> base..head` verifies a PR in CI (`uses: sandeepshelke/gitpro@main`).
-> `gitpro team` is the one-screen summary.
+> `policy` at it: `gitpro check --repo .` (in a repo) or `gitpro check
+> --policy FILE` (every identity) reports what this machine violates, and
+> `gitpro why` shows the policy problems of a repo next to the identity
+> ones. The guard blocks offending commits, and `gitpro check --policy
+> FILE --range base..head` verifies a PR in CI (`uses:
+> sandeepshelke/gitpro@main`; the policy file is read from the PR's base,
+> so protect it with CODEOWNERS). `gitpro team` is the one-screen summary
+> and ends with the `gitpro check --policy …` command for the details.
+> Plain `gitpro check` is unchanged: it only says whether `gitpro apply`
+> would change anything.
