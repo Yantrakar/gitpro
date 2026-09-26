@@ -1,0 +1,104 @@
+# gitpro policy check: verify the commits of a pull request against a gitpro policy file (spec 14 §3.4).
+#
+#   on: pull_request
+#   jobs:
+#     policy:
+#       runs-on: ubuntu-latest
+#       permissions:
+#         contents: read
+#         pull-requests: write  # only with comment: "true"
+#       steps:
+#         - uses: actions/checkout@v4
+#           with:
+#             fetch-depth: 0    # the whole history: a shallow clone makes the range incomplete and is refused
+#         - uses: sandeepshelke/gitpro@<ref>
+#           with:
+#             policy: .gitpro-policy.toml
+#
+# The base version judges a PR: a policy file inside the repo, and the allowed_signers file it names, are
+# read from the range's base commit, never from the PR's checkout, so a PR cannot widen the policy that
+# checks it (it gets a warning when it changes them; a policy the PR adds is not enforced until merged).
+# So the range base must be a commit of a protected branch: the default range
+# (pull_request base.sha..head.sha) is; a custom `range` whose base the PR author controls is not.
+# Protect the policy with CODEOWNERS, e.g. a line "/.gitpro-policy.toml @example-corp/security" (and one
+# for allowed_signers) plus a branch protection rule that requires code owner review.
+#
+# Fork PRs get a read-only GITHUB_TOKEN: with comment: "true" the comment step then skips with a notice,
+# and the check step still fails the job.
+#
+# Inputs reach the shell only through env:, never interpolated into run: blocks.
+# License: MIT, same as the repo.
+name: gitpro policy check
+description: Verify the commits of a pull request against a gitpro policy file
+inputs:
+  policy:
+    description: path to the policy TOML (inside the repo it is read from the range base)
+    default: .gitpro-policy.toml
+  range:
+    description: commit range
+    default: ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}
+  comment:
+    description: post the violations as a PR comment (needs pull-requests write permission; skipped on fork PRs)
+    default: "false"
+  working-directory:
+    description: the checkout to check, when it is not the workspace root
+    default: "."
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        python3 -m venv "$RUNNER_TEMP/gitpro"
+        "$RUNNER_TEMP/gitpro/bin/pip" install --quiet "$GITHUB_ACTION_PATH"
+    - shell: bash
+      env:
+        GITPRO_POLICY: ${{ inputs.policy }}
+        GITPRO_RANGE: ${{ inputs.range }}
+        GITPRO_WORKDIR: ${{ inputs.working-directory }}
+      run: |
+        rm -f "$RUNNER_TEMP/gitpro-policy.json"
+        cd -- "${GITPRO_WORKDIR:-.}"
+        case "$GITPRO_RANGE" in
+          ..*|*..|"") echo "::error::gitpro: commit range is empty ($GITPRO_RANGE); run on pull_request events or pass 'range'"; exit 2 ;;
+        esac
+        if [ "$(git rev-parse --is-shallow-repository)" = true ]; then
+          echo "::error::gitpro: shallow clone; use actions/checkout with fetch-depth: 0"; exit 2
+        fi
+        "$RUNNER_TEMP/gitpro/bin/gitpro" check --policy="$GITPRO_POLICY" --range="$GITPRO_RANGE" --json | tee "$RUNNER_TEMP/gitpro-policy.json"
+    - if: ${{ inputs.comment == 'true' && failure() }}
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const fs = require('fs');
+          const path = require('path');
+          const pr = context.payload.pull_request;
+          if (!pr) { core.notice('gitpro: not a pull request event; no comment posted'); return; }
+          const head = pr.head && pr.head.repo ? pr.head.repo.full_name : '';
+          if (head !== context.payload.repository.full_name) {
+            core.notice('gitpro: fork pull request (read-only token); no comment posted, see the check step');
+            return;
+          }
+          // commit-derived text goes into code spans: no markdown, no @mentions, no links
+          const code = (t) => '`' + String(t == null ? '' : t).replace(/[`\r\n]/g, "'").replace(/@/g, '@\u200b').slice(0, 300) + '`';
+          const file = path.join(process.env.RUNNER_TEMP, 'gitpro-policy.json');
+          let body;
+          let r = null;
+          try {
+            if (fs.existsSync(file) && fs.statSync(file).size > 0) r = JSON.parse(fs.readFileSync(file, 'utf8'));
+          } catch (e) { r = null; }
+          if (!r) {
+            body = 'gitpro did not produce a result; see the check step';
+          } else {
+            const vs = r.violations || [];
+            const lines = vs.slice(0, 50).map(v => `- ${code(String(v.sha || '').slice(0, 7))} ${code(v.message)}`);
+            if (vs.length > 50) lines.push(`- ... and ${vs.length - 50} more; see the check step`);
+            body = ['gitpro policy check failed:', ...lines,
+                    ...(r.warnings || []).map(w => `- warning: ${code(w)}`),
+                    r.error ? `error: ${code(r.error)}` : '',
+                    r.contact ? `contact: ${code(r.contact)}` : ''].filter(Boolean).join('\n');
+          }
+          try {
+            await github.rest.issues.createComment({...context.repo, issue_number: pr.number, body});
+          } catch (e) {
+            core.notice(`gitpro: could not post the comment (${e.status || e.message}); see the check step`);
+          }
