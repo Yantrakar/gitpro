@@ -1060,3 +1060,11 @@ def test_plain_check_untouched(capsys, cfg):
     assert out_json(capsys)["up_to_date"] is True
 
 
+def test_doctor_section(home, work_policy):
+    from gitpro import doctor
+    c = config.load_all(write_config(home, config_text(email="me@example.corp")))
+    sec = policy.doctor_section(doctor.Ctx(home=home, cfg=c))
+    assert sec["status"] == "error" and "sign = false" in sec["problems"][0]["message"]
+    c2 = config.load_all(write_config(home, config_text().replace('policy = "~/work/gitpro-policy.toml"\n', "")))
+    sec = policy.doctor_section(doctor.Ctx(home=home, cfg=c2))
+    assert sec["status"] == "ok" and "no policy" in sec["summary"]

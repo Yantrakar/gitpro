@@ -585,8 +585,31 @@ def test_no_keys_configured(home, cfg, fakes, capsys):
 
 # ---------------------------------------------------------------- doctor (16) with the real module
 
+def test_doctor_uses_real_health(home, cfg, fakes, capsys):
+    import gitpro.health as health
+    setup(cfg, home, NOPASS_CONFIG)
+    data = health.check_keys(_load(home), online=False, announce=False, home=home)
+    assert data["summary"] == "2 keys · 1 without passphrase" and data["status"] == "warning"
+    assert "command" not in data
+    rc = run("doctor", "--json")
+    out = capsys.readouterr()
+    s = {x["name"]: x for x in json.loads(out.out)["sections"]}
+    assert s["keys"]["status"] == "warning" and "1 without passphrase" in s["keys"]["summary"]
+    assert any("~/.ssh/id_nopass: no passphrase" in json.dumps(p) for p in s["keys"]["problems"])
+    assert s["forge"]["status"] == "skipped"
+    assert rc in (0, 1)
 
 
+def test_doctor_online_announces_once(home, cfg, fakes, capsys):
+    setup(cfg, home, ONLINE_CONFIG)
+    with_gh(fakes, gh_row("id_work") + gh_row("id_personal"))
+    ssh_says(fakes, {"git@github.com": [1, HI]})
+    run("doctor", "--json", "--online")
+    out = capsys.readouterr()
+    s = {x["name"]: x for x in json.loads(out.out)["sections"]}
+    assert (out.err + out.out).count("online: asking") <= 1
+    assert isinstance(s["keys"]["summary"], str) and isinstance(s["forge"]["summary"], str)
+    assert TOKEN not in out.out + out.err
 
 
 def _load(home):
