@@ -331,6 +331,11 @@ def test_in_container(monkeypatch, tmp_path):  # 7
     assert dc.CONTAINER_ENV == ("REMOTE_CONTAINERS", "CODESPACES", "DEVCONTAINER")
 
 
+def test_container_list_matches_the_extension():
+    ts = (ROOT / "vscode/src/identityBar.ts").read_text()
+    assert 'CONTAINER_ENV = ["REMOTE_CONTAINERS", "CODESPACES", "DEVCONTAINER"]' in ts
+    assert 'DOCKERENV = "/.dockerenv"' in ts
+    assert 'DOCKERENV = Path("/.dockerenv")' in (ROOT / "src/gitpro/devcontainer.py").read_text()
 
 
 def test_status_stale_pin(repo, home, capsys, cfg):  # 8
@@ -386,6 +391,13 @@ def test_written_line_round_trips(repo, home, capsys):  # 9
         assert json.load(f)["initializeCommand"] == LINE
 
 
+def test_typescript_mirrors_the_line():
+    ts = (ROOT / "vscode/src/devcontainer.ts").read_text()
+    assert "STUB" not in ts
+    body = ts.split("export const LINE = [", 1)[1].split("].join(", 1)[0]
+    assert json.loads("[" + body.strip().rstrip(",") + "]") == LINE.split("\n")
+    assert json.dumps(dc.MERGED) in ts
+    assert json.dumps(dc.NOTE) in ts
 
 
 # ---------------------------------------------------------------- help, capabilities
