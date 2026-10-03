@@ -1,0 +1,317 @@
+{
+  "name": "gitpro",
+  "displayName": "gitpro",
+  "description": "Shows the git name and email this repo commits with, finds repos that override gitpro, and runs gitpro plan, apply and pin.",
+  "version": "0.2.0-dev.0",
+  "publisher": "sandeepshelke",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sandeepshelke/gitpro"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "SCM Providers",
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished",
+    "onView:gitpro.lost"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "gitpro.which",
+        "title": "Show Identity for This Repo",
+        "category": "gitpro"
+      },
+      {
+        "command": "gitpro.plan",
+        "title": "Plan",
+        "category": "gitpro"
+      },
+      {
+        "command": "gitpro.apply",
+        "title": "Apply",
+        "category": "gitpro"
+      },
+      {
+        "command": "gitpro.pin",
+        "title": "Pin Identity to This Repo (for Dev Containers)",
+        "category": "gitpro"
+      },
+      {
+        "command": "gitpro.unpin",
+        "title": "Unpin Identity from This Repo",
+        "category": "gitpro"
+      },
+      {
+        "command": "gitpro.openConfig",
+        "title": "Open Config",
+        "category": "gitpro"
+      },
+      {
+        "command": "gitpro.refresh",
+        "title": "Refresh Status",
+        "category": "gitpro"
+      },
+      {
+        "command": "gitpro.scan",
+        "title": "Scan Repos for Overrides",
+        "category": "gitpro",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "gitpro.scanFix",
+        "title": "Fix Checked",
+        "category": "gitpro",
+        "icon": "$(check-all)"
+      },
+      {
+        "command": "gitpro.scanReview",
+        "title": "Review One by One",
+        "category": "gitpro",
+        "icon": "$(list-ordered)"
+      },
+      {
+        "command": "gitpro.scanSuggest",
+        "title": "Suggest Identities",
+        "category": "gitpro",
+        "icon": "$(lightbulb)"
+      },
+      {
+        "command": "gitpro.openRepoConfig",
+        "title": "Open .git/config",
+        "category": "gitpro"
+      },
+      {
+        "command": "gitpro.scanRoots",
+        "title": "Choose Scan Roots…",
+        "category": "gitpro",
+        "icon": "$(folder-library)"
+      },
+      {
+        "command": "gitpro.lostRefresh",
+        "title": "Find Lost Work",
+        "category": "gitpro",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "gitpro.lostOpenRepo",
+        "title": "Open Repo",
+        "category": "gitpro",
+        "icon": "$(folder-opened)"
+      },
+      {
+        "command": "gitpro.lostCopyFix",
+        "title": "Copy Fix Command",
+        "category": "gitpro",
+        "icon": "$(copy)"
+      },
+      {
+        "command": "gitpro.clone",
+        "title": "Clone…",
+        "category": "gitpro"
+      },
+      {
+        "command": "gitpro.copyEnv",
+        "title": "Copy env for terminal",
+        "category": "gitpro"
+      },
+      {
+        "command": "gitpro.devcontainerSetup",
+        "title": "Set up devcontainer pin",
+        "category": "gitpro"
+      },
+      {
+        "command": "gitpro.doctor",
+        "title": "Doctor",
+        "category": "gitpro"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "gitpro",
+          "title": "gitpro",
+          "icon": "media/gitpro.svg"
+        }
+      ]
+    },
+    "views": {
+      "gitpro": [
+        {
+          "id": "gitpro.overrides",
+          "name": "Repo Overrides"
+        },
+        {
+          "id": "gitpro.lost",
+          "name": "Lost Work"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "gitpro.overrides",
+        "when": "!gitpro.scanState",
+        "contents": "Finds repos whose own .git/config sets user.name or user.email, which beats gitpro.\n[Scan](command:gitpro.scan)"
+      },
+      {
+        "view": "gitpro.overrides",
+        "when": "gitpro.scanState == scanning",
+        "contents": "Scanning your repos. A whole home directory takes a few seconds."
+      },
+      {
+        "view": "gitpro.overrides",
+        "when": "gitpro.scanState == failed",
+        "contents": "The scan failed; the gitpro output has the details. If gitpro is not on your PATH, set gitpro.path.\n[Scan Again](command:gitpro.scan)\n[Open Settings](command:workbench.action.openSettings?%22gitpro.path%22)"
+      },
+      {
+        "view": "gitpro.overrides",
+        "when": "gitpro.scanState == done",
+        "contents": "No repo overrides gitpro.\n[Scan](command:gitpro.scan)"
+      },
+      {
+        "view": "gitpro.lost",
+        "when": "!gitpro.lostState",
+        "contents": "Finds commits, stashes and branches that exist only on this machine: unpushed, stashed, or left in a deleted branch.\n[Find Lost Work](command:gitpro.lostRefresh)"
+      },
+      {
+        "view": "gitpro.lost",
+        "when": "gitpro.lostState == scanning",
+        "contents": "Looking for lost work in your repos."
+      },
+      {
+        "view": "gitpro.lost",
+        "when": "gitpro.lostState == failed",
+        "contents": "The search failed; the gitpro output has the details.\n[Try Again](command:gitpro.lostRefresh)"
+      },
+      {
+        "view": "gitpro.lost",
+        "when": "gitpro.lostState == done",
+        "contents": "✓ nothing lost\n[Look Again](command:gitpro.lostRefresh)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "gitpro.scan",
+          "when": "view == gitpro.overrides",
+          "group": "navigation@1"
+        },
+        {
+          "command": "gitpro.scanReview",
+          "when": "view == gitpro.overrides",
+          "group": "navigation@2"
+        },
+        {
+          "command": "gitpro.scanFix",
+          "when": "view == gitpro.overrides",
+          "group": "navigation@3"
+        },
+        {
+          "command": "gitpro.scanSuggest",
+          "when": "view == gitpro.overrides",
+          "group": "navigation@4"
+        },
+        {
+          "command": "gitpro.scanRoots",
+          "when": "view == gitpro.overrides",
+          "group": "navigation@5"
+        },
+        {
+          "command": "gitpro.lostRefresh",
+          "when": "view == gitpro.lost",
+          "group": "navigation@1"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "gitpro.openRepoConfig",
+          "when": "false"
+        },
+        {
+          "command": "gitpro.scanRoots"
+        },
+        {
+          "command": "gitpro.lostOpenRepo",
+          "when": "false"
+        },
+        {
+          "command": "gitpro.lostCopyFix",
+          "when": "false"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "gitpro.lostOpenRepo",
+          "when": "view == gitpro.lost && viewItem == lostRepo",
+          "group": "inline"
+        },
+        {
+          "command": "gitpro.lostCopyFix",
+          "when": "view == gitpro.lost && viewItem == lostItem",
+          "group": "inline"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "gitpro.scanRoots",
+          "when": "explorerResourceIsFolder",
+          "group": "gitpro@1"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "gitpro",
+      "properties": {
+        "gitpro.path": {
+          "type": "string",
+          "default": "gitpro",
+          "markdownDescription": "Path to the `gitpro` command. Install it with `pipx install git+https://github.com/sandeepshelke/gitpro.git`."
+        },
+        "gitpro.scanDirs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "markdownDescription": "Directories the Repo Overrides view scans (`gitpro scan DIR...`). Empty: your home directory."
+        },
+        "gitpro.statusBar.showKey": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Show the SSH key's file name next to the identity in the status bar (`work-github · id_work`)."
+        },
+        "gitpro.statusBar.refreshSeconds": {
+          "type": "integer",
+          "default": 0,
+          "minimum": 0,
+          "markdownDescription": "Also refresh the status bar every this many seconds. `0`: only on file, editor, focus and terminal changes."
+        },
+        "gitpro.lost.showOnStartup": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Look for lost work when VS Code starts, and show the Lost Work view if it finds any."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p .",
+    "dev": "tsc -p . && code --extensionDevelopmentPath=\"$PWD\"",
+    "test": "tsc -p . && node --test out/test/*.test.js",
+    "package": "vsce package",
+    "test:integration": "tsc -p . && node out/test/integration/runTest.js"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "~1.85.0",
+    "@vscode/test-electron": "^2.4.0",
+    "@vscode/vsce": "^4.0.0",
+    "typescript": "^5.4.0"
+  }
+}

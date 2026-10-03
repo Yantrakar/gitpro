@@ -614,8 +614,34 @@ def test_module_is_stdlib_only():
 
 # ---------------------------------------------------------------- doctor (16 integration)
 
+def test_doctor_section_shapes(home):
+    from gitpro import doctor
+    sec = mcp.doctor_section(doctor.Ctx(home))
+    assert sec["status"] == "ok" and "not registered" in sec["summary"]
+    assert run("mcp", "install", "-y") == 0
+    sec = mcp.doctor_section(doctor.Ctx(home))
+    assert sec["status"] == "ok" and "claude" in sec["summary"] and sec["problems"] == []
+    (home / ".cursor").mkdir()
+    (home / ".cursor/mcp.json").write_text("{broken")
+    sec = mcp.doctor_section(doctor.Ctx(home))
+    assert sec["status"] == "warning" and "mcp.json" in sec["problems"][0]["message"]
 
 
+def test_doctor_uses_real_module(home, cfg, capsys, monkeypatch):
+    cfg()
+    agents = types.ModuleType("gitpro.agents")
+    agents.status_data = lambda home, explicit_config=None: {
+        "mode": "block", "agents": {"claude": {"user": None, "project": None, "plugin": None}}, "warnings": []}
+    monkeypatch.setitem(sys.modules, "gitpro.agents", agents)
+    for name in ("gitpro.guard", "gitpro.health", "gitpro.policy"):
+        monkeypatch.setitem(sys.modules, name, None)
+    monkeypatch.setitem(sys.modules, "gitpro.mcp", mcp)
+    assert run("mcp", "install", "-y") == 0
+    capsys.readouterr()
+    run("doctor", "--json")
+    data = json.loads(capsys.readouterr().out)
+    sec = {s["name"]: s for s in data["sections"]}["agents"]
+    assert "mcp registered: claude" in sec["summary"]
 
 
 # ---------------------------------------------------------------- QA fixes: other packages' signatures
@@ -768,6 +794,13 @@ def test_redact_url_masks_secret_query_values(url, shown):
     assert redact_url(url) == shown
 
 
+def test_redact_url_secret_keys_match_the_extension():
+    import re
+    from pathlib import Path
+    from gitpro.resolve import SECRET_QUERY_KEYS
+    ts = (Path(__file__).parent.parent / "vscode" / "src" / "exec.ts").read_text()
+    keys = re.search(r"const SECRET_KEYS = \[(.*?)\];", ts, re.S)
+    assert keys and tuple(re.findall(r'"([^"]+)"', keys[1])) == SECRET_QUERY_KEYS
 
 
 @pytest.fixture
