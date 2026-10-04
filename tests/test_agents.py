@@ -444,6 +444,15 @@ def test_status_text_and_guard_stub(home, cfg, monkeypatch, capsys):  # 14
 
 # ---------------------------------------------------------------- 15: plugin files
 
+def test_plugin_hooks_file():  # 15
+    data = json.loads((ROOT / "hooks/hooks.json").read_text())
+    [entry] = data["hooks"]["PreToolUse"]
+    [hook] = entry["hooks"]
+    assert entry["matcher"] == "Bash" and hook["type"] == "command" and hook["timeout"] == 10
+    assert "gitpro agent-check --agent claude" in hook["command"] and "command -v gitpro" in hook["command"]
+    assert hook["command"] == agents.hook_command(None)
+    manifest = json.loads((ROOT / ".claude-plugin/plugin.json").read_text())
+    assert "hooks" not in manifest
 
 
 # ---------------------------------------------------------------- 15a: tokeniser

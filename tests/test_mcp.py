@@ -602,6 +602,11 @@ def test_capabilities(capsys):
 
 # ---------------------------------------------------------------- static (16)
 
+def test_plugin_files():
+    data = json.loads((ROOT / ".mcp.json").read_text())
+    assert data == {"mcpServers": {"gitpro": ENTRY}}
+    manifest = json.loads((ROOT / ".claude-plugin/plugin.json").read_text())
+    assert "mcpServers" not in manifest
 
 
 def test_module_is_stdlib_only():
