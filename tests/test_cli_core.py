@@ -75,15 +75,23 @@ def test_check_json(cfg, home, capsys):  # 23
 def test_version(capsys):  # 24
     assert run("--version") == 0
     assert capsys.readouterr().out == f"gitpro {gitpro.__version__}\n"
-    assert gitpro.__version__ == "0.2.0.dev0"
+    assert gitpro.__version__ == "0.2.0"
     assert run("--version", "--json") == 0
     data = json.loads(capsys.readouterr().out)
-    assert data["ok"] is True and data["command"] == "version" and data["version"] == "0.2.0.dev0"
+    assert data["ok"] is True and data["command"] == "version" and data["version"] == "0.2.0"
     assert data["python"] == ".".join(map(str, sys.version_info[:3]))
     assert {"why", "why.config", "which.json", "check.json"} <= set(data["capabilities"])
     assert data["capabilities"] == sorted(data["capabilities"])
 
 
+def test_versions_agree():  # 28
+    # Python uses PEP 440 (0.2.0.dev0); the JSON manifests need semver, which VS Code enforces (0.2.0-dev.0).
+    v = gitpro.__version__.replace(".dev", "-dev.")
+    assert re.fullmatch(r"\d+\.\d+\.\d+(-dev\.\d+)?", v)
+    assert json.loads((ROOT / "vscode/package.json").read_text())["version"] == v
+    assert json.loads((ROOT / ".claude-plugin/plugin.json").read_text())["version"] == v
+    market = json.loads((ROOT / ".claude-plugin/marketplace.json").read_text())
+    assert [p["version"] for p in market["plugins"]] == [v]
 
 
 # ---------------------------------------------------------------- errors as JSON (25)
