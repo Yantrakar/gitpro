@@ -1,7 +1,9 @@
+from pathlib import Path
+
 import pytest
 
 from gitpro import render
-from gitpro.config import ConfigError, Identity
+from gitpro.config import ConfigError, Default, Identity
 
 
 def test_with_block_is_idempotent_and_placed():
@@ -50,3 +52,11 @@ def test_extra_git_config():
                      "[pull]", '    ff = "only"']
     with pytest.raises(ConfigError, match="bad git key"):
         render.git_lines({"core": {"bad key": 1}}, "w")
+
+
+def test_explicit_sign_false_can_still_be_overridden_by_git_extras():
+    i = Identity(id="w", name="n", email="e@x.test", host="github.com", sign=False,
+                 git={"commit": {"gpgsign": True}})
+    settings = render.identity_settings(i, Default(), Path)
+    assert settings["commit"]["gpgsign"] is True
+    assert settings["tag"]["gpgsign"] is False

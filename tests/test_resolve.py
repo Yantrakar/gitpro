@@ -406,6 +406,33 @@ def test_signing_and_keys(cfg, tmp_path):  # 20
     assert "key_mismatch" not in [p.code for p in rep.problems]
 
 
+@pytest.mark.parametrize("default_sign", [False, True])
+def test_later_identity_can_explicitly_disable_signing(cfg, tmp_path, default_sign):
+    text = SIGN_CONFIG + """
+[[identity]]
+id = "unsigned"
+name = "Unsigned Me"
+email = "unsigned@corp.test"
+host = "github.com"
+owners = ["corp-org"]
+sign = false
+"""
+    if default_sign:
+        text = text.replace('email = "me@default.test"',
+                            'email = "me@default.test"\nssh_key = "~/.ssh/id_default"\nsign = true')
+    c = load(cfg(text))
+    repo = repo_with_remote(tmp_path, "app", "git@github.com:corp-org/app.git")
+    rep = resolve.compare(repo, c)
+    assert rep.expected.id == "unsigned" and not rep.expected.sign and rep.ok()
+    assert git(repo, "config", "--bool", "commit.gpgsign") == "false"
+    assert git(repo, "config", "--bool", "tag.gpgsign") == "false"
+    for argv in (("commit", "--allow-empty", "-qm", "unsigned"), ("tag", "-am", "unsigned", "unsigned")):
+        subprocess.run(["git", "-C", str(repo), *argv], check=True, capture_output=True, timeout=60)
+    assert "gpgsig " not in git(repo, "cat-file", "commit", "HEAD")
+    assert "BEGIN SSH SIGNATURE" not in git(repo, "cat-file", "tag", "unsigned")
+    assert run("check") == 0
+
+
 def test_git_dir_in_env_is_ignored(cfg, tmp_path, monkeypatch):  # 21
     path = cfg()
     other = repo_with_remote(tmp_path, "other", "git@github.com:me/x.git")
@@ -424,6 +451,8 @@ def test_remote_argument_restricts_matching(cfg, tmp_path):
     assert resolve.expected(repo, c, remote="origin").id == "work-github"
     assert resolve.expected(repo, c, remote="git@github.com:corp-org/x.git").id == "work-github"
     assert resolve.expected(repo, c, remote="fork").match.remote == "fork"
+
+
 
 
 def test_global_override_and_not_applied(cfg, home, tmp_path):

@@ -152,7 +152,7 @@ def identity_settings(i: Identity, d: Default, expand: Expand) -> dict:
         base["core"] = {"sshCommand": f"ssh -i {_shell_path(i.ssh_key)} -o IdentitiesOnly=yes"}
     if signs(i, d):
         base = merge(base, _sign_cfg(expand(i.ssh_key or d.ssh_key)))
-    elif d.sign:
+    elif i.sign is False:
         base = merge(base, {"commit": {"gpgsign": False}, "tag": {"gpgsign": False}})
     return merge(base, i.git)
 
