@@ -130,9 +130,19 @@ def build(cfg: Config, env: Env) -> tuple[list[Target], list[Path]]:
     """Return (targets, stale generated files to remove). Callers holding (Default, list[Identity])
     wrap them: build(Config(d, ids), env)."""
     d, ids = cfg.default, list(cfg.identities)
+    reserved = [env.home / name for name in (MANAGED_GITCONFIG, ".gitconfig", ALLOWED_SIGNERS,
+                                             ".ssh/config", ".ssh/" + MANAGED_SSH)]
+    reserved += guard_paths(env)
+    if cfg.path is not None:
+        reserved.append(cfg.path)
+    used = {p.resolve(): str(p) for p in reserved}
     for i in ids:
-        check(env.home in env.expand(i.file).resolve().parents,
-              f"identity {i.id!r}: file must be inside {env.home}")
+        path = env.expand(i.file).resolve()
+        check(env.home in path.parents, f"identity {i.id!r}: file must be inside {env.home}")
+        for other, owner in used.items():
+            check(path != other and path not in other.parents and other not in path.parents,
+                  f"identity {i.id!r}: file {i.file} conflicts with {owner}")
+        used[path] = f"identity {i.id!r} file {i.file}"
 
     extra = [Target(env.expand(i.file), render.identity_gitconfig(i, d, env.expand)) for i in ids]
     signers = _signers(d, ids, env)
