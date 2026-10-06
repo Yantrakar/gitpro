@@ -6,7 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from conftest import git, repo_with_remote, run, write_config
+from conftest import commit, git, repo_with_remote, run, write_config
+from gitpro import files, pin, plan
 
 CONFIG = """
 [default]
@@ -76,6 +77,65 @@ def test_check_reports_drift(home):
     run("apply", "-y")
     (home / ".gitconfig-work-gitlab").write_text("tampered\n")
     assert run("check") == 1
+
+
+@pytest.mark.parametrize("target", [
+    ".gitconfig-identities", ".gitconfig", ".ssh/config", ".ssh/config.d/git-identities",
+    ".config/git/allowed_signers", ".gitconfig-gitpro-guard", ".config/gitpro/hooks/pre-commit",
+    ".config/gitpro/hooks/README", ".config/gitpro.toml", ".ssh", ".gitconfig-identities/nested",
+])
+def test_identity_output_conflicts_write_nothing(home, capsys, target):
+    write_config(home, CONFIG)
+    assert run("apply", "-y") == 0
+    text = CONFIG.replace('id = "work-github"', f'id = "work-github"\nfile = "~/{target}"')
+    write_config(home, text)
+    before = {p: p.read_bytes() for p in home.rglob("*") if p.is_file()}
+    capsys.readouterr()
+    for argv in (("plan",), ("apply", "-y"), ("check",)):
+        assert run(*argv) == 2
+        assert "conflicts with" in capsys.readouterr().err
+        assert {p: p.read_bytes() for p in home.rglob("*") if p.is_file()} == before
+
+
+@pytest.mark.parametrize("identity", ["identities", "gitpro-guard"])
+def test_reserved_identity_filename_is_rejected(home, capsys, identity):
+    write_config(home, CONFIG.replace('id = "work-github"', f'id = "{identity}"'))
+    assert run("apply", "-y") == 2
+    assert "conflicts with" in capsys.readouterr().err
+    assert not (home / plan.MANAGED_GITCONFIG).exists()
+
+
+@pytest.mark.parametrize("symlink", [False, True])
+def test_identity_output_paths_are_compared_after_resolution(home, capsys, symlink):
+    first = home / "shared"
+    second = home / "linked" if symlink else first
+    if symlink:
+        second.symlink_to(first)
+    text = CONFIG.replace('id = "work-gitlab"', 'id = "work-gitlab"\nfile = "~/shared"')
+    text = text.replace('id = "work-github"', f'id = "work-github"\nfile = "{second}"')
+    write_config(home, text)
+    assert run("apply", "-y") == 2
+    assert "conflicts with identity 'work-gitlab'" in capsys.readouterr().err
+    assert not first.exists()
+    assert not (home / plan.MANAGED_GITCONFIG).exists()
+
+
+def test_identity_symlink_cannot_alias_managed_file(home, capsys):
+    target = home / plan.MANAGED_GITCONFIG
+    (home / "linked").symlink_to(target)
+    write_config(home, CONFIG.replace('id = "work-github"', 'id = "work-github"\nfile = "~/linked"'))
+    assert run("apply", "-y") == 2
+    assert "conflicts with" in capsys.readouterr().err
+    assert (home / "linked").is_symlink() and not target.exists()
+
+
+def test_reserved_identity_id_with_distinct_custom_file_is_valid(home, tmp_path):
+    text = CONFIG.replace('id = "work-github"', 'id = "identities"\nfile = "~/work-identity"')
+    write_config(home, text)
+    assert run("apply", "-y") == 0
+    repo = repo_with_remote(tmp_path, "personal", "git@github.com:someone/app.git")
+    assert git(repo, "config", "user.email") == "me@personal.test"
+    assert run("check") == 0
 
 
 def test_hand_written_files_are_kept_and_backed_up(home):
@@ -231,6 +291,14 @@ def test_pin_refuses_identity_not_from_us(home, tmp_path, capsys):
     repo = repo_with_remote(tmp_path, "app", "git@github.com:corp-org/app.git")
     assert run("pin", str(repo)) == 2
     assert "not from gitpro" in capsys.readouterr().err
+
+
+
+
+
+
+
+
 
 
 def test_scan_reports_and_removes_repo_overrides(home, tmp_path, capsys):
