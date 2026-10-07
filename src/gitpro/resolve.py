@@ -420,7 +420,11 @@ def _expand(p: str) -> str:
     return os.path.expanduser(p)
 
 
-def _candidates(urls: List[Tuple[str, str]], remote: Optional[str]) -> List[Tuple[Optional[str], str]]:
+def _candidates(urls: List[Tuple[str, str]], remote: Optional[str],
+                remote_url: Optional[str] = None) -> List[Tuple[Optional[str], str]]:
+    if remote_url is not None:
+        name = remote if any(n == remote for n, _ in urls) else None
+        return [(name, remote_url)]
     if remote is None:
         return list(urls)
     named = [(n, u) for n, u in urls if n == remote]
@@ -483,11 +487,12 @@ def _expected_for(cfg: Config, urls: List[Tuple[Optional[str], str]]) -> Expecte
                     Match(None, None, None, None, rule), signingkey)
 
 
-def expected(repo: Path, cfg: Config, *, remote: Optional[str] = None) -> Expected:
+def expected(repo: Path, cfg: Config, *, remote: Optional[str] = None,
+             remote_url: Optional[str] = None) -> Expected:
     """The identity git should apply in repo. remote= restricts matching to one remote name, or to a
-    url (pre-push with `git push <url>`)."""
+    url (pre-push with `git push <url>`). remote_url= judges that destination instead of the fetch URLs."""
     _need_layout(Path(repo))
-    return _expected_for(cfg, _candidates(_remote_urls(Path(repo)), remote))
+    return _expected_for(cfg, _candidates(_remote_urls(Path(repo)), remote, remote_url))
 
 
 # ---------------------------------------------------------------- effective
@@ -643,20 +648,23 @@ def _home_has_block(home: Path) -> bool:
 
 
 def compare(repo: Path, cfg: Config, *, remote: Optional[str] = None,
-            env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> Report:
+            remote_url: Optional[str] = None, env: Optional[Mapping[str, str]] = None,
+            home: Optional[Path] = None) -> Report:
     """Expected vs effective, with every problem that applies (order: PROBLEM_CODES, then EXTRA_CHECKS).
-    remote= is a remote name or a url. env= is the environment whose GIT_AUTHOR_*/GIT_COMMITTER_* are
+    remote= is a remote name or a url; remote_url= overrides its fetch URLs with the push destination.
+    env= is the environment whose GIT_AUTHOR_*/GIT_COMMITTER_* are
     judged (default os.environ; a git hook passes one without GIT_AUTHOR_*, which git always exports
     there). home= is where ~/.gitconfig is looked for (default: the real home; `--home` passes its own).
     Child git processes never see GIT_DIR/GIT_WORK_TREE/GIT_INDEX_FILE/GIT_PREFIX/GIT_COMMON_DIR."""
     repo = Path(repo)
     eff, lay, urls = _effective(repo)
     top = lay.root
-    exp = _expected_for(cfg, _candidates(urls, remote))
+    candidates = _candidates(urls, remote, remote_url)
+    exp = _expected_for(cfg, candidates)
     env = os.environ if env is None else env
     who = _who(exp)
     out: List[Problem] = []
-    first_url = urls[0][1] if urls else None
+    first_url = candidates[0][1] if candidates else None
 
     if exp.email is None:
         out.append(_p("no_identity", f"no identity for {redact_url(first_url) or top}",
@@ -664,11 +672,12 @@ def compare(repo: Path, cfg: Config, *, remote: Optional[str] = None,
                       f"add an identity: gitpro scan --suggest --repo {shlex.quote(str(top))}"))
 
     if exp.match.identity is None:
-        for name, url in _candidates(urls, remote):
+        for name, url in candidates:
             fixes = _url_fixes(url, cfg)
             if fixes:
                 fixed, reason, i, pat = fixes[0]
-                argv = ["git", "-C", str(top), "remote", "set-url", name, fixed] if name else None
+                argv = ["git", "-C", str(top), "remote", "set-url", name, fixed] \
+                    if name and remote_url is None else None
                 need = pat.replace("**", "…")
                 out.append(_p("url_form", f"{name or 'the remote'} is {redact_url(url)}; the {i.id} patterns need {need} "
                                           f"({reason})", argv))
@@ -863,4 +872,3 @@ def cmd_why(args) -> int:
     else:
         print(render_text(rep, cfg), end="")
     return 0 if rep.ok() else 1
-

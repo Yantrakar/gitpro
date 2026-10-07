@@ -172,7 +172,8 @@ def _check(name: str, argv: List[str], stdin: Optional[str], repo: Optional[Path
     report = committer = author = None
     if name in ("pre-commit", "pre-push"):
         remote = argv[0] if name == "pre-push" and argv else None
-        report = resolve.compare(repo, cfg, remote=remote, env=judged)
+        destination = argv[1] if name == "pre-push" and len(argv) > 1 else None
+        report = resolve.compare(repo, cfg, remote=remote, remote_url=destination, env=judged)
         repo = report.repo
         if name == "pre-commit":
             committer = _ident_email(ident_at, "COMMITTER", os.environ)
