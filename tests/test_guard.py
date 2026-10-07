@@ -66,12 +66,22 @@ def installed(g, capsys):
 
 
 @pytest.fixture
-def work(installed, tmp_path):
-    """A repo whose origin belongs to work-github, pushing to a local bare repo through insteadOf."""
+def work(installed, tmp_path, fake_bin):
+    """Loopback SSH preserves the destination URL Git passes to pre-push; insteadOf would replace it."""
     bare = tmp_path / "remotes" / "app.git"
     subprocess.run(["git", "init", "-q", "--bare", str(bare)], check=True, timeout=TIMEOUT)
+    routes = {"corp-org/app.git": str(bare), "me/app.git": str(bare.with_name("personal.git")),
+              "someone/app.git": str(bare.with_name("default.git"))}
+    ssh = fake_bin.path / "ssh"
+    ssh.write_text(f"#!{sys.executable}\n"
+                   "import os, shlex, sys\n"
+                   "args = shlex.split(sys.argv[-1])\n"
+                   f"routes = {routes!r}\n"
+                   "if len(args) != 2 or args[0] not in ('git-upload-pack', 'git-receive-pack') "
+                   "or args[1] not in routes:\n    sys.exit(1)\n"
+                   f"os.execv({shutil.which('git')!r}, ['git', args[0][4:], routes[args[1]]])\n")
+    ssh.chmod(0o755)
     repo = repo_with_remote(tmp_path, "app", WORK)
-    git(repo, "config", f"url.{bare}.insteadOf", WORK)
     git(repo, "checkout", "-q", "-b", "main")
     return repo
 
@@ -590,6 +600,47 @@ def test_pre_push_by_url(work):
     _wrong(work, "wrong")
     r = gitc(work, "push", WORK, "main")
     assert r.returncode != 0 and f"to {WORK}" in r.stderr
+
+
+@pytest.mark.parametrize("setting", ["pushurl", "insteadOf", "pushInsteadOf"])
+@pytest.mark.parametrize("owner, email, target", [
+    ("me", "me@personal.test", "personal.git"),
+    ("someone", "me@default.test", "default.git"),
+])
+def test_pre_push_checks_actual_destination(work, tmp_path, setting, owner, email, target):
+    destination = f"git@github.com:{owner}/app.git"
+    bare = tmp_path / "remotes" / target
+    subprocess.run(["git", "init", "-q", "--bare", str(bare)], check=True, timeout=TIMEOUT)
+    if setting == "pushurl":
+        git(work, "config", "remote.origin.pushurl", destination)
+    else:
+        git(work, "config", f"url.{destination}.{setting}", WORK)
+    assert gcommit(work, "work identity").returncode == 0
+    r = gitc(work, "push", "origin", "main")
+    assert r.returncode != 0 and "committed as me@corp.test" in r.stderr and email in r.stderr
+    assert git(bare, "show-ref", "--heads") == ""
+    r = gcommit(work, "destination identity", "--amend", "--reset-author",
+                GIT_AUTHOR_NAME="Me", GIT_AUTHOR_EMAIL=email,
+                GIT_COMMITTER_NAME="Me", GIT_COMMITTER_EMAIL=email, GITPRO_SKIP="1")
+    assert r.returncode == 0, r.stderr
+    r = gitc(work, "push", "origin", "main")
+    assert r.returncode == 0, r.stderr
+    assert git(bare, "rev-parse", "refs/heads/main") == git(work, "rev-parse", "HEAD")
+
+
+def test_pre_push_loads_destination_identity_policy(work, cfg, installed, tmp_path):
+    pol = installed / "personal-policy.toml"
+    pol.write_text('[policy]\nname = "Personal"\nversion = 1\n'
+                   '[[rule]]\nhost = "github.com"\nowners = ["me"]\n'
+                   'allowed_email_domains = ["personal.test"]\n')
+    cfg(DEFAULT_CONFIG.replace('id = "personal"', f'id = "personal"\npolicy = "{pol}"'))
+    bare = tmp_path / "remotes" / "personal.git"
+    subprocess.run(["git", "init", "-q", "--bare", str(bare)], check=True, timeout=TIMEOUT)
+    git(work, "config", "remote.origin.pushurl", "git@github.com:me/app.git")
+    _wrong(work, "colleague", "colleague@other.test")
+    r = gitc(work, "push", "origin", "main")
+    assert r.returncode != 0 and "this push breaks policy Personal" in r.stderr
+    assert git(bare, "show-ref", "--heads") == ""
 
 
 def test_pre_push_teammates_commits_pass(work):

@@ -453,6 +453,21 @@ def test_remote_argument_restricts_matching(cfg, tmp_path):
     assert resolve.expected(repo, c, remote="fork").match.remote == "fork"
 
 
+@pytest.mark.parametrize("destination, identity", [
+    ("git@github.com:me/app.git", "personal"),
+    ("git@github.com:someone/app.git", None),
+])
+def test_push_destination_overrides_fetch_urls(cfg, tmp_path, destination, identity):
+    c = load(cfg())
+    repo = repo_with_remote(tmp_path, "app", "git@github.com:corp-org/app.git")
+    git(repo, "config", "remote.origin.pushurl", destination)
+    assert resolve.expected(repo, c).id == "work-github"
+    exp = resolve.expected(repo, c, remote="origin", remote_url=destination)
+    rep = resolve.compare(repo, c, remote="origin", remote_url=destination)
+    assert rep.expected == exp and exp.id == identity
+    assert rep.effective.remotes["origin"] == "git@github.com:corp-org/app.git"
+    if identity is not None:
+        assert exp.match.remote == "origin" and exp.match.url == destination
 
 
 def test_global_override_and_not_applied(cfg, home, tmp_path):
