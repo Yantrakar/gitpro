@@ -32,6 +32,25 @@ export interface Report {
   unmatched: string[];
 }
 
+/** Reject malformed CLI reports before they become a tree or a fix plan. Extra envelope fields are allowed. */
+export function isReport(value: unknown): value is Report {
+  const object = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === "object" && !Array.isArray(v);
+  const strings = (v: unknown): v is string[] => Array.isArray(v) && v.every((s) => typeof s === "string");
+  const pair = (v: unknown): boolean => object(v) && typeof v.name === "string" && typeof v.email === "string";
+  return object(value) && strings(value.roots) && typeof value.repos === "number" &&
+    Number.isInteger(value.repos) && value.repos >= 0 &&
+    Array.isArray(value.unreadable) && value.unreadable.every((v: unknown) =>
+      object(v) && typeof v.path === "string" && typeof v.reason === "string" && typeof v.error === "string") &&
+    Array.isArray(value.overrides) && value.overrides.every((v: unknown) =>
+      object(v) && typeof v.path === "string" && typeof v.short === "string" && typeof v.remote === "string" &&
+      typeof v.owner === "string" && pair(v.now) && pair(v.after) && strings(v.fixable) &&
+      Array.isArray(v.settings) && v.settings.every((s: unknown) =>
+        object(s) && typeof s.key === "string" && typeof s.value === "string" &&
+        (s.without === null || typeof s.without === "string"))) &&
+    Array.isArray(value.suggestions) && value.suggestions.every((v: unknown) =>
+      object(v) && typeof v.id === "string" && typeof v.toml === "string") && strings(value.unmatched);
+}
+
 /** What `gitpro scan --fix --json` prints. */
 export interface Fixed {
   removed: { path: string; key: string; value: string }[];

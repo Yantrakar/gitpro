@@ -2,6 +2,7 @@
 // Runs last (name order): it leaves the test repo without any identity.
 import * as assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
+import * as fs from "node:fs";
 import * as path from "node:path";
 import * as vscode from "vscode";
 import type { Api } from "../../extension";
@@ -53,6 +54,7 @@ async function overrides(api: Api): Promise<void> {
   await vscode.commands.executeCommand("gitpro.scan");
   assert.equal(api.scanState(), "failed");
   assert.deepEqual(api.overrides(), []);
+  await malformedReports(api);
   await cfg.update("path", env("GI_GITPRO"), vscode.ConfigurationTarget.Workspace);
   await api.reloadCapabilities();
   await vscode.commands.executeCommand("gitpro.scan");
@@ -98,6 +100,37 @@ async function overrides(api: Api): Promise<void> {
   const local = spawnSync("git", ["-C", scanRepo, "config", "--local", "--get", "user.email"]);
   assert.equal(local.status, 1, "the repo's own user.email is still there");
   assert.deepEqual(api.overrides(), []);
+}
+
+async function malformedReports(api: Api): Promise<void> {
+  const cfg = vscode.workspace.getConfiguration("gitpro");
+  const wrapper = path.join(env("GI_HOME"), "gitpro-malformed");
+  const payload = path.join(env("GI_HOME"), "scan-response.json");
+  const sq = (s: string) => `'${s.replace(/'/g, "'\\''")}'`;
+  fs.writeFileSync(wrapper, `#!/bin/sh\nif [ "$1" = scan ]; then\ncat ${sq(payload)}\nexit 0\nfi\n`
+    + `exec ${sq(env("GI_GITPRO"))} "$@"\n`, { mode: 0o700 });
+  try {
+    await cfg.update("path", wrapper, vscode.ConfigurationTarget.Workspace);
+    await api.reloadCapabilities();
+    for (const body of ["{", "null", "{}", JSON.stringify({
+      roots: [], repos: 1, unreadable: [], overrides: [{}], suggestions: [], unmatched: [],
+    })]) {
+      fs.writeFileSync(payload, body);
+      await withUi(api, {}, async (seen) => {
+        await vscode.commands.executeCommand("gitpro.scan");
+        assert.equal(api.scanState(), "failed", body);
+        assert.deepEqual(api.overrides(), [], body);
+        assert.equal(api.scanMessage(), undefined);
+        assert.equal(seen.error.length, 1);
+        assert.match(seen.error[0], body === "{" ? /no JSON/ : /invalid scan report/);
+      });
+    }
+  } finally {
+    await cfg.update("path", env("GI_GITPRO"), vscode.ConfigurationTarget.Workspace);
+    await api.reloadCapabilities();
+    fs.rmSync(wrapper, { force: true });
+    fs.rmSync(payload, { force: true });
+  }
 }
 
 async function noIdentity(api: Api): Promise<void> {
