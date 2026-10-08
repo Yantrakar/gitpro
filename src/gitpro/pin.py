@@ -6,6 +6,7 @@ plain [user] file included from .git/config carries the name and email along.
 """
 from __future__ import annotations
 
+import stat
 import subprocess
 from pathlib import Path
 
@@ -62,12 +63,13 @@ def pin(repo: str) -> tuple[str, str, Path]:
     """Write the identity git resolves for repo now (name, email) into the repo; return them."""
     path = _pin_file(repo)
     check(not path.is_symlink(), f"{path}: pin file must not be a symlink; replace it with a regular file")
-    previous = path.read_text() if path.exists() else None
-    check(previous is None or render.is_generated(previous), f"{path} exists and was not written by us")
+    previous = path.read_bytes() if path.exists() else None
+    check(previous is None or render.is_generated(previous.decode()), f"{path} exists and was not written by us")
     base = resolve._need_layout(Path(repo)).base
     name, email = (_resolved(repo, key, path, base) for key in ("user.name", "user.email"))
     included = git(repo, "config", "--local", "--fixed-value", "--get-all", "include.path", FILE, ok=(0, 1)) != ""
-    mode = path.stat().st_mode & 0o755 if previous is not None else 0o600
+    previous_mode = stat.S_IMODE(path.stat().st_mode) if previous is not None else 0o600
+    mode = previous_mode & 0o755
     text = (f"{render.HEADER}\n# Re-run 'gitpro pin' after changing the config.\n"
             f"[user]\n{render.INDENT}name = {render.gval(name)}\n{render.INDENT}email = {render.gval(email)}\n")
     files.atomic_write(path, text, mode)
@@ -78,6 +80,6 @@ def pin(repo: str) -> tuple[str, str, Path]:
             if previous is None:
                 path.unlink()
             else:
-                files.atomic_write(path, previous, mode)
+                files.atomic_write(path, previous, previous_mode)
             raise
     return name, email, path

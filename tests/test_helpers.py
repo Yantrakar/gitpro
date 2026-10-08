@@ -66,6 +66,15 @@ def test_atomic_write_through_symlink(tmp_path):  # 33
     assert files._atomic_write is files.atomic_write
 
 
+def test_atomic_write_preserves_bytes(tmp_path):
+    path = tmp_path / "data"
+    data = b"first\r\nsecond\r\n\xff"
+    files.atomic_write(path, data, 0o660)
+    assert path.read_bytes() == data
+    assert path.stat().st_mode & 0o777 == 0o660
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["data"]
+
+
 # ---------------------------------------------------------------- jsonfile (34)
 
 def _yes(seen):

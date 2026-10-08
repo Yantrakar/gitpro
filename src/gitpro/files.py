@@ -87,14 +87,14 @@ def _backup(path: Path) -> Path:
     raise OSError(f"no free backup name for {path}")
 
 
-def atomic_write(path: Path, text: str, mode: int) -> None:
+def atomic_write(path: Path, text: str | bytes, mode: int) -> None:
     """Replace path's content atomically: temp file in the same directory, fsync, rename.
     A symlink is never replaced: the write goes to its target, in the target's directory."""
     path = Path(os.path.realpath(path)) if Path(path).is_symlink() else Path(path)
     path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.")
     try:
-        with os.fdopen(fd, "w") as f:
+        with os.fdopen(fd, "wb" if isinstance(text, bytes) else "w") as f:
             f.write(text)
             f.flush()
             os.fsync(f.fileno())
