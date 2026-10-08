@@ -9,7 +9,7 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-from . import render
+from . import files, render, resolve
 from .config import ConfigError, check
 
 FILE = "git-identities"  # in the repo's common git dir; .git/config includes it by this relative path
@@ -26,11 +26,16 @@ def _pin_file(repo: str) -> Path:
     return Path(git(repo, "rev-parse", "--path-format=absolute", "--git-common-dir")) / FILE
 
 
-def _resolved(repo: str, key: str) -> str:
+def _resolved(repo: str, key: str, pin_path: Path, base: Path) -> str:
     """key's value, if it comes from a file we generated (not, say, a hand-written ~/.gitconfig in a container)."""
-    origin, _, value = git(repo, "config", "--show-origin", "--get", key, ok=(0, 1)).partition("\t")
+    entries = git(repo, "config", "-z", "--show-origin", "--get-all", key, ok=(0, 1)).split("\0")
+    origin, value, src = "", "", None
+    for found_origin, found_value in zip(entries[::2], entries[1::2]):
+        found_src = (base / found_origin[len("file:"):]).resolve() if found_origin.startswith("file:") else None
+        if found_src == pin_path.resolve():
+            continue
+        origin, value, src = found_origin, found_value, found_src
     check(value, f"git resolves no {key} for this repo; nothing to pin")
-    src = Path(origin[len("file:"):]) if origin.startswith("file:") else None
     check(src is not None and src.is_file() and render.is_generated(src.read_text()),
           f"{key} comes from {origin}, not from gitpro; run 'gitpro apply', "
           "and run pin on the host, not inside the container")
@@ -56,10 +61,23 @@ def unpin(repo: str) -> bool:
 def pin(repo: str) -> tuple[str, str, Path]:
     """Write the identity git resolves for repo now (name, email) into the repo; return them."""
     path = _pin_file(repo)
-    check(not path.exists() or render.is_generated(path.read_text()), f"{path} exists and was not written by us")
-    unpin(repo)  # resolve without a previous pin
-    name, email = (_resolved(repo, key) for key in ("user.name", "user.email"))
-    path.write_text(f"{render.HEADER}\n# Re-run 'gitpro pin' after changing the config.\n"
-                    f"[user]\n{render.INDENT}name = {render.gval(name)}\n{render.INDENT}email = {render.gval(email)}\n")
-    git(repo, "config", "--local", "--add", "include.path", FILE)
+    check(not path.is_symlink(), f"{path}: pin file must not be a symlink; replace it with a regular file")
+    previous = path.read_text() if path.exists() else None
+    check(previous is None or render.is_generated(previous), f"{path} exists and was not written by us")
+    base = resolve._need_layout(Path(repo)).base
+    name, email = (_resolved(repo, key, path, base) for key in ("user.name", "user.email"))
+    included = git(repo, "config", "--local", "--fixed-value", "--get-all", "include.path", FILE, ok=(0, 1)) != ""
+    mode = path.stat().st_mode & 0o755 if previous is not None else 0o600
+    text = (f"{render.HEADER}\n# Re-run 'gitpro pin' after changing the config.\n"
+            f"[user]\n{render.INDENT}name = {render.gval(name)}\n{render.INDENT}email = {render.gval(email)}\n")
+    files.atomic_write(path, text, mode)
+    if not included:
+        try:
+            git(repo, "config", "--local", "--add", "include.path", FILE)
+        except BaseException:
+            if previous is None:
+                path.unlink()
+            else:
+                files.atomic_write(path, previous, mode)
+            raise
     return name, email, path

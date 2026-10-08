@@ -293,12 +293,81 @@ def test_pin_refuses_identity_not_from_us(home, tmp_path, capsys):
     assert "not from gitpro" in capsys.readouterr().err
 
 
+@pytest.mark.parametrize("failure", ["override", "container", "write"])
+def test_failed_repin_keeps_existing_pin(cfg, home, tmp_path, monkeypatch, capsys, failure):
+    cfg()
+    repo = repo_with_remote(tmp_path, "app", "git@github.com:corp-org/app.git")
+    assert run("pin", str(repo)) == 0
+    path = repo / ".git" / pin.FILE
+    if failure == "override":
+        git(repo, "config", "user.email", "other@corp.test")
+    elif failure == "container":
+        container = tmp_path / "container"
+        container.mkdir()
+        (container / ".gitconfig").write_text((home / ".gitconfig").read_text())
+        monkeypatch.setenv("HOME", str(container))
+    else:
+        def fail_write(*args):
+            raise OSError("pin write failed")
+        monkeypatch.setattr(files, "atomic_write", fail_write)
+    before = path.read_bytes(), path.stat().st_mode, (repo / ".git/config").read_bytes()
+    capsys.readouterr()
+    assert run("pin", str(repo)) == 2
+    assert capsys.readouterr().err
+    assert (path.read_bytes(), path.stat().st_mode, (repo / ".git/config").read_bytes()) == before
 
 
+@pytest.mark.parametrize("existing_file", [False, True])
+def test_failed_pin_include_rolls_back_file(cfg, tmp_path, capsys, existing_file):
+    cfg()
+    repo = repo_with_remote(tmp_path, "app", "git@github.com:corp-org/app.git")
+    path = repo / ".git" / pin.FILE
+    if existing_file:
+        assert run("pin", str(repo)) == 0
+        git(repo, "config", "--local", "--unset-all", "include.path")
+        path.write_text(path.read_text().replace("me@corp.test", "old@corp.test"))
+    previous = path.read_bytes() if existing_file else None
+    before = (repo / ".git/config").read_bytes()
+    (repo / ".git/config.lock").write_text("another git process\n")
+    capsys.readouterr()
+    assert run("pin", str(repo)) == 2
+    assert "lock" in capsys.readouterr().err
+    assert (path.read_bytes() if path.exists() else None) == previous
+    assert (repo / ".git/config").read_bytes() == before
 
 
+def test_pin_refuses_symlink_without_changing_its_target(cfg, home, tmp_path, capsys):
+    cfg()
+    repo = repo_with_remote(tmp_path, "app", "git@github.com:corp-org/app.git")
+    target = home / plan.MANAGED_GITCONFIG
+    path = repo / ".git" / pin.FILE
+    path.symlink_to(target)
+    before = target.read_bytes(), (repo / ".git/config").read_bytes()
+    assert run("pin", str(repo)) == 2
+    assert "pin file must not be a symlink" in capsys.readouterr().err
+    assert path.is_symlink()
+    assert (target.read_bytes(), (repo / ".git/config").read_bytes()) == before
 
 
+@pytest.mark.parametrize("worktree", [False, True])
+def test_repin_from_subdir_refreshes_without_changing_config(cfg, tmp_path, worktree):
+    config_path = cfg()
+    repo = repo_with_remote(tmp_path, "app", "git@github.com:corp-org/app.git")
+    commit(repo, "initial")
+    if worktree:
+        linked = tmp_path / "linked"
+        subprocess.run(["git", "-C", str(repo), "worktree", "add", "--quiet", "--detach", str(linked)],
+                       check=True, capture_output=True, timeout=60)
+        repo = linked
+    assert run("pin", str(repo)) == 0
+    common = Path(git(repo, "rev-parse", "--path-format=absolute", "--git-common-dir"))
+    before = (common / "config").read_bytes()
+    cfg(config_path.read_text().replace("me@corp.test", "new@corp.test"))
+    subdir = repo / "sub/deep"
+    subdir.mkdir(parents=True)
+    assert run("pin", str(subdir)) == 0
+    assert git(repo, "config", "user.email") == "new@corp.test"
+    assert (common / "config").read_bytes() == before
 
 
 def test_scan_reports_and_removes_repo_overrides(home, tmp_path, capsys):
