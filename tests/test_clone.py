@@ -6,6 +6,8 @@ import stat
 import subprocess
 import sys
 import time
+from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
 
@@ -418,7 +420,9 @@ def _alive(pid):
         return True
 
 
-def test_sigterm_stops_git_and_ssh_and_removes_the_partial_clone(cfg, tmp_path):
+@pytest.mark.skipif(os.name == "nt", reason="POSIX process groups")
+@pytest.mark.parametrize("ignore_term", [False, True])
+def test_sigterm_stops_git_and_ssh_and_removes_the_partial_clone(cfg, tmp_path, ignore_term):
     """VS Code's cancel: SIGTERM to gitpro stops git and the ssh it started (a fake one that hangs) and removes
     the target plus the parents gitpro made. Started without a terminal, like the extension starts it."""
     cfg()
@@ -426,7 +430,8 @@ def test_sigterm_stops_git_and_ssh_and_removes_the_partial_clone(cfg, tmp_path):
     bin_.mkdir()
     pidfile = tmp_path / "ssh.pid"
     ssh = bin_ / "ssh"
-    ssh.write_text(f"#!/bin/sh\necho $$ > '{pidfile}'\nexec sleep 60\n")
+    trap = "trap '' TERM\n" if ignore_term else ""
+    ssh.write_text(f"#!/bin/sh\n{trap}echo $$ > '{pidfile}'\nexec sleep 60\n")
     ssh.chmod(0o755)
     dest = tmp_path / "base/sub/app"
     env = dict(os.environ, PATH=f"{bin_}{os.pathsep}{os.environ['PATH']}", GIT_TERMINAL_PROMPT="0",
@@ -434,6 +439,7 @@ def test_sigterm_stops_git_and_ssh_and_removes_the_partial_clone(cfg, tmp_path):
     proc = subprocess.Popen([sys.executable, "-m", "gitpro", "clone", "git@github.com:corp-org/app.git", str(dest),
                              "-y"], env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                             stderr=subprocess.PIPE, start_new_session=True)
+    pid = None
     try:
         deadline = time.monotonic() + 20
         while not (pidfile.exists() and pidfile.read_text().strip()):
@@ -444,19 +450,64 @@ def test_sigterm_stops_git_and_ssh_and_removes_the_partial_clone(cfg, tmp_path):
         assert dest.is_dir()
         proc.send_signal(signal.SIGTERM)
         _, err = proc.communicate(timeout=20)
+        assert proc.returncode == 130, err
+        assert f"removed the partial clone {dest}" in err.decode()
+        assert not (tmp_path / "base").exists()
+        deadline = time.monotonic() + 5
+        while _alive(pid) and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert not _alive(pid), "the fake ssh outlived gitpro"
     finally:
         if proc.poll() is None:
             os.killpg(proc.pid, signal.SIGKILL)
             proc.wait()
-    assert proc.returncode == 130, err
-    assert f"removed the partial clone {dest}" in err.decode()
-    assert not (tmp_path / "base").exists()
-    deadline = time.monotonic() + 5
-    while _alive(pid) and time.monotonic() < deadline:
-        time.sleep(0.05)
-    if _alive(pid):
-        os.kill(pid, signal.SIGKILL)
-        pytest.fail("the fake ssh outlived gitpro")
+        if pid is not None and _alive(pid):
+            os.kill(pid, signal.SIGKILL)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX process groups")
+def test_stop_signals_descendants_after_group_leader_already_exited(tmp_path):
+    pidfile = tmp_path / "child.pid"
+    child = ("import os, signal, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); "
+             f"open({str(pidfile)!r}, 'w').write(str(os.getpid())); time.sleep(60)")
+    leader = f"import subprocess, sys; subprocess.Popen([sys.executable, '-c', {child!r}])"
+    proc = subprocess.Popen([sys.executable, "-c", leader], start_new_session=True,
+                            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    pid = None
+    try:
+        proc.wait(timeout=10)
+        deadline = time.monotonic() + 10
+        while not (pidfile.exists() and pidfile.read_text().strip()):
+            assert time.monotonic() < deadline, "child never started"
+            time.sleep(0.05)
+        pid = int(pidfile.read_text())
+        assert _alive(pid)
+        clone._stop(proc, True)
+        deadline = time.monotonic() + 5
+        while _alive(pid) and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert not _alive(pid), "the orphaned helper survived _stop"
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait()
+        if pid is not None and _alive(pid):
+            os.kill(pid, signal.SIGKILL)
+
+
+def test_stop_without_process_group_escalates_using_portable_process_methods():
+    proc = Mock()
+    proc.poll.return_value = None
+    proc.wait.side_effect = [subprocess.TimeoutExpired("git", 2), 0]
+    clone._stop(proc, False)
+    proc.terminate.assert_called_once_with()
+    proc.kill.assert_called_once_with()
+    assert proc.wait.call_count == 2
+
+
+def test_detach_is_disabled_on_windows(monkeypatch):
+    monkeypatch.setattr(clone, "os", SimpleNamespace(name="nt"))
+    assert clone._detach() is False
 
 
 def test_credentials_in_the_url_are_not_shown(cfg, tmp_path, capsys):

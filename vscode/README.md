@@ -130,8 +130,10 @@ clones, grouped by kind and repo. It never goes online, whatever
 **Clone…** asks for a URL (`git@host:owner/repo.git`, `https://host/owner/repo`
 or `host/owner/repo`), shows gitpro's plan ("Clone … into ~/work/github.com/…
 as work-github?") and clones only when you pick **Clone**. Progress shows in a
-notification you can cancel. Cancel asks gitpro to stop (SIGTERM, never a
-hard kill), so it can stop git and ssh and remove the partial clone. The
+notification you can cancel. Cancel first asks gitpro to stop (SIGTERM),
+so it can stop git and ssh and remove the partial clone. On POSIX, gitpro
+gives git's process group 2 seconds to stop before killing any surviving
+helpers, even if git itself has already exited. The
 extension waits up to 10 seconds for gitpro to finish. If the directory is
 still there afterwards, it tells you to remove it by hand. When
 git needs a terminal (an ssh passphrase or credentials), the error offers
