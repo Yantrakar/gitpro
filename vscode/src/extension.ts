@@ -6,7 +6,7 @@ import { Capabilities, LiveCapabilities, loadCapabilities } from "./capabilities
 import { Cli, exec, killAll, makeCli, ui } from "./cli";
 import { registerFeatures } from "./features";
 import type { RootsSeam } from "./roots";
-import { Before, Choice, fixArgs, Fixed, fixedMessage, Group, plan, question, Repo, Report, scanArgs, stepText, steps,
+import { Before, Choice, fixArgs, Fixed, fixedMessage, Group, isReport, plan, question, Repo, Report, scanArgs, stepText, steps,
   suggestions, summary, tilde, tree, walk } from "./scan";
 import { containerHere, registerIdentityBar, trackFolder } from "./statusBar";
 
@@ -228,11 +228,14 @@ function repoOverrides(context: vscode.ExtensionContext, out: vscode.LogOutputCh
       view.message = undefined;
       changed.fire();
       await state("scanning");
-      const r = await cli.json<Report>(scanArgs(dirs), { timeout: 600_000 }); // a whole home directory takes seconds
-      if (!r) {
+      const r = await cli.json<unknown>(scanArgs(dirs), { timeout: 600_000 }); // a whole home directory takes seconds
+      if (r === undefined) {
         out.error("✗ scan failed");
         await state("failed");
         return;
+      }
+      if (!isReport(r)) {
+        throw new Error("gitpro printed an invalid scan report; is it up to date?");
       }
       report = r;
       roots().scanned(r); // 02: logs the roots, offers workspace folders outside them
@@ -247,7 +250,16 @@ function repoOverrides(context: vscode.ExtensionContext, out: vscode.LogOutputCh
       }
       await state("done");
       changed.fire();
-    })).finally(() => (scanning = undefined));
+    })).catch(async (error: unknown) => {
+      report = undefined;
+      setGroups([]);
+      view.message = undefined;
+      const message = `Scan failed: ${error instanceof Error ? error.message : String(error)}`;
+      out.error(`✗ ${message}`);
+      await state("failed");
+      changed.fire();
+      void ui.error(message, "Show Log").then((pick) => pick && out.show());
+    }).finally(() => (scanning = undefined));
     return scanning;
   }
   // 02: new scan roots chosen during a scan apply to one more scan after it, not to the one running.

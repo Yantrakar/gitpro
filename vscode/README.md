@@ -89,6 +89,9 @@ Scan or Refresh, under your [scan roots](#scan-roots).
   current identity instead. Paste the ones you want into your config, run
   Apply, then Fix.
 
+A malformed scan response is reported as a failed scan, with no fixable
+results; restoring the CLI and scanning again recovers without reloading VS Code.
+
 ## Scan roots
 
 The Repo Overrides view scans the `[scan] roots` from your gitpro config

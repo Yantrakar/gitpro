@@ -1,6 +1,6 @@
 import * as assert from "node:assert/strict";
 import { test } from "node:test";
-import { Choice, fixArgs, fixedMessage, KEPT, Override, plan, question, Report, scanArgs, stepText, steps, summary, suggestions,
+import { Choice, fixArgs, fixedMessage, isReport, KEPT, Override, plan, question, Report, scanArgs, stepText, steps, summary, suggestions,
   skipped, tree, walk } from "../scan";
 
 const ss = { name: "ss", email: "ss@new.test" };
@@ -21,6 +21,27 @@ const overrides = [
   over("b", old),
   over("other", ss, { name: "Abe", email: "abe@x.test" }),
 ];
+
+test("scan reports validate required fields, including nested results, but allow newer envelope fields", () => {
+  const valid: Report = { roots: ["/h"], repos: 5, unreadable: [], overrides,
+    suggestions: [{ id: "me", toml: "[[identity]]" }], unmatched: ["/h/unknown"] };
+  assert.ok(isReport(valid));
+  assert.ok(isReport({ ...valid, ok: true, command: "scan", roots_source: "config", future: true }));
+  assert.ok(isReport({ roots: [], repos: 0, unreadable: [], overrides: [], suggestions: [], unmatched: [] }));
+  const invalid = [
+    null, [], {}, "", false, 1, { ...valid, roots: "/h" }, { ...valid, repos: -1 },
+    { ...valid, repos: "5" }, { ...valid, repos: 1.5 }, { ...valid, unreadable: [{}] },
+    { ...valid, overrides: null }, { ...valid, overrides: [{}] },
+    { ...valid, overrides: [{ ...overrides[0], now: null }] },
+    { ...valid, overrides: [{ ...overrides[0], after: { name: 4, email: "x" } }] },
+    { ...valid, overrides: [{ ...overrides[0], fixable: [null] }] },
+    { ...valid, overrides: [{ ...overrides[0], settings: [{ key: "user.email", value: "x" }] }] },
+    { ...valid, suggestions: [{ id: "me", toml: null }] }, { ...valid, unmatched: [0] },
+  ];
+  for (const value of invalid) {
+    assert.equal(isReport(value), false, JSON.stringify(value));
+  }
+});
 
 test("tree groups by identity after the fix, then now; Kept and unchanged last", () => {
   const t = tree(overrides);
