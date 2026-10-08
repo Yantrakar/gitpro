@@ -39,7 +39,7 @@ export interface RunOptions {
 
 /** Per stream (stdout, stderr), as execFile counts it. */
 const MAX_BUFFER = 64 * 1024 * 1024;
-/** After a timeout or maxBuffer SIGTERM, how long the child (and its group) gets before SIGKILL. */
+/** After an abort, timeout or maxBuffer SIGTERM, how long the child (and its group) gets before SIGKILL. */
 export const KILL_GRACE = 3_000;
 /** POSIX: the child leads its own process group, and a kill (abort, timeout) goes to the whole group, so a
  * process it started (git's ssh) is not orphaned. Windows has no process groups; the child alone is killed. */
@@ -126,7 +126,7 @@ export function exec(cmd: string, args: string[], opts: RunOptions = {}): Promis
       opts.signal?.removeEventListener("abort", onAbort);
       resolve({ code, stdout: Buffer.concat(out).toString("utf8"), stderr: Buffer.concat(err).toString("utf8") + stderr });
     }
-    /** Timeout, maxBuffer: SIGTERM, and SIGKILL after KILL_GRACE if the output is still open (a child that
+    /** Abort, timeout, maxBuffer: SIGTERM, and SIGKILL after KILL_GRACE if the output is still open (a child that
      * traps SIGTERM, a grandchild holding the pipe); then stop reading and resolve with `code` regardless. */
     function stop(code: string): void {
       killed ??= code;
@@ -139,7 +139,7 @@ export function exec(cmd: string, args: string[], opts: RunOptions = {}): Promis
       }, KILL_GRACE);
     }
     function onAbort(): void {
-      kill("SIGTERM");
+      stop("ABORT_ERR");
       finish("ABORT_ERR");
     }
     function collect(into: Buffer[]) {

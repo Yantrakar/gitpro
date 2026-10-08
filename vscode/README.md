@@ -133,7 +133,8 @@ as work-github?") and clones only when you pick **Clone**. Progress shows in a
 notification you can cancel. Cancel first asks gitpro to stop (SIGTERM),
 so it can stop git and ssh and remove the partial clone. On POSIX, gitpro
 gives git's process group 2 seconds to stop before killing any surviving
-helpers, even if git itself has already exited. The
+helpers, even if git itself has already exited. The extension escalates to
+SIGKILL after 3 seconds if its child still has not closed its output. The
 extension waits up to 10 seconds for gitpro to finish. If the directory is
 still there afterwards, it tells you to remove it by hand. When
 git needs a terminal (an ssh passphrase or credentials), the error offers
@@ -187,8 +188,9 @@ URLs in the logged commands have any password, token or secret query value
 (`access_token=`, `private_token=`, `sig=` and the like) replaced with `***`.
 The commands themselves run with the real URL.
 
-A command that runs past its time limit gets SIGTERM, then SIGKILL 3 seconds
-later. When VS Code closes, the extension stops any gitpro still running,
+A command that is cancelled or runs past its time limit gets SIGTERM, then
+SIGKILL 3 seconds later if needed. On POSIX these signals reach its process
+group; on Windows only the child is stopped. When VS Code closes, the extension stops any gitpro still running,
 such as a clone, in the same way, with 2 seconds' grace.
 
 ## Development
