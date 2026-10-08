@@ -17,6 +17,7 @@ import signal
 import stat
 import subprocess
 import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterator, List, Optional, Sequence, Tuple
@@ -292,6 +293,8 @@ def _cleanup(path: Path, made: Optional[Tuple[int, int]], parents: List[Path]) -
 def _detach() -> bool:
     """Start git in its own session (so a cancel can stop git *and* its ssh) unless a person may have to answer
     ssh on the terminal: ssh prompts on /dev/tty, which a new session no longer has."""
+    if os.name == "nt":
+        return False
     if not (os.isatty(0) or os.isatty(2)):
         return True
     try:
@@ -303,21 +306,35 @@ def _detach() -> bool:
 
 def _stop(proc: subprocess.Popen, group: bool) -> None:
     """SIGTERM git (and, detached, everything it started, ssh included); SIGKILL after 2 s."""
-    def send(sig: int) -> None:
+    if not group:
+        if proc.poll() is None:
+            proc.terminate()
         try:
-            if group:
-                os.killpg(proc.pid, sig)
-            else:
-                proc.send_signal(sig)
+            proc.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+        return
+
+    def send(sig: int) -> bool:
+        try:
+            os.killpg(proc.pid, sig)
+            return True
         except (ProcessLookupError, PermissionError):
-            pass
-    if proc.poll() is None:
-        send(signal.SIGTERM)
-    try:
-        proc.wait(timeout=2)
-    except subprocess.TimeoutExpired:
-        send(signal.SIGKILL)
-        proc.wait()
+            return False
+
+    deadline = time.monotonic() + 2
+    send(signal.SIGTERM)
+    while True:
+        proc.poll()  # reap the leader, but its exit does not mean ssh has stopped
+        if not send(0):
+            break
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            send(signal.SIGKILL)
+            break
+        time.sleep(min(0.05, remaining))
+    proc.wait()
 
 
 def run(p: ClonePlan, git_args: Sequence[str] = (), *, umask: Optional[int] = None, stdout=None) -> int:
