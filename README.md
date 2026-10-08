@@ -1075,12 +1075,17 @@ the author and committer emails, the signature and the trailers. You can give
 names for the repo, or else `.gitpro-policy.toml` in the repo root. CI needs
 no gitpro config: rules are matched on the `origin` URL alone.
 
+Commit subjects cannot hide records from policy checks. Missing or malformed
+commit records stop the check with an error rather than being skipped.
+
 **The base judges the range.** A policy file inside the repo is read as it is
 at the range's base commit, never from the checkout. That covers
 `.gitpro-policy.toml`, a `--policy` path inside the repo, and the
 `allowed_signers` file such a policy names. So a pull request cannot loosen
-the policy that judges it. It cannot add `gmail.com` or list its own key, for
-example. Here the last commit tries that:
+the policy that judges it. Symlinks introduced in the checkout cannot redirect
+the configured policy to another base-tree path, including when the checkout
+is accessed through an external symlink alias. A PR cannot add `gmail.com` or
+list its own key, for example. Here the last commit tries that:
 
 ```text
 $ gitpro check --range origin/main..HEAD
