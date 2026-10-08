@@ -97,6 +97,61 @@ test("abort signals the whole process group on POSIX (no orphaned grandchild)", 
   }
 });
 
+test("abort escalates after its grace period without delaying ABORT_ERR", { skip: !posix }, async () => {
+  const dir = tmp();
+  const ready = path.join(dir, "ready");
+  const abort = new AbortController();
+  let child: Child | undefined;
+  const running = exec(node, ["-e", `process.on("SIGTERM", () => {});`
+    + ` require("fs").writeFileSync(${JSON.stringify(ready)}, ""); setInterval(() => {}, 1000);`],
+  { timeout: 1000, signal: abort.signal, onSpawn: (c) => (child = c) });
+  try {
+    await until(() => fs.existsSync(ready));
+    abort.abort();
+    assert.equal((await within(running, 1000))?.code, "ABORT_ERR");
+    assert.ok(alive(child!.pid!), "abort must leave time for cleanup");
+    assert.equal(await within(child!.exited, KILL_GRACE + 5000), "SIGKILL");
+    await until(() => liveCount() === 0);
+  } finally {
+    if (child?.pid && alive(child.pid)) {
+      process.kill(child.pid, "SIGKILL");
+      await child.exited;
+    }
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("abort kills an ignoring grandchild even after the leader exits", { skip: !posix }, async () => {
+  const dir = tmp();
+  const pidfile = path.join(dir, "pid");
+  const worker = `process.on("SIGTERM", () => {}); require("fs").writeFileSync(${JSON.stringify(pidfile)},`
+    + ` String(process.pid)); setInterval(() => {}, 1000);`;
+  const leader = `require("child_process").spawn(process.execPath, ["-e", ${JSON.stringify(worker)}],`
+    + ` {stdio: "inherit"}); setInterval(() => {}, 1000);`;
+  const abort = new AbortController();
+  let child: Child | undefined;
+  let grandchild: number | undefined;
+  const running = exec(node, ["-e", leader], { timeout: 0, signal: abort.signal, onSpawn: (c) => (child = c) });
+  try {
+    await until(() => fs.existsSync(pidfile) && fs.readFileSync(pidfile, "utf8").trim() !== "");
+    grandchild = Number(fs.readFileSync(pidfile, "utf8"));
+    abort.abort();
+    assert.equal((await within(running, 1000))?.code, "ABORT_ERR");
+    assert.equal(await within(child!.exited, 5000), "SIGTERM");
+    await until(() => !alive(grandchild!), KILL_GRACE + 5000);
+    await until(() => liveCount() === 0);
+  } finally {
+    if (child?.pid) {
+      try { process.kill(-child.pid, "SIGKILL"); } catch { /* already gone */ }
+      await child.exited;
+    }
+    if (grandchild && alive(grandchild)) {
+      process.kill(grandchild, "SIGKILL");
+    }
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("within gives up after ms", async () => {
   assert.equal(await within(new Promise<number>(() => {}), 50), undefined);
   assert.equal(await within(Promise.resolve(1), 50), 1);
