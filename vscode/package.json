@@ -49,6 +49,11 @@
         "category": "gitpro"
       },
       {
+        "command": "gitpro.setup",
+        "title": "Set Up Identities",
+        "category": "gitpro"
+      },
+      {
         "command": "gitpro.openConfig",
         "title": "Open Config",
         "category": "gitpro"

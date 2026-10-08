@@ -241,7 +241,7 @@ def test_module_without_register_is_ignored(monkeypatch):
 
 def test_extensions_list():
     assert cli.EXTENSIONS == sorted(cli.EXTENSIONS) and "gitpro.resolve" in cli.EXTENSIONS
-    assert len(cli.EXTENSIONS) == 17
+    assert len(cli.EXTENSIONS) == 18 and "gitpro.setup" in cli.EXTENSIONS
 
 
 # ---------------------------------------------------------------- hot path (27)

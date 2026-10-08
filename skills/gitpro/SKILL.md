@@ -10,7 +10,7 @@ license: MIT
 picks the identity for each repo from its remote URL. Nothing of the tool runs
 while git runs, unless the user installed the optional guard hooks.
 
-Docs: https://github.com/sandeepshelke/gitpro
+Docs: https://github.com/sandeepshelke/gitpro/blob/main/docs/guide.md
 
 ## Rules
 
@@ -24,6 +24,8 @@ Docs: https://github.com/sandeepshelke/gitpro
 - Never read, print or copy private SSH keys. Public keys (`.pub`) are fine.
 - Don't run `keys --generate` yourself: it prompts for a passphrase. Ask the
   user to run it in their terminal. `--no-passphrase` only if they ask for it.
+- `gitpro setup` is a terminal wizard. Ask the user to run it themselves; it
+  previews the config and requires explicit Save, with no noninteractive `-y`.
 - Don't invent owners, hosts or emails. Ask the user, or read them from the
   remote URLs of their repos (`git remote -v`).
 - Before any `git commit`, `git push` or `gh pr create` for the user, run
@@ -67,7 +69,8 @@ PyPI. `gitpro --version --json` lists `capabilities`; check for one there
 ## The config
 
 Path: `-c PATH`, else `$GITPRO_CONFIG`, else
-`~/.config/gitpro.toml`. If none exists, `gitpro init` writes a
+`~/.config/gitpro.toml`. `gitpro setup` guides the user through basic configuration
+and can add identities while preserving an existing config. Alternatively, `gitpro init` writes a
 commented example; `plan` refuses to run until its placeholder emails and
 hosts (`*.example`, `example.com`) are replaced.
 
@@ -104,7 +107,7 @@ ssh_alias = "github-work"          # ssh Host that offers only ssh_key
 - Optional tables: `[scan]` (`roots`, `exclude`, `stale_days`), `[guard]`
   (`hooks`, `on_mismatch`, `chain_to`), `[clone]` (`dir`, `layout`),
   `[forge]` (`online`, `similar`), `[agents]` (`hook`, `bot_emails`),
-  `[policy]` (`files`). The README's configuration section explains each.
+  `[policy]` (`files`). The user guide's configuration section explains each.
 - Unknown keys are errors. Read the error message and fix the TOML.
 
 ## Workflow for a change
@@ -125,10 +128,11 @@ ssh_alias = "github-work"          # ssh Host that offers only ssh_key
   the list → on the user's yes, `gitpro audit --rewrite -y` (it rewrites only
   unpushed commits, needs a clean working tree and prints an `↩ undo:` line;
   tell the user to fetch first, since "pushed" means as of the last fetch).
-- **"Set up a new machine"**: `gitpro init --discover` (add `--history` only
-  if the user wants their shell history read) → the user checks and edits the
-  config → `gitpro plan` → yes → `gitpro apply -y` → `gitpro keys` →
+- **"Set up a new machine"**: the user runs `gitpro setup` in their terminal →
+  `gitpro plan` → yes → `gitpro apply -y` → `gitpro keys` →
   `gitpro auth` (online: say so first) → `gitpro doctor`.
+  For broader discovery, `gitpro init --discover` remains available (add
+  `--history` only if the user wants shell history read); then review the template.
 - **"Lost work before wiping or moving a machine"**: `gitpro lost` (offline,
   read-only), then `gitpro lost --online` if the user asks. Suggest a
   `git fetch` first so "unpushed" is current.
@@ -142,8 +146,8 @@ ssh_alias = "github-work"          # ssh Host that offers only ssh_key
   for the details, and `gitpro policy show` for the rules. `gitpro why`
   also shows a repo's policy problems. Plain `gitpro check` does not look at
   policies.
-- **"Set up the policy check in CI"**: GitHub, the Action in the README (`uses:
-  sandeepshelke/gitpro@<ref>` with `fetch-depth: 0`); GitLab, the README's
+- **"Set up the policy check in CI"**: GitHub, the Action in the user guide (`uses:
+  sandeepshelke/gitpro@<ref>` with `fetch-depth: 0`); GitLab, the guide's
   job. In CI, gitpro reads a policy file in the repo, and its
   `allowed_signers`, as they are at the range base, so a pull request cannot
   loosen the policy that judges it. A policy change in the PR takes effect
@@ -171,6 +175,7 @@ Every command has `--help`.
 | `auth`, `forge repos`, `forge forks`, `forge email` | no | no, but say it goes online | **yes**, say so |
 | `discover --history`, `init --discover --history` | reads shell history (`init` also writes the config) | **yes** | no |
 | `init`, `init --discover` | creates the config file; never overwrites | **yes** | no |
+| `setup` | creates or appends to the config, with backup before updating | **yes**, user confirms Save in their terminal | no |
 | `apply`, `scan --fix`, `pin`, `unpin`, `uninstall`, `guard install`, `guard uninstall`, `agent install`, `agent uninstall`, `mcp install`, `mcp uninstall`, `audit --rewrite` | yes | **yes**, then `-y` | no |
 | `clone` | yes: a new directory | **yes**, then `-y` | yes: `git clone` |
 | `devcontainer --write`, `mcp install --scope project --write` | yes, **team file** | **yes**, then `-y` | no |

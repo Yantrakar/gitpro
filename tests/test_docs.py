@@ -1,4 +1,4 @@
-"""Spec 17 §5: README.md, SKILL.md, the plugin manifests and the version agree with the code as built."""
+"""The landing page, full guide, skill and manifests agree with the code as built."""
 import argparse
 import dataclasses
 import importlib
@@ -14,6 +14,7 @@ import gitpro
 from gitpro import cli, config
 
 ROOT = Path(__file__).resolve().parent.parent
+GUIDE = (ROOT / "docs/guide.md").read_text(encoding="utf-8")
 README = (ROOT / "README.md").read_text(encoding="utf-8")
 SKILL = (ROOT / "skills/gitpro/SKILL.md").read_text(encoding="utf-8")
 VERSION = "0.2.0"
@@ -22,7 +23,7 @@ INSTALL = "git+https://github.com/sandeepshelke/gitpro.git"
 # Spec 17 §5: the commands that write, each of which the skill's table must mark as writing.
 WRITING = ["apply", "scan --fix", "pin", "unpin", "uninstall", "guard install", "guard uninstall",
            "agent install", "agent uninstall", "mcp install", "mcp uninstall", "devcontainer --write",
-           "clone", "audit --rewrite", "keys --upload", "keys --generate", "init"]
+           "clone", "audit --rewrite", "keys --upload", "keys --generate", "init", "setup"]
 
 
 # ---------------------------------------------------------------- the parser
@@ -59,11 +60,11 @@ def test_parser_has_every_package():
     # a sanity check that the walk works and every package registered its commands
     for path in ("why", "guard install", "agent status", "forge similar", "mcp install", "policy lint",
                  "devcontainer", "prompt", "completion", "doctor", "lost", "audit", "clone", "env", "discover",
-                 "auth", "team", "scan", "agent-check", "guard check"):
+                 "auth", "team", "scan", "agent-check", "guard check", "setup"):
         assert path in PATHS, path
 
 
-# ---------------------------------------------------------------- README and SKILL name every command
+# ---------------------------------------------------------------- guide and SKILL name every command
 
 def _mentions(text: str, path: str) -> bool:
     words = path.split()
@@ -73,8 +74,8 @@ def _mentions(text: str, path: str) -> bool:
 
 
 @pytest.mark.parametrize("path", sorted(PATHS))
-def test_readme_names_every_command(path):
-    assert _mentions(README, path), f"README.md never mentions `{path}`"
+def test_guide_names_every_command(path):
+    assert _mentions(GUIDE, path), f"docs/guide.md never mentions `{path}`"
 
 
 def _skill_table() -> list:
@@ -164,20 +165,20 @@ def _invocations(text: str):
             yield path, opts
 
 
-@pytest.mark.parametrize("name", ["README.md", "SKILL.md"])
+@pytest.mark.parametrize("name", ["docs/guide.md", "SKILL.md", "README.md"])
 def test_documented_flags_exist(name):
-    text = {"README.md": README, "SKILL.md": SKILL}[name]
+    text = {"docs/guide.md": GUIDE, "SKILL.md": SKILL, "README.md": README}[name]
     seen, bad = 0, []
     for path, opts in _invocations(text):
         seen += 1
         known = _options(PATHS[path])
         bad += [f"gitpro {path} {o}" for o in opts if o not in known]
-    assert seen > 10, f"{name}: found too few gitpro command lines; the scanner is broken"
+    assert seen > (3 if name == "README.md" else 10), f"{name}: found too few gitpro command lines"
     assert not bad, f"{name} mentions options that do not exist: {sorted(set(bad))}"
 
 
 def test_version_json_flag_documented_and_real():
-    assert "gitpro --version --json" in README
+    assert "gitpro --version --json" in GUIDE
     top, _ = cli.build_parser()
     assert {"--version", "--json"} <= {o for a in top._actions for o in a.option_strings}
 
@@ -206,24 +207,24 @@ def test_action_inputs_parse():
     assert set(_action_inputs()) == {"policy", "range", "comment", "working-directory"}
 
 
-def _readme_inputs_table() -> dict:
-    section = README.split("**GitHub Actions.**", 1)[1].split("**GitLab CI.**", 1)[0]
+def _guide_inputs_table() -> dict:
+    section = GUIDE.split("**GitHub Actions.**", 1)[1].split("**GitLab CI.**", 1)[0]
     rows = re.findall(r"^\| `([\w-]+)` \| ([^|]+) \|", section, re.M)
-    assert rows, "README has no Action inputs table"
+    assert rows, "guide has no Action inputs table"
     return {name: default.strip() for name, default in rows}
 
 
-def test_readme_documents_every_action_input():
-    table = _readme_inputs_table()
+def test_guide_documents_every_action_input():
+    table = _guide_inputs_table()
     assert set(table) == set(_action_inputs())
     for name, default in _action_inputs().items():
-        if "${{" not in default:  # the range default is an expression; the README describes it
+        if "${{" not in default:  # the range default is an expression; the guide describes it
             assert table[name].strip("`").strip('"') == default, name
 
 
-def test_readme_action_with_keys_are_inputs():
-    blocks = [b for b in re.findall(r"```yaml\n(.*?)```", README, re.S) if "uses: sandeepshelke/gitpro@" in b]
-    assert blocks, "README has no workflow that uses the Action"
+def test_guide_action_with_keys_are_inputs():
+    blocks = [b for b in re.findall(r"```yaml\n(.*?)```", GUIDE, re.S) if "uses: sandeepshelke/gitpro@" in b]
+    assert blocks, "guide has no workflow that uses the Action"
     for block in blocks:
         after = block.split("uses: sandeepshelke/gitpro@", 1)[1]
         keys = re.findall(r"^\s+#?\s*([\w-]+):", after.split("with:", 1)[1], re.M)
@@ -233,7 +234,7 @@ def test_readme_action_with_keys_are_inputs():
 def test_action_json_report_path():
     path = "$RUNNER_TEMP/gitpro-policy.json"
     assert f'tee "{path}"' in ACTION
-    assert f"`{path}`" in README
+    assert f"`{path}`" in GUIDE
 
 
 def _ci_invocations(text: str):
@@ -242,9 +243,9 @@ def _ci_invocations(text: str):
         yield m.group(1), [o.split("=", 1)[0] for o in re.findall(r"(?<!\S)(--?[A-Za-z][\w-]*(?:=\S*)?)", m.group(2))]
 
 
-@pytest.mark.parametrize("name", ["action.yml", "README.md"])
+@pytest.mark.parametrize("name", ["action.yml", "docs/guide.md"])
 def test_ci_invocations_use_real_options(name):
-    text = {"action.yml": ACTION, "README.md": README}[name]
+    text = {"action.yml": ACTION, "docs/guide.md": GUIDE}[name]
     found = list(_ci_invocations(text))
     assert any(path == "check" for path, _ in found), f"{name}: no CI gitpro check line found"
     for path, opts in found:
@@ -260,7 +261,7 @@ def test_action_refuses_shallow_and_empty_range():
 
 
 def test_gitlab_job_uses_the_target_branch_base():
-    job = README.split("**GitLab CI.**", 1)[1].split("\n### ", 1)[0]
+    job = GUIDE.split("**GitLab CI.**", 1)[1].split("\n### ", 1)[0]
     assert "${CI_MERGE_REQUEST_TARGET_BRANCH_SHA:-$CI_MERGE_REQUEST_DIFF_BASE_SHA}..$CI_COMMIT_SHA" in job
     assert f'"{INSTALL}@<ref>"' in job
     assert 'GIT_DEPTH: "0"' in job
@@ -268,46 +269,46 @@ def test_gitlab_job_uses_the_target_branch_base():
     assert "useradd" in job          # gitpro refuses to run as root
 
 
-# ---------------------------------------------------------------- outputs the README shows
+# ---------------------------------------------------------------- outputs the guide shows
 
 def test_team_header_matches_the_code():
     from gitpro import policy
     header = policy._render_team({"identities": [], "guard": None, "agents": None}, False)[1]
     columns = re.split(r"\s{2,}", header.strip())
-    shown = [line for line in README.splitlines() if line.lstrip().startswith("identity ") and "verified" in line]
-    assert shown, "README shows no gitpro team table"
+    shown = [line for line in GUIDE.splitlines() if line.lstrip().startswith("identity ") and "verified" in line]
+    assert shown, "guide shows no gitpro team table"
     for line in shown:
         assert re.split(r"\s{2,}", line.strip()) == columns
 
 
 def test_team_hint_is_a_real_command():
-    for m in re.finditer(r"violates its policy → (gitpro .*)", README):
+    for m in re.finditer(r"violates its policy → (gitpro .*)", GUIDE):
         words = shlex.split(m.group(1))
         assert words[1] in PATHS and "--policy" in _options(PATHS[words[1]])
         assert len(words) == 4 and words[2] == "--policy", m.group(1)  # --policy needs its FILE
 
 
 def test_plain_check_is_documented_as_apply_check():
-    row = next(line for line in README.splitlines() if line.startswith("| `check` |"))
+    row = next(line for line in GUIDE.splitlines() if line.startswith("| `check` |"))
     assert "`apply`" in row and "--repo" in row
-    assert "Plain `gitpro check`" in README and "never looks at policies" in README
+    assert "Plain `gitpro check`" in GUIDE and "never looks at policies" in GUIDE
     assert "Plain `check`" in SKILL and "never" in SKILL.split("Plain `check`", 1)[1][:80]
 
 
 def test_redaction_examples_match_the_code():
     from gitpro.resolve import redact_url
-    rows = re.findall(r"^\| `([^`]+)` \| `([^`]+)` \|$", README.split("Remote URLs can carry secrets", 1)[1], re.M)
-    assert len(rows) >= 3, "README lost its redaction examples"
+    rows = re.findall(r"^\| `([^`]+)` \| `([^`]+)` \|$", GUIDE.split("Remote URLs can carry secrets", 1)[1], re.M)
+    assert len(rows) >= 3, "guide lost its redaction examples"
     for raw, shown in rows:
         assert redact_url(raw) == shown, raw
 
 
 # ---------------------------------------------------------------- the config reference
 
-def _readme_toml() -> str:
-    blocks = re.findall(r"```toml\n(.*?)```", README, re.S)
+def _guide_toml() -> str:
+    blocks = re.findall(r"```toml\n(.*?)```", GUIDE, re.S)
     full = [b for b in blocks if b.startswith("[default]")]
-    assert full, "README.md has no ```toml block that starts with [default]"
+    assert full, "docs/guide.md has no ```toml block that starts with [default]"
     return max(full, key=len)
 
 
@@ -315,15 +316,15 @@ TABLES = {"default": config.Default, "identity": config.Identity, "scan": config
           "clone": config.Clone, "forge": config.Forge, "agents": config.Agents, "policy": config.Policy}
 
 
-def test_readme_config_block_has_every_key():
-    data = config._load_toml(_readme_toml(), "README.md")
+def test_guide_config_block_has_every_key():
+    data = config._load_toml(_guide_toml(), "docs/guide.md")
     assert set(data) == set(config.TOP_LEVEL)
     trailer_keys = {f.name for f in dataclasses.fields(config.Trailers)}
     for table, cls in TABLES.items():
         entries = data[table] if isinstance(data[table], list) else [data[table]]
         present = set().union(*(e.keys() for e in entries))
         for f in dataclasses.fields(cls):
-            assert f.name in present, f"README config block: [{table}] lacks {f.name}"
+            assert f.name in present, f"guide config block: [{table}] lacks {f.name}"
             if f.name == "git":
                 assert any(isinstance(e.get("git"), dict) and e["git"] for e in entries), table
             if f.name == "trailers":
@@ -333,10 +334,10 @@ def test_readme_config_block_has_every_key():
                 assert trailer_keys <= set().union(*(e.get("trailers", {}).keys() for e in entries)), table
 
 
-def test_readme_config_block_loads(home):
+def test_guide_config_block_loads(home):
     path = home / ".config" / "gitpro.toml"
     path.parent.mkdir(parents=True)
-    path.write_text(_readme_toml(), encoding="utf-8")
+    path.write_text(_guide_toml(), encoding="utf-8")
     os.chmod(path, 0o600)
     cfg = config.load_all(path, "test")
     assert [i.id for i in cfg.identities] == ["work-gitlab", "work-github"]
@@ -400,8 +401,8 @@ def test_version_json_reports_the_release(home, capsys):
 
 
 def test_vsix_name_matches_version():
-    assert f"gitpro-{VERSION}.vsix" in README
-    assert not re.search(r"gitpro-\d+\.\d+\.\d+\.vsix", README.replace(f"gitpro-{VERSION}.vsix", ""))
+    assert f"gitpro-{VERSION}.vsix" in GUIDE
+    assert not re.search(r"gitpro-\d+\.\d+\.\d+\.vsix", GUIDE.replace(f"gitpro-{VERSION}.vsix", ""))
 
 
 # ---------------------------------------------------------------- the skill
@@ -430,8 +431,31 @@ def test_every_extension_imports(name):
 
 # ---------------------------------------------------------------- install line
 
-@pytest.mark.parametrize("name", ["README.md", "skills/gitpro/SKILL.md", "vscode/README.md"])
+@pytest.mark.parametrize("name", ["README.md", "docs/guide.md", "skills/gitpro/SKILL.md", "vscode/README.md"])
 def test_install_from_git_only(name):
     text = (ROOT / name).read_text(encoding="utf-8")
     assert f"pipx install {INSTALL}" in text, name
     assert not re.search(r"pipx? install (--\S+ )*gitpro(\[\w+\])?(\s|$|`)", text), f"{name}: bare PyPI install"
+
+
+def test_readme_is_a_short_onboarding_page():
+    assert len(README.splitlines()) <= 100
+    assert len(README.split()) <= 650
+    assert "gitpro setup" in README and "docs/guide.md" in README
+    assert "gitpro plan" in README and "gitpro apply" in README
+    assert "```toml" not in README and "```yaml" not in README
+
+
+@pytest.mark.parametrize("name", ["README.md", "docs/guide.md", "vscode/README.md"])
+def test_documentation_relative_links_and_anchors(name):
+    source = ROOT / name
+    for link in re.findall(r"\]\(([^)]+)\)", source.read_text(encoding="utf-8")):
+        if "://" in link or link.startswith("mailto:"):
+            continue
+        rel, _, anchor = link.partition("#")
+        target = source.parent / rel if rel else source
+        assert target.exists(), f"{name}: broken link {link}"
+        if anchor:
+            headings = re.findall(r"^#{1,6} (.+)$", target.read_text(encoding="utf-8"), re.M)
+            anchors = {re.sub(r"[^\w -]", "", h.lower()).replace(" ", "-") for h in headings}
+            assert anchor in anchors, f"{name}: missing anchor {link}"

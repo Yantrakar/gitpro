@@ -11,14 +11,81 @@ import { env, withEnv, withUi } from "./helpers";
 
 export async function run(api: Api): Promise<void> {
   const ids = await vscode.commands.getCommands(true);
-  for (const c of ["which", "plan", "apply", "pin", "unpin", "openConfig", "refresh",
+  for (const c of ["which", "plan", "apply", "pin", "unpin", "setup", "openConfig", "refresh",
     "scan", "scanFix", "scanReview", "scanSuggest", "openRepoConfig"]) {
     assert.ok(ids.includes(`gitpro.${c}`), `command gitpro.${c} not registered`);
   }
+  await setupLauncher(api);
   // The global identity the scanned repo's own user.email hides.
   await withEnv({ GIT_CONFIG_GLOBAL: env("GI_GLOBAL") }, () => overrides(api));
   await noIdentity(api);
   await withEnv({ GIT_CONFIG_GLOBAL: env("GI_GLOBAL") }, () => sessionRoots(api));
+}
+
+async function setupLauncher(api: Api): Promise<void> {
+  const file = path.join(env("GI_HOME"), "setup custom [draft].toml");
+  const cfg = vscode.workspace.getConfiguration("gitpro");
+  const info = api.ui.info;
+
+  async function launch(command: string): Promise<void> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let subscription: vscode.Disposable | undefined;
+    let terminal: vscode.Terminal | undefined;
+    const opened = new Promise<vscode.Terminal>((resolve, reject) => {
+      subscription = vscode.window.onDidOpenTerminal((t) => {
+        if (t.name === "gitpro setup") {
+          resolve(t);
+        }
+      });
+      timer = setTimeout(() => reject(new Error("setup terminal did not open")), 10000);
+    });
+    try {
+      await vscode.commands.executeCommand(command);
+      terminal = await opened;
+      const options = terminal.creationOptions;
+      assert.ok("shellPath" in options);
+      assert.equal(options.shellPath, env("GI_GITPRO"));
+      assert.deepEqual(options.shellArgs, ["setup", "-c", file]);
+      assert.equal(typeof await terminal.processId, "number");
+      assert.equal(fs.existsSync(file), false, "launching setup must not write a config");
+    } finally {
+      clearTimeout(timer);
+      subscription?.dispose();
+      terminal?.dispose();
+    }
+  }
+
+  try {
+    await withEnv({ GITPRO_CONFIG: file }, async () => {
+      await api.reloadCapabilities();
+      assert.ok(api.caps.has("setup"));
+      await launch("gitpro.setup");
+      api.ui.info = async (_msg, ...choices) => {
+        assert.deepEqual(choices, ["Guided Setup", "Create with Discovery", "Create from Example"]);
+        return "Guided Setup";
+      };
+      await launch("gitpro.openConfig");
+      api.ui.info = info;
+
+      await cfg.update("path", env("GI_GITPRO_OLD"), vscode.ConfigurationTarget.Workspace);
+      await api.reloadCapabilities();
+      await withUi(api, {}, async (seen) => {
+        const count = vscode.window.terminals.length;
+        await vscode.commands.executeCommand("gitpro.setup");
+        assert.equal(vscode.window.terminals.length, count);
+        assert.match(seen.warn.join("\n"), /setup.*update/s);
+      });
+      api.ui.info = async (_msg, ...choices) => {
+        assert.deepEqual(choices, ["Create from Example"]);
+        return undefined;
+      };
+      await vscode.commands.executeCommand("gitpro.openConfig");
+    });
+  } finally {
+    api.ui.info = info;
+    await cfg.update("path", env("GI_GITPRO"), vscode.ConfigurationTarget.Workspace);
+    await api.reloadCapabilities();
+  }
 }
 
 /** 02: Scan Roots… → Use for This Session rescans the view with those roots in place of gitpro.scanDirs. */

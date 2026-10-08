@@ -423,7 +423,15 @@ def _load_toml(text: str, path: object = "config") -> dict:
 
 def load_all(path: Path, how: str = "") -> Config:
     """Load and validate every table; the Config other packages read."""
-    data = _read(path)
+    return _parse_all(_read(path), path, how)
+
+
+def loads(text: str, path: Path, how: str = "") -> Config:
+    """Validate proposed configuration without writing it to disk."""
+    return _parse_all(_load_toml(text, path), path, how)
+
+
+def _parse_all(data: dict, path: Path, how: str) -> Config:
     home = Path.home()
 
     unknown = sorted(set(data) - set(TOP_LEVEL))

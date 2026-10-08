@@ -8,8 +8,7 @@ config file (first match wins):
   -c PATH, $GITPRO_CONFIG, ~/.config/gitpro.toml
 
 first run on a new machine:
-  gitpro init              # then edit ~/.config/gitpro.toml
-  gitpro keys --generate   # create missing SSH keys (optional)
+  gitpro setup             # guided configuration; preview before saving
   gitpro plan              # review every change as a diff
   gitpro apply             # write the changes
   gitpro keys              # public keys to register with each account
@@ -59,6 +58,7 @@ EXTENSIONS = [
     "gitpro.prompt",        # 16: prompt
     "gitpro.resolve",       # 01: why
     "gitpro.scanroots",     # 02: scan -c/--roots
+    "gitpro.setup",         # guided configuration
 ]
 
 CALLER_UMASK: Optional[int] = None  # the umask gitpro was started with; main() then tightens it to 077
