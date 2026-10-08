@@ -80,6 +80,8 @@ flowchart LR
   alone. The first time it changes a file you wrote, it saves a copy as
   `<file>.bak.<timestamp>`.
 - The other files are fully generated. Edit the TOML, not them.
+  Changing an identity's `file` to a symlink alias of its current file keeps
+  that file; cleanup removes only outputs that are no longer used.
 - With `sign = true` it also writes `~/.config/git/allowed_signers`, so git can
   verify your own signatures.
 - Running `apply` again changes nothing. `uninstall` removes everything it wrote.
