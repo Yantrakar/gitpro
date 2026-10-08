@@ -82,6 +82,86 @@ def test_range_policy_edited_by_the_range_does_not_whitelist_itself(capsys, tmp_
     assert rc != 0, data
 
 
+@pytest.mark.parametrize("subject", ["ordinary", "before\x1eafter", "\x1esubject"])
+def test_range_control_characters_cannot_hide_commits(capsys, tmp_path, home, subject):
+    repo = app_repo(tmp_path)
+    p = policy_file(tmp_path / "org")
+    sha = make_commit(repo, subject, author=("Pat", "pat@gmail.com"))
+    rc = run("check", "--policy", str(p), "--range", "base..HEAD", "--repo", str(repo), "--json")
+    data = out_json(capsys)
+    assert rc == 1, data
+    assert data["commits"] == 1
+    assert {(v["sha"], v["rule"]) for v in data["violations"]} == {
+        (sha, "allowed_email_domains"), (sha, "require_signing")}
+
+
+@pytest.mark.parametrize("directory_link", [False, True])
+@pytest.mark.parametrize("alias_kind", ["none", "repo", "policy-directory", "policy-file"])
+def test_range_checkout_symlinks_cannot_redirect_base_policy(
+        capsys, tmp_path, home, directory_link, alias_kind):
+    repo = app_repo(tmp_path)
+    p = policy_file(repo / "ci", name="policy.toml", mode=0o644)
+    git(repo, "add", ".")
+    make_commit(repo, "add policy")
+    git(repo, "tag", "-f", "base")
+    target = policy_file(repo / "new", name="policy.toml", mode=0o644)
+    p.unlink()
+    if directory_link:
+        p.parent.rmdir()
+        p.parent.symlink_to("new")
+    else:
+        p.symlink_to("../new/policy.toml")
+    git(repo, "add", ".")
+    make_commit(repo, "redirect policy", author=("Pat", "pat@gmail.com"))
+    requested = p
+    if alias_kind != "none":
+        alias = tmp_path / "workspace-link"
+        alias.symlink_to(repo if alias_kind == "repo" else p if alias_kind == "policy-file" else p.parent)
+        requested = alias if alias_kind == "policy-file" else alias / (
+            "ci/policy.toml" if alias_kind == "repo" else "policy.toml")
+    assert requested.read_bytes() == target.read_bytes()
+    rc = run("check", "--policy", str(requested), "--range", "base..HEAD", "--repo", str(repo), "--json")
+    data = out_json(capsys)
+    assert rc == 1, data
+    assert len(data["policies"]) == 1
+    assert {v["rule"] for v in data["violations"]} == {"allowed_email_domains", "require_signing"}
+
+
+@pytest.mark.parametrize("damage", ["missing", "truncated", "extra-field", "wrong-sha"])
+def test_range_malformed_log_records_fail_closed(capsys, tmp_path, home, monkeypatch, damage):
+    repo = app_repo(tmp_path)
+    p = policy_file(tmp_path / "org")
+    make_commit(repo, "subject")
+    real_git = policy._git
+
+    def malformed(repo, *args, **kwargs):
+        out = real_git(repo, *args, **kwargs)
+        if args[0] == "log" and "--stdin" in args:
+            if damage == "missing":
+                return b""
+            if damage == "truncated":
+                return out[:-1]
+            if damage == "extra-field":
+                return out.replace(b"subject\0", b"subject\0injected\0")
+            return b"0" * 40 + out[40:]
+        return out
+
+    monkeypatch.setattr(policy, "_git", malformed)
+    assert run("check", "--policy", str(p), "--range", "base..HEAD", "--repo", str(repo), "--json") == 2
+    data = out_json(capsys)
+    assert data["ok"] is False and "cannot check policy" in data["error"]
+
+
+def test_range_policy_alias_loop_is_an_explicit_error(capsys, tmp_path, home):
+    repo = app_repo(tmp_path)
+    first, second = tmp_path / "first", tmp_path / "second"
+    first.symlink_to(second)
+    second.symlink_to(first)
+    make_commit(repo, "subject")
+    assert run("check", "--policy", str(first), "--range", "base..HEAD", "--repo", str(repo)) == 2
+    assert "too many symlinks" in capsys.readouterr().err
+
+
 def test_deeply_nested_policy_is_a_config_error(capsys, home, tmp_path):
     p = tmp_path / "deep.toml"
     p.write_text("[policy]\nname = " + "[" * 100000 + "]" * 100000 + "\n")

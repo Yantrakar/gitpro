@@ -704,16 +704,23 @@ _FIELDS = ("%H", "%G?", "%GK", "%GS", "%ae", "%ce", "%cs", "%P", "%s", "%(traile
 
 
 def _log(repo: Path, revs: Sequence[str], *, signing: bool, pre: Sequence[str], timeout: int) -> List[_Commit]:
+    # Count and identify records independently of untrusted commit text.
+    shas = _git(repo, "rev-list", *revs, "--", timeout=timeout).decode("ascii").splitlines()
+    if not shas:
+        return []
     fields = [f if signing or f not in ("%G?", "%GK", "%GS") else "-" for f in _FIELDS]
-    fmt = "%x00".join(fields) + "%x1e"
-    raw = _git(repo, "log", "--no-color", "--no-show-signature", f"--format={fmt}", *revs, "--", pre=pre,
-               timeout=timeout, what=f"git log {' '.join(revs)}").decode("utf-8", "replace")
+    fmt = "%x00".join(fields)
+    raw = _git(repo, "log", "-z", "--no-color", "--no-show-signature", f"--format={fmt}",
+               "--no-walk=unsorted", "--stdin", pre=pre, stdin="".join(s + "\n" for s in shas).encode(),
+               timeout=timeout, what=f"git log {' '.join(revs)}")
+    parts = raw.split(b"\0")
+    if parts[-1] != b"" or len(parts) != len(shas) * len(fields) + 1:
+        raise ConfigError("cannot check policy: malformed commit records from git log")
     out: List[_Commit] = []
-    for rec in raw.split("\x1e"):
-        rec = rec.lstrip("\n")
-        f = rec.split("\x00", 9)
-        if len(f) != 10:
-            continue
+    for n, sha in enumerate(shas):
+        f = [p.decode("utf-8", "replace") for p in parts[n * len(fields):(n + 1) * len(fields)]]
+        if f[0] != sha:
+            raise ConfigError(f"cannot check policy: git log did not return expected commit {sha}")
         out.append(_Commit(f[0], f[1] if signing else "", f[2] if signing else "", f[3] if signing else "",
                            f[4], f[5], f[6], tuple(f[7].split()), trailers.split_lines(f[9]), f[8]))
     if signing:
@@ -896,17 +903,28 @@ class _RangePolicies:
         return self._base
 
     def rel(self, path: object) -> Optional[str]:
-        """path relative to the repo top, else None for a file outside the repo. Inside: its resolved path is
-        in the resolved repo (rel taken from that), or its plain spelling is (a symlink in the checkout
-        does not move it out)."""
+        """Resolve external aliases only until entering the repo; checkout symlinks cannot rename a
+        policy's protected-base entry."""
         p = os.path.abspath(os.path.expanduser(str(path)))
-        real, top = os.path.realpath(p), os.path.realpath(str(self.repo))
-        if real.startswith(top.rstrip(os.sep) + os.sep):        # any spelling that resolves into the repo
-            return Path(os.path.relpath(real, top)).as_posix()
-        for t in dict.fromkeys((str(self.repo), top)):           # a symlink inside the repo pointing out:
-            if p.startswith(t.rstrip(os.sep) + os.sep):          # its base entry is refused (_base_blob)
-                return Path(os.path.relpath(p, t)).as_posix()
-        return None
+        tops = tuple(dict.fromkeys((os.path.abspath(self.repo), os.path.realpath(self.repo))))
+        for _ in range(40):
+            for top in tops:
+                if p.startswith(top.rstrip(os.sep) + os.sep):
+                    return Path(os.path.relpath(p, top)).as_posix()
+            current = Path(p)
+            for ancestor in (*reversed(current.parents), current):
+                if ancestor.is_symlink():
+                    try:
+                        target = Path(os.readlink(ancestor))
+                    except OSError as e:
+                        raise ConfigError(f"cannot resolve policy path {path}: {e}") from None
+                    if not target.is_absolute():
+                        target = ancestor.parent / target
+                    p = os.path.abspath(target / current.relative_to(ancestor))
+                    break
+            else:
+                return None
+        raise ConfigError(f"cannot resolve policy path {path}: too many symlinks")
 
     def changed(self, rels: Sequence[str], base: str) -> List[str]:
         """Which of rels the range touches (a commit in it, merges included against their first parent, or
