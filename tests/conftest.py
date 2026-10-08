@@ -72,6 +72,11 @@ def home(tmp_path, monkeypatch):
     """A throwaway $HOME; git subprocesses see it too."""
     h = tmp_path / "home"
     h.mkdir()
+    monkeypatch.chdir(h)
+    # A --basetemp inside a checkout must not let plain test directories discover that checkout.
+    ceiling = str(tmp_path.parent.resolve())
+    inherited = os.environ.get("GIT_CEILING_DIRECTORIES")
+    monkeypatch.setenv("GIT_CEILING_DIRECTORIES", ceiling + os.pathsep + inherited if inherited else ceiling)
     monkeypatch.setenv("HOME", str(h))
     for var in ("GITPRO_CONFIG", "GIT_CONFIG_GLOBAL", "XDG_CONFIG_HOME", "XDG_STATE_HOME"):
         monkeypatch.delenv(var, raising=False)
