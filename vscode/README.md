@@ -202,6 +202,12 @@ such as a clone, in the same way, with 2 seconds' grace.
 installing anything. It runs the checkout's `../.venv/bin/gitpro` unless `gitpro.path` is set. `npm test` runs the unit tests, `xvfb-run -a npm run test:integration` the integration
 test, and `npm run package` builds the `.vsix`.
 
+The editor integration tests need the Python CLI as well as `npm ci`. From
+this folder, prepare it with `python -m venv ../.venv` and
+`../.venv/bin/python -m pip install -e ..`, as CI does. Alternatively, set
+`GITPRO` to an installed CLI's absolute path. Tests use throwaway HOME and
+repositories; no real Git configuration or remote repositories are changed.
+
 VS Code itself prints a `[DEP0169] url.parse()` deprecation warning on `code --install-extension` and in the
 extension host. It comes from VS Code's request service and `@vscode/proxy-agent`, not from this extension
 ([microsoft/vscode#301941](https://github.com/microsoft/vscode/issues/301941)).
