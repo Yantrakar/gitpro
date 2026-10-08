@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import commit, git, repo_with_remote, run, write_config
+from conftest import DEFAULT_CONFIG, commit, git, repo_with_remote, run, write_config
 from gitpro import files, pin, plan
 
 CONFIG = """
@@ -136,6 +136,29 @@ def test_reserved_identity_id_with_distinct_custom_file_is_valid(home, tmp_path)
     repo = repo_with_remote(tmp_path, "personal", "git@github.com:someone/app.git")
     assert git(repo, "config", "user.email") == "me@personal.test"
     assert run("check") == 0
+
+
+@pytest.mark.parametrize("directory_alias", [False, True])
+@pytest.mark.parametrize("update_identity", [False, True])
+def test_identity_alias_relocation_keeps_live_output(cfg, home, tmp_path, directory_alias, update_identity):
+    text = DEFAULT_CONFIG.replace('id = "work-github"',
+                                  'id = "work-github"\nfile = "~/identities/work"')
+    cfg(text)
+    original = home / "identities/work"
+    alias = home / "work-alias"
+    alias.symlink_to(original.parent if directory_alias else original)
+    destination = "~/work-alias/work" if directory_alias else "~/work-alias"
+    text = text.replace("~/identities/work", destination)
+    email = "new@corp.test" if update_identity else "me@corp.test"
+    cfg(text.replace("me@corp.test", email), apply=False)
+    repo = repo_with_remote(tmp_path, "app", "git@github.com:corp-org/app.git")
+
+    assert run("apply", "-y") == 0
+    assert original.is_file() and alias.is_symlink()
+    assert git(repo, "config", "user.email") == email
+    assert run("check") == 0
+    assert run("apply", "-y") == 0
+    assert original.is_file()
 
 
 def test_hand_written_files_are_kept_and_backed_up(home):

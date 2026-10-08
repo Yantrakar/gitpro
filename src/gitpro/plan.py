@@ -178,7 +178,9 @@ def build(cfg: Config, env: Env) -> tuple[list[Target], list[Path]]:
             _read(ssh_dir / "config"), f"Match all\nInclude {MANAGED_SSH}", first=True,
             where="~/.ssh/config"), 0o600, strict=True),
     ]
-    stale = [env.expand(p) for p in render.manifest_of(_read(managed)) if p not in manifest]
+    live_paths = {t.path.resolve() for t in targets}
+    stale = [env.expand(p) for p in render.manifest_of(_read(managed))
+             if p not in manifest and env.expand(p).resolve() not in live_paths]
     return targets, stale
 
 
