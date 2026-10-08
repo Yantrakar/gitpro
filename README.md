@@ -203,8 +203,8 @@ files = []                         # policy files for every repo (an identity's 
 | `rewrite` | With `ssh_alias`, `git@<host>:<owner>/…` URLs go through the alias. Default `true`. |
 | `rewrite_https` | Also send `https://<host>/<owner>/…` over SSH through the alias. Default `false`. |
 | `ssh_user`, `ssh_port` | For a non-standard SSH user or port. Default `git`, 22. |
-| `sign` | Overrides `[default].sign`. |
-| `file` | Where this identity's generated settings go. Must be inside your home directory. |
+| `sign` | Overrides `[default].sign`. Explicit `false` also disables signing inherited from an earlier matching identity. |
+| `file` | Where this identity's generated settings go. Must be inside your home directory and must not overlap another identity file, gitpro's config, or its managed output files (including through symlinks). |
 | `gh_account`, `glab_account`, `clone_dir` | As in `[default]`, for this identity. |
 | `policy` | A [team policy](#teams) file this identity must satisfy. |
 
@@ -400,6 +400,10 @@ forwarded, including husky-style `post-checkout`). If gitpro itself
 fails, the commit goes through. Skip the check once with `GITPRO_SKIP=1`.
 `[guard] on_mismatch = "warn"` turns the block into a warning.
 
+For pushes, the guard checks the actual destination URL Git gives the hook,
+including `remote.<name>.pushurl` and URL rewrites, rather than the fetch URL.
+Commit identity selection still uses the configured fetch URLs.
+
 ```text
 $ gitpro guard install -y
   create  ~/.config/gitpro/hooks/pre-commit
@@ -572,6 +576,11 @@ This writes the repo's current name and email to `.git/git-identities` and
 includes it from `.git/config`. The container sees both because they are part
 of the mounted repo. Run `pin` again after you change your config. Commit
 signing and the choice of SSH key are not pinned.
+
+Re-pinning validates the replacement identity before changing the pin. If it
+cannot resolve a gitpro-managed identity or write the replacement, the existing
+pin is kept; a failed re-pin does not unpin the repo. Symlinked pin files are
+refused rather than writing through them.
 
 To have the container do this for you on every start, see
 [devcontainer](#devcontainer-keep-the-identity-in-a-container).
