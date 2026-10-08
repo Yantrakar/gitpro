@@ -13,6 +13,19 @@ pipx install git+https://github.com/sandeepshelke/gitpro.git
 
 Set `gitpro.path` if it is not on `PATH`.
 
+## Set up your identities
+
+Run **gitpro: Set Up Identities** from the Command Palette. It opens
+`gitpro setup` in a terminal: choose names/emails, hosts and owners, existing
+SSH keys and optional signing without editing TOML. Review before saving, then
+run **Plan** and **Apply** separately.
+
+The wizard keeps existing settings and comments when adding identities, and
+backs up existing configs. It never creates keys or applies Git/SSH changes.
+**Open Config** offers guided setup when no config exists; discovery and example
+creation remain available. With an older CLI, unsupported setup shows update
+instructions rather than trying to run an unknown command.
+
 ## Status bar
 
 For the repo of the file you are editing, the status bar shows one of:
@@ -54,6 +67,7 @@ Command Palette, "gitpro":
 
 | command | runs |
 |---|---|
+| Set Up Identities | `gitpro setup` in an interactive terminal |
 | Show Identity for This Repo | `gitpro which` |
 | Plan | `gitpro plan` |
 | Apply | `plan`, then `apply --yes` after you confirm |

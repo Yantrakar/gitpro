@@ -74,6 +74,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<Api> {
 function registerCore(context: vscode.ExtensionContext, cli: Cli): void {
   const refresh = () => vscode.commands.executeCommand("gitpro.refresh");
 
+  function setup(): void {
+    if (!cli.require("setup")) {
+      return;
+    }
+    const file = process.env.GITPRO_CONFIG || path.join(os.homedir(), ".config", "gitpro.toml");
+    cli.log.info("Opening the configuration wizard in a terminal; no changes are applied automatically.");
+    vscode.window.createTerminal({ name: "gitpro setup", shellPath: cli.executable(),
+      shellArgs: ["setup", "-c", file], cwd: cli.dir() || os.homedir() }).show();
+  }
+
   function repoDir(): string | undefined {
     const dir = cli.dir();
     if (!dir) {
@@ -100,6 +110,7 @@ function registerCore(context: vscode.ExtensionContext, cli: Cli): void {
   }
 
   const commands: Record<string, () => Promise<unknown>> = {
+    "gitpro.setup": async () => setup(),
     "gitpro.plan": () => cli.show(["plan"]),
     "gitpro.apply": async () => {
       const done = await upToDate();
@@ -139,8 +150,13 @@ function registerCore(context: vscode.ExtensionContext, cli: Cli): void {
     "gitpro.openConfig": async () => {
       const file = process.env.GITPRO_CONFIG || path.join(os.homedir(), ".config", "gitpro.toml");
       if (!fs.existsSync(file)) {
+        const wizard = cli.caps.has("setup") ? ["Guided Setup"] : [];
         const discover = cli.caps.has("init.discover") ? ["Create with Discovery"] : [];
-        const pick = await ui.info(`${file} does not exist.`, ...discover, "Create from Example");
+        const pick = await ui.info(`${file} does not exist.`, ...wizard, ...discover, "Create from Example");
+        if (pick === "Guided Setup") {
+          setup();
+          return;
+        }
         if (pick === "Create with Discovery") {
           // It may ask questions, so it runs in a terminal; closing the terminal refreshes the status bar.
           cli.log.info(`$ ${cli.executable()} init --discover ${file}    (in a terminal)`);

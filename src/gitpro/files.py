@@ -72,9 +72,10 @@ def show(changes: list[Change], diffs: bool) -> None:
                 (c.old or "").splitlines(True), (c.new or "").splitlines(True), f"a{c.path}", f"b{c.path}"))
 
 
-def _backup(path: Path) -> Path:
+def _backup(path: Path, data: bytes | None = None) -> Path:
     stamp = time.strftime("%Y%m%d-%H%M%S")
-    data = path.read_bytes()
+    if data is None:
+        data = path.read_bytes()
     for n in range(100):
         bak = path.with_name(f"{path.name}.bak.{stamp}" + (f".{n}" if n else ""))
         try:
@@ -87,10 +88,12 @@ def _backup(path: Path) -> Path:
     raise OSError(f"no free backup name for {path}")
 
 
-def atomic_write(path: Path, text: str | bytes, mode: int) -> None:
+def atomic_write(path: Path, text: str | bytes, mode: int, *,
+                 follow_symlinks: bool = True, overwrite: bool = True) -> None:
     """Replace path's content atomically: temp file in the same directory, fsync, rename.
-    A symlink is never replaced: the write goes to its target, in the target's directory."""
-    path = Path(os.path.realpath(path)) if Path(path).is_symlink() else Path(path)
+    By default symlinks are followed. Callers can replace the entry itself instead,
+    or require exclusive creation without overwriting any existing entry."""
+    path = Path(os.path.realpath(path)) if overwrite and follow_symlinks and Path(path).is_symlink() else Path(path)
     path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.")
     try:
@@ -99,7 +102,11 @@ def atomic_write(path: Path, text: str | bytes, mode: int) -> None:
             f.flush()
             os.fsync(f.fileno())
         os.chmod(tmp, mode)
-        os.replace(tmp, path)
+        if overwrite:
+            os.replace(tmp, path)
+        else:
+            os.link(tmp, path)
+            os.unlink(tmp)
     except BaseException:
         with contextlib.suppress(FileNotFoundError):
             os.unlink(tmp)
