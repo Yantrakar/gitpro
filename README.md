@@ -583,6 +583,8 @@ Re-pinning validates the replacement identity before changing the pin. If it
 cannot resolve a gitpro-managed identity or write the replacement, the existing
 pin is kept; a failed re-pin does not unpin the repo. Symlinked pin files are
 refused rather than writing through them.
+If adding the include fails, rollback restores the old pin's exact bytes and
+permissions.
 
 To have the container do this for you on every start, see
 [devcontainer](#devcontainer-keep-the-identity-in-a-container).

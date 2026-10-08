@@ -359,6 +359,24 @@ def test_failed_pin_include_rolls_back_file(cfg, tmp_path, capsys, existing_file
     assert (repo / ".git/config").read_bytes() == before
 
 
+@pytest.mark.parametrize("crlf", [False, True])
+@pytest.mark.parametrize("mode", [0o600, 0o660])
+def test_failed_pin_include_preserves_bytes_and_mode(cfg, tmp_path, crlf, mode):
+    cfg()
+    repo = repo_with_remote(tmp_path, "app", "git@github.com:corp-org/app.git")
+    assert run("pin", str(repo)) == 0
+    path = repo / ".git" / pin.FILE
+    git(repo, "config", "--local", "--unset-all", "include.path")
+    if crlf:
+        path.write_bytes(path.read_bytes().replace(b"\n", b"\r\n"))
+    path.chmod(mode)
+    before = path.read_bytes(), path.stat().st_mode, (repo / ".git/config").read_bytes()
+    (repo / ".git/config.lock").write_text("another git process\n")
+
+    assert run("pin", str(repo)) == 2
+    assert (path.read_bytes(), path.stat().st_mode, (repo / ".git/config").read_bytes()) == before
+
+
 def test_pin_refuses_symlink_without_changing_its_target(cfg, home, tmp_path, capsys):
     cfg()
     repo = repo_with_remote(tmp_path, "app", "git@github.com:corp-org/app.git")
