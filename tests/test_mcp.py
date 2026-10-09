@@ -149,7 +149,7 @@ def test_tools_list():
     for t in tools.values():
         assert t["inputSchema"]["type"] == "object" and t["description"]
         assert t["annotations"] == {"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True,
-                                    "openWorldHint": False}
+                                    "openWorldHint": t["name"] in ("preflight", "reconcile_operation")}
     assert tools["why"]["inputSchema"]["required"] == ["path"]
     assert tools["scan"]["inputSchema"]["properties"]["roots"]["maxItems"] == 20
 
@@ -505,11 +505,11 @@ def test_install_claude_cli_failure_falls_back(home, fake_bin, capsys):
 
 
 def test_install_needs_yes_without_terminal(home, capsys):
-    assert run("mcp", "install") == 2
-    assert "--yes" in capsys.readouterr().err
+    assert run("mcp", "install") == 0
+    assert "Dry run" in capsys.readouterr().out
     assert not (home / ".claude.json").exists()
-    assert run("mcp", "install", "--json") == 2
-    assert json.loads(capsys.readouterr().out)["ok"] is False
+    assert run("mcp", "install", "--json") == 0
+    assert json.loads(capsys.readouterr().out)["dry_run"] is True
 
 
 def test_uninstall_claude(home, fake_bin, capsys):
@@ -994,7 +994,7 @@ def test_install_cli_fallback_confirms_once_and_warns(home, fake_bin, capsys, mo
     asked = []
     monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
     monkeypatch.setattr(view, "confirm", lambda q, *a, **k: asked.append(q) or True)
-    assert run("mcp", "install") == 0
+    assert run("mcp", "install", "--write") == 0
     cap = capsys.readouterr()
     assert len(asked) == 1
     assert "close Claude Code first" in cap.err

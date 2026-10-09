@@ -334,11 +334,11 @@ def test_install_refuses_bad_files(home, capsys):  # 12
 
 
 def test_install_needs_yes_without_terminal(home, capsys):
-    assert run("agent", "install") == 2
-    assert "no terminal to confirm on" in capsys.readouterr().err
+    assert run("agent", "install") == 0
+    assert "Dry run" in capsys.readouterr().out
     assert not settings(home).exists()
-    assert run("agent", "install", "--json") == 2
-    assert json.loads(capsys.readouterr().out)["ok"] is False
+    assert run("agent", "install", "--json") == 0
+    assert json.loads(capsys.readouterr().out)["dry_run"] is True
     assert not settings(home).exists()
 
 

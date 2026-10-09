@@ -20,6 +20,7 @@ Snapshot = Optional[Tuple[bytes, os.stat_result]]
 def register(sub, common, confirm) -> None:
     from .args import capability
     p = sub.add_parser("setup", parents=[common], help="configure identities with a guided terminal wizard")
+    p.add_argument("--write", action="store_true", help="allow saving after interactive review (default: preview only)")
     p.set_defaults(func=cmd_setup)
     capability("setup")
 
@@ -242,6 +243,9 @@ def cmd_setup(args) -> int:
                         "\nReview your configuration", style="bold"))
     preview = text[len(original):] if original and not from_example else text
     out.print(Syntax(preview, "toml", word_wrap=True))
+    if not args.write:
+        out.print("Dry run: nothing saved. Run gitpro setup --write to review and save.")
+        return 0
     out.print("Only the config file will be saved. Existing config files are backed up first.")
     if not Confirm.ask("Save this configuration?", default=False, console=out):
         view.aborted()

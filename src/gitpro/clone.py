@@ -421,7 +421,7 @@ def cmd_clone(args) -> int:
         print("\n".join(preview(p, env.home)), flush=True)
         for w in p.warnings:
             view.warn(w)
-    if args.dry_run:
+    if args.dry_run or not (args.yes or args.write):
         if as_json:
             jsonout.emit("clone", _json(p, dry_run=True, problems=[], git_exit=None))
         else:

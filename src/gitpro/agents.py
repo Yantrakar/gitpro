@@ -1291,6 +1291,7 @@ def _what(c: Call) -> str:
 
 
 def _judge_one(c: Call, rep, cfg, own: set, pushed_to: Optional[str] = None) -> Optional[Decision]:
+    from .resolve import identity_conflicts
     exp = rep.expected
     want = _norm(exp.email)
     base, base_src = (c.config_email, "config") if c.config_email else (rep.effective.email.value, "effective")
@@ -1301,8 +1302,10 @@ def _judge_one(c: Call, rep, cfg, own: set, pushed_to: Optional[str] = None) -> 
     author, a_src = next(((v, s) for v, s in ((c.author, "author"), (c.author_env, "prefix"),
                                               (environ.get("GIT_AUTHOR_EMAIL"), "environ")) if v),
                          (base, base_src))
-    c_bad = _norm(committer) != want
-    a_bad = _norm(author) != want and _norm(author) in own
+    c_bad, a_bad = identity_conflicts(want, own, _norm(author), _norm(committer) or "")
+    if want is None:
+        c_bad = _norm(committer) is not None
+        a_bad = _norm(author) in own
     triggers = [p for p in rep.problems if p.code in TRIGGERS]
     if not (c_bad or a_bad or triggers):
         return None
@@ -1736,8 +1739,6 @@ def _edit(args: argparse.Namespace, removing: bool) -> int:
             return gargs.fail(f"{agent} adapter is experimental; add --experimental", args)
     if args.scope == "project" and agent != "claude":
         return gargs.fail("--scope project is for Claude Code only", args)
-    if args.json and not args.yes:
-        return gargs.fail("--json needs -y (there is no prompt in JSON mode)", args)
     repo = None
     if args.scope == "project":
         repo = _repo_top()
@@ -1765,6 +1766,10 @@ def _edit(args: argparse.Namespace, removing: bool) -> int:
         verb = "update" if obj is not None else "create"
         sign = "-" if removing else "+"
         print(f"  {verb:<7} {shown}   ({sign} hooks.{t.list_key}: {MARKER} --agent {agent})")
+    if gargs.preview_only(args):
+        return gargs.preview_result(args, command, {"file": str(t.path), "changed": False,
+                                                  "action": "remove" if removing else "install",
+                                                  "hook": _snippet(t), "backup": None, "undo": None})
     question = f"{'remove' if removing else 'install'} the {title} hook?"
     res = jsonfile.edit_json(t.path, change, command=command, create={},
                              confirm=_confirm_with(args, question), mkdir=True, snippet=_snippet(t))

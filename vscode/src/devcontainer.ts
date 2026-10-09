@@ -14,7 +14,7 @@ export const LINE = [
   "command true || exit 0",
   "# runs 'gitpro pin' on hosts that have gitpro, else nothing (line 1 stops Windows cmd)",
   "command -v gitpro >/dev/null 2>&1 || exit 0",
-  "IFS= read -r dir <<'GITPRO_PATH'; gitpro pin \"$dir\" || true; exit 0",
+  "IFS= read -r dir <<'GITPRO_PATH'; gitpro pin -y \"$dir\" || true; exit 0",
   "${localWorkspaceFolder}",
   "GITPRO_PATH",
 ].join("\n");
@@ -31,7 +31,7 @@ const DONT_ASK = "gitpro.devcontainer.dontAsk";
 /** An internal command (not contributed): run the nudge check now; resolves to one NudgeResult per folder. */
 export const NUDGE_COMMAND = "gitpro.devcontainerNudge";
 export type NudgeResult = "shown" | "seen" | "off" | "no-file" | "has-pin" | "old-gitpro" | "no-identity";
-const PIN_RE = /gitpro\s+pin\b/;
+const PIN_RE = /gitpro\s+pin\b[^\n;|&]*?\s(?:-y|--yes)(?=\s|[;|&]|$)/;
 
 /** What `gitpro devcontainer --json` prints (with --write: written, backup, undo). */
 export interface Proposal {
@@ -67,6 +67,9 @@ export function hasPin(value: unknown): boolean {
 /** The initializeCommand to propose given the current one (undefined/null: absent); mirrors devcontainer.propose.
  * An existing command is kept verbatim: a string or array moves into the object form next to ours. */
 export function proposeLine(existing: unknown): unknown {
+  if (existing === LINE.replace('gitpro pin -y "$dir"', 'gitpro pin "$dir"')) {
+    return LINE;
+  }
   if (hasPin(existing)) {
     return existing;
   }

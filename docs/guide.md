@@ -1,5 +1,31 @@
 # Gitpro user guide
 
+## Agent operations
+
+`gitpro preflight` evaluates a versioned operation request, `gitpro run` executes
+an explicitly approved operation with process-scoped identity, and
+`gitpro operation-status` reads its durable idempotency record. See
+[agent workflows](agent-workflows.md) for schemas, examples, permissions,
+atomicity guarantees and supported commit/push/GitHub PR operations.
+
+For persistent configuration and repairs, `gitpro change propose` produces an
+exact diff without applying it. The human reviews `gitpro change approve` in
+their terminal; `gitpro change apply` consumes that recorded approval.
+`gitpro change status` reads the durable result, and `gitpro change recover`
+restores recorded backups after an interrupted attempt without retrying forward
+writes. See [approved changes](agent-workflows.md#approved-persistent-changes)
+for configuration, regeneration, repository-identity repair and undo requests.
+For unattended runners, `--approval-policy` permits only explicitly scoped changes;
+the policy comes from the operator, not the agent. `gitpro operation-reconcile`
+observes recorded commit/push/PR intent without repeating writes or claiming attribution.
+
+**Preview first:** bare writing commands do not execute. Use `-y`/`--yes` for
+authorized noninteractive execution, or `--write` for interactive confirmation.
+Setup and human change approval specifically need `--write` and still require
+terminal review. Existing action flags such as `--fix`, `--rewrite`, `--generate`
+and `--upload` retain their existing semantics and safeguards. See the
+[preview/migration contract](agent-workflows.md#preview-by-default).
+
 [Back to the quick start](../README.md)
 
 Reference: [configuration](#configuration), [commands](#commands),
@@ -47,10 +73,10 @@ version.
 ## Quick start
 
 ```sh
-gitpro setup             # answer questions and review the config before saving
+gitpro setup --write     # answer questions and confirm before saving
 gitpro keys --generate   # optional: create SSH keys that don't exist yet
 gitpro plan              # show every change as a diff
-gitpro apply             # write the changes
+gitpro apply -y          # explicitly write the reviewed changes
 gitpro keys              # public keys to add to each account
 gitpro scan              # every repo under ~ and the identity git uses there
 ```
@@ -58,7 +84,7 @@ gitpro scan              # every repo under ~ and the identity git uses there
 If you start with `gitpro init` instead of the wizard, replace the example's
 placeholder emails and hosts before running `plan` or `apply`.
 
-On a machine that already has repos, `gitpro init --discover` writes the
+On a machine that already has repos, `gitpro init --discover -y` writes the
 same example plus the identities it found on this machine, commented in, so
 you only have to check them (see [discover](#discover-identities-already-on-this-machine)).
 
@@ -71,7 +97,7 @@ It only lists public-key filenames; it never reads private key contents, creates
 keys, contacts accounts, or reads shell history.
 
 Review the generated TOML before confirming Save. Saving creates only the private
-config file; run `gitpro plan` and then `gitpro apply` separately to change Git/SSH.
+config file; run `gitpro plan` and then `gitpro apply -y` separately to change Git/SSH.
 Ctrl-C before confirming Save, or declining Save, leaves the config unchanged.
 A terminal is required.
 
@@ -84,10 +110,11 @@ made while prompts were open and coordinates saves with other wizard sessions.
 Avoid editing the file during the save itself. If a crashed session leaves a
 `.setup.lock` file, check that no setup is still saving before removing that lock.
 
-Use `gitpro setup -c PATH` for a custom file. Otherwise `$GITPRO_CONFIG`, then
+Use `gitpro setup --write -c PATH` to save a custom file. Otherwise `$GITPRO_CONFIG`, then
 `~/.config/gitpro.toml`, determines the path. Advanced options and edits to existing
 identities remain available in the [configuration reference](#configuration).
-For a commented template instead of the wizard, use `gitpro init`.
+Without `--write`, setup only previews and never asks to save. For a commented
+template instead of the wizard, `gitpro init` previews it; `gitpro init -y` creates it.
 When you are done, `gitpro doctor` checks everything in one go.
 
 ## How it works
@@ -134,7 +161,7 @@ push. See [guard](#guard-stop-a-wrong-identity-commit).
 
 Below is every key gitpro accepts, with a short comment each. You need only
 `[default]` and the `[[identity]]` blocks you use; every table after them is
-optional and shown with its default. `gitpro init` writes a commented example
+optional and shown with its default. `gitpro init -y` writes a commented example
 of the same file.
 
 ```toml
@@ -283,7 +310,7 @@ be owned by you and not group/world-writable. Unknown keys are errors.
 | `setup [-c PATH]` | Guided, offline configuration. Preview and confirm before saving; preserves existing settings and backs up an existing file. Does not apply Git/SSH changes. |
 | `init [PATH]` | Create the commented example config. Never overwrites. `--discover` adds the identities found on this machine, commented in. |
 | `plan` | Show what `apply` would change, as diffs. |
-| `apply [-y]` | Write the changes. It asks first; `-y` skips the question and is required without a terminal. |
+| `apply [-y]` | Preview by default. `--write` enables interactive confirmation; `-y` explicitly writes without another question. |
 | `check` | Exit 1 if `apply` would change anything. With `--repo`, `--policy` or `--range` it checks a [team policy](#teams) instead. |
 | `keys [--generate]` | List each SSH key, its public key and where to register it. `--generate` creates the missing ones. `--health` checks them; `--upload --online` registers them. |
 | `which [DIR]` | Show the identity git uses in a repo, and which file each setting comes from. |
@@ -380,7 +407,7 @@ environment) and lists what to fix.
 
 ```text
 $ gitpro doctor
-gitpro 0.2.0  python 3.12.3  git 2.43.0  linux
+gitpro 0.3.0  python 3.12.3  git 2.43.0  linux
 config    ~/.config/gitpro.toml (user config)  1 identity         ✓
 applied   up to date                                              ✓
 files     ~/.gitconfig block last ✓  ~/.ssh/config block first ✓  ✓
@@ -604,7 +631,7 @@ files it includes, so no identity applies inside. The same happens when a
 container mounts only `~/.gitconfig`. Fix it per repo, on the host:
 
 ```sh
-gitpro pin    # in the repo
+gitpro pin -y # in the repo, after reviewing the preview
 ```
 
 This writes the repo's current name and email to `.git/git-identities` and
@@ -870,12 +897,17 @@ does nothing.
 
 ### MCP server
 
-`gitpro mcp` is a stdio MCP server with read-only tools:
+`gitpro mcp` is a stdio MCP server with read-only tools by default:
 `which_identity`, `why`, `check_commit`, `scan`, `identities`, plus
-`lost`, `audit`, `env_for` when installed. Register it with `gitpro mcp
+`lost`, `audit`, `env_for` when installed, and the structured `preflight`,
+`operation_status`, `reconcile_operation`, `propose_change` and `change_status` tools. Register it with `gitpro mcp
 install --agent claude|cursor|gemini|opencode` or by installing the
-gitpro plugin. It never writes; it tells the agent the command that
-would. Project-level `.mcp.json` is a team file: `--write` is required.
+gitpro plugin. The default tools do not write target files. An operator can
+explicitly enable `run_operation`, `apply_change` and `recover_change` with
+`gitpro mcp --allow-execution`; the host must authorize each write, and persistent
+changes additionally require recorded human approval or a covering operator-selected
+`--approval-policy`. There is no MCP approval tool or client-selectable policy.
+Project-level `.mcp.json` is a team file: `--write` is required.
 
 ```text
 $ gitpro mcp install --agent cursor -y
@@ -918,7 +950,7 @@ shows the pin state.
 $ gitpro devcontainer
 ~/work/github.com/employer-org/app/.devcontainer/devcontainer.json  (not committed: only on this machine)
 add this key:
-  "initializeCommand": "command true || exit 0\n# runs 'gitpro pin' on hosts that have gitpro, else nothing (line 1 stops Windows cmd)\ncommand -v gitpro >/dev/null 2>&1 || exit 0\nIFS= read -r dir <<'GITPRO_PATH'; gitpro pin \"$dir\" || true; exit 0\n${localWorkspaceFolder}\nGITPRO_PATH"
+  "initializeCommand": "command true || exit 0\n# runs 'gitpro pin' on hosts that have gitpro, else nothing (line 1 stops Windows cmd)\ncommand -v gitpro >/dev/null 2>&1 || exit 0\nIFS= read -r dir <<'GITPRO_PATH'; gitpro pin -y \"$dir\" || true; exit 0\n${localWorkspaceFolder}\nGITPRO_PATH"
 → gitpro does not edit it by default; to add it: gitpro devcontainer --write ~/work/github.com/employer-org/app
 → in the container, 'gitpro which' shows the pinned identity; signing and ssh keys are not pinned (see 'gitpro pin')
 · initializeCommand runs on the host before the container starts. On Linux, macOS and WSL this line runs gitpro pin when gitpro is installed and does nothing otherwise; on Windows (cmd.exe) its first line exits 0, so a colleague without gitpro is not affected and the container still starts (the build log then shows "'command' is not recognized as an internal or external command", which is harmless).
@@ -1350,7 +1382,7 @@ $ gitpro --version --json
 {
   "ok": true,
   "command": "version",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "python": "3.12.3",
   "capabilities": [
     "agent-check",
@@ -1402,7 +1434,7 @@ comparing version numbers.
   the fix, and runs `plan`, `apply`, `pin`, `clone` and more. It has views for
   repo-level overrides and lost work. It is not on the Marketplace yet; build
   and install it with
-  `cd vscode && npm ci && npx vsce package && code --install-extension gitpro-0.2.0.vsix`.
+  `cd vscode && npm ci && npx vsce package && code --install-extension gitpro-0.3.0.vsix`.
   See [`vscode/README.md`](../vscode/README.md).
 - **Claude Code**: a [skill](../skills/gitpro/SKILL.md) teaches Claude to
   edit the config from plain requests, show `plan`, and `apply` only after you
@@ -1424,6 +1456,8 @@ comparing version numbers.
 
 ```sh
 python -m venv .venv && .venv/bin/pip install -e . pytest && .venv/bin/pytest
+.venv/bin/python -m pip wheel --no-deps --wheel-dir dist .
+.venv/bin/python tests/smoke_wheel.py dist/gitpro-0.3.0-py3-none-any.whl
 cd vscode && npm ci && npm test                  # extension unit tests
 xvfb-run -a npm run test:integration             # starts VS Code; drop xvfb-run with a display
 ```
@@ -1433,6 +1467,20 @@ only platform-specific tests may skip.
 The shared `home` fixture also starts in its isolated home and sets a Git
 discovery ceiling, so scratch directories inside a checkout cannot accidentally
 install project settings into that checkout.
+The wheel smoke runs the extracted distribution outside the checkout with a
+disposable home. It exercises default approval refusal, operator-scoped apply,
+idempotent replay, undo and MCP execution gates without network access or live
+configuration changes. CI runs it on the Python/Linux/macOS matrix and retains
+wheel/VSIX artifacts; uploading an artifact does not publish a release.
+
+Live GitHub qualification is separate and opt-in: `python tests/smoke_github.py --help`.
+It previews by default; `-y` authorizes a private clone/configuration, candidate
+commit, push to a new `gitpro-e2e-*` branch, and draft PR. Supply an isolated
+operator-selected `gh` profile (including `workflow` scope if the candidate edits
+CI). It checks execution, idempotent replay and read-only reconciliation using
+the packaged CLI. Evidence and the test resources are retained: inspect CI,
+then close that draft PR and delete only its temporary branch. Never retry an
+interrupted write with a new key or delete unrelated resources.
 
 ## License
 

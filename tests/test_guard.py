@@ -154,12 +154,12 @@ def test_install_global(g, tmp_path, capsys):
 
 
 def test_install_without_tty_writes_nothing(g, capsys):
-    assert run("guard", "install") == 2
-    assert "no terminal to confirm on" in capsys.readouterr().err
+    assert run("guard", "install") == 0
+    assert "Dry run" in capsys.readouterr().out
     assert not hooks_dir(g).exists() and not (g / ".gitconfig-gitpro-guard").exists()
     assert "gitpro-guard" not in (g / ".gitconfig-identities").read_text()
-    assert run("guard", "install", "--json") == 2   # --json needs -y
-    assert json.loads(capsys.readouterr().out)["ok"] is False
+    assert run("guard", "install", "--json") == 0
+    assert json.loads(capsys.readouterr().out)["dry_run"] is True
 
 
 def test_install_json_and_uninstall_json(g, capsys):

@@ -1559,6 +1559,9 @@ def _init_handler(args) -> Optional[int]:
     d = collect(sources, history=args.history, online=args.online, home=home, find_config=False)
     rc = cli.cmd_init(args)
     example = resources.files(__package__).joinpath("example.toml").read_text()
+    if cli.preview_only(args):
+        print(_commented(d))
+        return rc
     try:
         created = rc == 0 and target.read_text() == example
     except OSError:

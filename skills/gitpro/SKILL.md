@@ -24,8 +24,8 @@ Docs: https://github.com/sandeepshelke/gitpro/blob/main/docs/guide.md
 - Never read, print or copy private SSH keys. Public keys (`.pub`) are fine.
 - Don't run `keys --generate` yourself: it prompts for a passphrase. Ask the
   user to run it in their terminal. `--no-passphrase` only if they ask for it.
-- `gitpro setup` is a terminal wizard. Ask the user to run it themselves; it
-  previews the config and requires explicit Save, with no noninteractive `-y`.
+- `gitpro setup` is a preview-only terminal wizard. To save, the user runs
+  `gitpro setup --write` and confirms Save; there is no noninteractive `-y`.
 - Don't invent owners, hosts or emails. Ask the user, or read them from the
   remote URLs of their repos (`git remote -v`).
 - Before any `git commit`, `git push` or `gh pr create` for the user, run
@@ -112,6 +112,37 @@ ssh_alias = "github-work"          # ssh Host that offers only ssh_key
 
 ## Workflow for a change
 
+When `change-propose.v1` is available, use the
+[approved change workflow](../../docs/agent-workflows.md#approved-persistent-changes)
+instead of editing live configuration. Supply a complete explicit TOML document
+(`configure`), render existing settings (`regenerate`), or request the bounded
+`repo-identity` repair. `gitpro change propose` / MCP `propose_change` returns an
+exact proposal without changing target files. Save it privately and ask the
+human to run `gitpro change approve --write --proposal FILE` in their terminal.
+**Never drive that prompt or manufacture a TTY to approve on their behalf.**
+After approval and explicit host/user execution permission, use
+`gitpro change apply --plan-id ID -y` / `apply_change`, then preflight the operation.
+No-op proposals need no apply. Repeated apply uses the same plan ID.
+
+With `approval-policy.v1`, an operator may explicitly preauthorize narrow kinds
+and file/repository scopes using `--approval-policy`. Do not create, broaden or
+select a policy on the agent's own authority. A covered proposal can be applied
+headlessly using its exact plan ID and `--proposal FILE`; MCP `apply_change` takes
+the normalized `request` and uses only the server operator's startup policy.
+An uncovered proposal still requires human approval. Host execution permission,
+stale-plan checks and all ordinary safeguards remain. Policy files and startup
+arguments must be protected by the host; same-UID file permissions are not an
+enforced boundary against an unrestricted agent.
+
+For an interrupted change, inspect `gitpro change status` / `change_status`;
+`gitpro change recover` / `recover_change` uses the approved rollback, not a
+forward retry, and still needs execution permission. Do not overwrite recovery
+conflicts or remove unknown locks. An `undo` proposal references the applied
+`change_id` and requires a separate approval. Never use a fresh plan to conceal
+an indeterminate previous attempt.
+
+For older installations, with explicit permission to edit configuration:
+
 1. Read the config. Make the smallest edit that does what the user asked.
 2. `gitpro plan`. Show the diff and any `⚠` warning lines.
 3. On the user's yes: `gitpro apply -y`.
@@ -128,7 +159,7 @@ ssh_alias = "github-work"          # ssh Host that offers only ssh_key
   the list → on the user's yes, `gitpro audit --rewrite -y` (it rewrites only
   unpushed commits, needs a clean working tree and prints an `↩ undo:` line;
   tell the user to fetch first, since "pushed" means as of the last fetch).
-- **"Set up a new machine"**: the user runs `gitpro setup` in their terminal →
+- **"Set up a new machine"**: the user runs `gitpro setup --write` in their terminal →
   `gitpro plan` → yes → `gitpro apply -y` → `gitpro keys` →
   `gitpro auth` (online: say so first) → `gitpro doctor`.
   For broader discovery, `gitpro init --discover` remains available (add
@@ -158,6 +189,28 @@ ssh_alias = "github-work"          # ssh Host that offers only ssh_key
 
 ## Before committing for the user
 
+When capabilities include `preflight.v1` and `run.v1`, prefer the
+[structured agent workflow](../../docs/agent-workflows.md):
+construct a version-1 request for the exact commit, push or GitHub PR;
+call `preflight` through CLI/MCP; proceed only on `decision: "ready"` and
+host/user authorization. A ready `plan_token` detects changed state, **not**
+permission. `gitpro run` needs that token, a unique idempotency key and `-y`.
+Network preflight/execution also needs explicitly approved `--online`.
+MCP `run_operation` is available only when the operator enabled execution.
+Never enable it or change persistent configuration without user approval.
+
+Retry a lost response only with the **same request, original token and key**.
+Use `gitpro operation-status` / MCP `operation_status` to inspect the durable
+result. `gitpro operation-reconcile` / MCP `reconcile_operation` observes recorded
+intent without retrying writes or changing the ledger. Remote inspection needs
+explicit network permission. `observed` does not prove attribution or permit a
+retry (`retry_safe` remains false). For `indeterminate` or `outcome_unknown`,
+inspect effects and stop; do not
+invent a fresh key to repeat the write. New intended operations require a new
+preflight and key. Do not use `eval` or obtain token values for this workflow.
+
+For older installations:
+
 Run `gitpro why` in the repo. It prints the remotes, the identity the repo
 should use and why, the effective name and email with the file each comes
 from, the SSH key and signing, and a `→` fix for every problem. If it shows a
@@ -168,14 +221,26 @@ which` shows the raw effective settings.
 
 Every command has `--help`.
 
+With `dry-run-defaults.v1`, bare writing commands preview rather than execute.
+Use `-y`/`--yes` only after host/user authorization; `--write` retains interactive
+confirmation where applicable. Existing explicit action flags (`--fix`,
+`--rewrite`, `--generate`, `--upload`) retain their safeguards. A preview never
+grants approval. `run` without execution consent returns preflight, while
+`change apply` previews and `change recover` reads status.
+
 | command | writes? | needs yes? | network |
 |---|---|---|---|
+| `preflight`, `operation-status`, `operation-reconcile` | no | no; `--online` requires explicit permission | preflight/reconciliation can read destination/account state with `--online` |
+| `run` | yes: reviewed Git/forge operation and durable journal; never identity config | **yes**, then `-y`; original plan token and idempotency key required | push/PR require `--online` |
+| `change propose`, `change status` | no target writes | no | no |
+| `change approve` | only with `--write`: immutable approval and backup journal | **yes**, human reviews in their own terminal; no `-y` | no |
+| `change apply`, `change recover` | yes: authorized exact files or conflict-safe restoration | **yes**, then `-y`, plus human approval or an operator-scoped grant; recovery retains original rollback permission | no |
 | `which`, `why`, `doctor`, `prompt`, `completion`, `check`, `plan`, `scan`, `scan --roots`, `scan --suggest`, `lost`, `audit`, `keys`, `keys --health`, `guard status`, `guard test`, `agent status`, `devcontainer`, `devcontainer status`, `policy show`, `policy lint`, `team`, `env`, `discover`, `clone --dry-run` | no | no | no (`--online` is opt-in where present: ask first) |
 | `guard check`, `agent-check`, `mcp` | no; git hooks, the agent hook and the MCP client call these | do not run them yourself | no |
 | `auth`, `forge repos`, `forge forks`, `forge email` | no | no, but say it goes online | **yes**, say so |
 | `discover --history`, `init --discover --history` | reads shell history (`init` also writes the config) | **yes** | no |
-| `init`, `init --discover` | creates the config file; never overwrites | **yes** | no |
-| `setup` | creates or appends to the config, with backup before updating | **yes**, user confirms Save in their terminal | no |
+| `init`, `init --discover` | previews; `-y` creates the config and never overwrites | **yes** | no |
+| `setup` | previews; `--write` permits saving with backup before updating | **yes**, user confirms Save in their terminal | no |
 | `apply`, `scan --fix`, `pin`, `unpin`, `uninstall`, `guard install`, `guard uninstall`, `agent install`, `agent uninstall`, `mcp install`, `mcp uninstall`, `audit --rewrite` | yes | **yes**, then `-y` | no |
 | `clone` | yes: a new directory | **yes**, then `-y` | yes: `git clone` |
 | `devcontainer --write`, `mcp install --scope project --write` | yes, **team file** | **yes**, then `-y` | no |
@@ -204,11 +269,15 @@ Notes:
 
 The gitpro plugin (or `gitpro mcp install`) gives you an MCP server with
 these tools: `which_identity`, `why`, `check_commit`, `scan`,
-`identities`, `env_for`, `lost`, `audit`.
+`identities`, `env_for`, `lost`, `audit`, `preflight`, `operation_status`, `reconcile_operation`,
+`propose_change`, `change_status`.
+The explicitly enabled execution server additionally exposes `run_operation`,
+`apply_change` and `recover_change`. There is no approval tool or client-selectable
+policy. The operator can configure `gitpro mcp --allow-execution --approval-policy PATH`.
 
 - Before committing, call `why`, then `check_commit` with the commit message
   if you need to know whether the guard would block it.
-- Every tool is read-only and returns the same JSON as the matching `--json`
+- Every default tool is read-only and returns the same JSON as the matching `--json`
   command.
 - A `fix` field is a command to propose to the user, not to run.
 - `env_for` returns the commands that fetch a token, never a token.

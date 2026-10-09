@@ -45,7 +45,7 @@ async function setupLauncher(api: Api): Promise<void> {
       const options = terminal.creationOptions;
       assert.ok("shellPath" in options);
       assert.equal(options.shellPath, env("GI_GITPRO"));
-      assert.deepEqual(options.shellArgs, ["setup", "-c", file]);
+      assert.deepEqual(options.shellArgs, ["setup", "--write", "-c", file]);
       assert.equal(typeof await terminal.processId, "number");
       assert.equal(fs.existsSync(file), false, "launching setup must not write a config");
     } finally {

@@ -248,7 +248,7 @@ def _id_of(cfg, email: str) -> str:
 def identity_commit(ctx: Context) -> int:
     """pre-commit: the committer email must be the expected identity's; an author email counts only when
     it is one of the user's own (a colleague's --author, cherry-pick or git am never blocks)."""
-    from .resolve import _shown_fix, own_emails
+    from .resolve import _shown_fix, identity_conflicts, own_emails
     rep = ctx.report
     exp = rep.expected
     for p in rep.problems:
@@ -256,8 +256,9 @@ def identity_commit(ctx: Context) -> int:
             ctx.say(f"⚠ gitpro: {p.message}")
     if exp.email is None:
         return 0
-    own = {e.casefold() for e in own_emails(ctx.cfg)}
-    if ctx.committer_email and not _same(ctx.committer_email, exp.email):
+    bad_committer, bad_author = identity_conflicts(exp.email, own_emails(ctx.cfg),
+                                                  ctx.author_email, ctx.committer_email)
+    if ctx.committer_email and bad_committer:
         cause = next((p for p in rep.problems if p.code in _CAUSES), None)
         if cause is not None:
             lines = [f"cause: {cause.message}"] + ([f"fix:   {_shown_fix(cause)}"] if _shown_fix(cause) else [])
@@ -270,7 +271,7 @@ def identity_commit(ctx: Context) -> int:
         return _mismatch(ctx, f"this commit would be committed as {ctx.committer_email} but {_where(exp)} "
                               f"belongs to {_belongs(exp)}", lines, "commit")
     a = ctx.author_email
-    if a and not _same(a, exp.email) and a.casefold() in own:
+    if a and bad_author:
         lines = [f"cause: author is your {_id_of(ctx.cfg, a)} email",
                  f"fix:   unset GIT_AUTHOR_NAME GIT_AUTHOR_EMAIL, or commit with "
                  f"--author={shlex.quote(f'{exp.name} <{exp.email}>')}"]
@@ -620,11 +621,6 @@ def _confirm(question: str, yes: bool) -> bool:
     return view.confirm(question)
 
 
-def _need_yes_for_json(args) -> None:
-    if getattr(args, "json", False) and not getattr(args, "yes", False):
-        raise ConfigError("--json needs -y (there is no terminal to confirm on)")
-
-
 _WARNED_MISSING: set = set()
 
 
@@ -738,7 +734,7 @@ def cmd_install(args) -> int:
     if getattr(args, "repo", None):
         return _install_repo(args)
     from . import config, files, jsonout, plan, render, resolve, undo
-    _need_yes_for_json(args)
+    from .args import preview_only, preview_result
     resolve.require_git()
     env = _env(args)
     path, how = config.find(args.config, env.home)
@@ -753,6 +749,11 @@ def cmd_install(args) -> int:
     changes = files.diff(plan.guard_targets(cfg, env) + [plan.Target(managed, render.with_guard_include(
         managed.read_text(), plan.guard_include(env), plan.guard_manifest(env)))], [])
     as_json = getattr(args, "json", False)
+    if preview_only(args):
+        if not as_json:
+            _show_changes(changes, env.home)
+        return preview_result(args, "guard install", {
+            "changes": [{"action": c.action, "path": str(c.path)} for c in changes], "undo": None})
     if not changes:
         if as_json:
             jsonout.emit("guard install", {"changes": [], "undo": None})
@@ -787,7 +788,7 @@ def cmd_uninstall(args) -> int:
     if getattr(args, "repo", None):
         return _uninstall_repo(args)
     from . import files, jsonout, plan, render, undo
-    _need_yes_for_json(args)
+    from .args import preview_only, preview_result
     env = _env(args)
     managed = env.home / plan.MANAGED_GITCONFIG
     targets = []
@@ -797,6 +798,11 @@ def cmd_uninstall(args) -> int:
         targets.append(plan.Target(managed, new))
     changes = files.diff(targets, plan.guard_paths(env))
     as_json = getattr(args, "json", False)
+    if preview_only(args):
+        if not as_json:
+            _show_changes(changes, env.home)
+        return preview_result(args, "guard uninstall", {
+            "changes": [{"action": c.action, "path": str(c.path)} for c in changes], "undo": None})
     if not changes:
         if as_json:
             jsonout.emit("guard uninstall", {"changes": [], "undo": None})
@@ -923,11 +929,19 @@ def _repo_plan(top: Path, common: Path, hooks: Path) -> Tuple[List[Tuple[str, Pa
 
 def _install_repo(args) -> int:
     from . import files, jsonout, undo
-    _need_yes_for_json(args)
+    from .args import preview_only, preview_result
     top, common, hooks = _repo_layout(Path(args.repo))
     _refuse_tool_dirs(top, common, hooks)
     todo, skipped = _repo_plan(top, common, hooks)
     as_json = getattr(args, "json", False)
+    if preview_only(args):
+        planned = [{"action": "create" if old is None else "update", "path": str(path)}
+                   for _, path, old, _ in todo]
+        if not as_json:
+            for item in planned:
+                print(f"  {item['action']} {item['path']}")
+        return preview_result(args, "guard install", {"changes": planned, "undo": None,
+                                                     "skipped": [str(p) for p in skipped]})
     if not as_json:
         for f in skipped:
             print(f"· skip {undo.tilde(f)}: not executable, so git does not run it; left as it is "
@@ -976,7 +990,7 @@ def _install_repo(args) -> int:
 def _uninstall_repo(args) -> int:
     from . import files, jsonout, undo
     from .render import has_block, without_block
-    _need_yes_for_json(args)
+    from .args import preview_only, preview_result
     top, common, hooks = _repo_layout(Path(args.repo))
     todo = []
     for name in REPO_HOOKS:
@@ -989,6 +1003,13 @@ def _uninstall_repo(args) -> int:
         new = without_block(old)
         todo.append((name, f, old, None if new.strip() in ("", "#!/bin/sh") else new))
     as_json = getattr(args, "json", False)
+    if preview_only(args):
+        planned = [{"action": "remove" if new is None else "update", "path": str(path)}
+                   for _, path, _, new in todo]
+        if not as_json:
+            for item in planned:
+                print(f"  {item['action']} {item['path']}")
+        return preview_result(args, "guard uninstall", {"changes": planned, "undo": None})
     if not todo:
         if as_json:
             jsonout.emit("guard uninstall", {"changes": [], "undo": None})
@@ -1038,6 +1059,8 @@ def _leaf(gs, name: str, help_: str, **kw) -> argparse.ArgumentParser:
     sp.add_argument("-c", "--config", type=Path, metavar="PATH", default=argparse.SUPPRESS, help=argparse.SUPPRESS)
     sp.add_argument("--home", type=Path, default=argparse.SUPPRESS, help=argparse.SUPPRESS)
     sp.add_argument("-y", "--yes", action="store_true", default=argparse.SUPPRESS, help=argparse.SUPPRESS)
+    sp.add_argument("--write", action="store_true", default=argparse.SUPPRESS,
+                    help="execute after confirmation (default: preview only)")
     return sp
 
 
