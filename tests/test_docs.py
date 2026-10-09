@@ -17,13 +17,14 @@ ROOT = Path(__file__).resolve().parent.parent
 GUIDE = (ROOT / "docs/guide.md").read_text(encoding="utf-8")
 README = (ROOT / "README.md").read_text(encoding="utf-8")
 SKILL = (ROOT / "skills/gitpro/SKILL.md").read_text(encoding="utf-8")
-VERSION = "0.2.0"
+VERSION = "0.3.0"
 INSTALL = "git+https://github.com/sandeepshelke/gitpro.git"
 
 # Spec 17 §5: the commands that write, each of which the skill's table must mark as writing.
 WRITING = ["apply", "scan --fix", "pin", "unpin", "uninstall", "guard install", "guard uninstall",
            "agent install", "agent uninstall", "mcp install", "mcp uninstall", "devcontainer --write",
-           "clone", "audit --rewrite", "keys --upload", "keys --generate", "init", "setup"]
+           "clone", "audit --rewrite", "keys --upload", "keys --generate", "init", "setup",
+           "change approve", "change apply", "change recover"]
 
 
 # ---------------------------------------------------------------- the parser

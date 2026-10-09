@@ -163,7 +163,7 @@ def test_cache_follows_pin(work_repo, capsys, monkeypatch):  # 12
     assert counter.take() > 0
     say(capsys, work_repo)
     assert counter.take() == 0
-    assert run("pin", str(work_repo)) == 0
+    assert run("pin", "-y", str(work_repo)) == 0
     capsys.readouterr()
     counter.take()
     assert say(capsys, work_repo) == "✓ work-github\n" and counter.take() > 0

@@ -269,10 +269,10 @@ def test_needs_terminal(cfg, tmp_path, bare_remote, capsys):  # 10
     cfg()
     bare = seeded(bare_remote, tmp_path)
     rc, _, e = out(capsys, str(bare), str(tmp_path / "dest"))
-    assert rc == 2 and "no terminal to confirm on" in e
+    assert rc == 0 and not e
     assert not (tmp_path / "dest").exists()
     rc, o, _ = out(capsys, str(bare), str(tmp_path / "dest"), "--json")
-    assert rc == 2 and "no terminal to confirm on" in json.loads(o)["error"]
+    assert rc == 0 and json.loads(o)["dry_run"] is True
     assert not (tmp_path / "dest").exists()
 
 
@@ -282,7 +282,7 @@ def test_declined(cfg, tmp_path, bare_remote, capsys, monkeypatch):
     monkeypatch.setattr("sys.stdin.isatty", lambda: True)
     from gitpro import view
     monkeypatch.setattr(view, "confirm", lambda q: False)
-    rc, _, _ = out(capsys, str(bare), str(tmp_path / "dest"))
+    rc, _, _ = out(capsys, str(bare), str(tmp_path / "dest"), "--write")
     assert rc == 1
     assert not (tmp_path / "dest").exists()
 

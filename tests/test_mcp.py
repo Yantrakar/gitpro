@@ -149,7 +149,7 @@ def test_tools_list():
     for t in tools.values():
         assert t["inputSchema"]["type"] == "object" and t["description"]
         assert t["annotations"] == {"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True,
-                                    "openWorldHint": False}
+                                    "openWorldHint": t["name"] in ("preflight", "reconcile_operation")}
     assert tools["why"]["inputSchema"]["required"] == ["path"]
     assert tools["scan"]["inputSchema"]["properties"]["roots"]["maxItems"] == 20
 
@@ -169,6 +169,37 @@ def test_protocol_errors_and_server_continues():
 def test_batch_and_non_object_requests_are_invalid():
     out = rpc("[1, 2]", "42")
     assert [m["error"]["code"] for m in out] == [-32600, -32600]
+
+
+@pytest.mark.parametrize("wire", [
+    '{"jsonrpc":"2.0","id":1,"id":2,"method":"ping"}',
+    '{"jsonrpc":"2.0","id":1,"method":"ping","method":"tools/call"}',
+    '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":'
+    '{"name":"preflight","name":"run_operation","arguments":{}}}',
+    '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":'
+    '{"name":"preflight","arguments":{"online":false,"online":true,"request":{}}}}',
+    '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":'
+    '{"name":"preflight","arguments":{"request":{"version":1,"operation":"commit",'
+    '"repo":"/fixture","message":"Reviewed","message":"Different"}}}}',
+    '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":'
+    '{"name":"apply_change","arguments":{"plan_id":"original","plan_id":"other"}}}',
+    '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":'
+    '{"name":"propose_change","arguments":{"request":{"version":1,"kind":"configure",'
+    '"toml":"original","toml":"other"}}}}',
+])
+def test_duplicate_json_members_are_rejected_before_dispatch(
+        wire: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    def unexpected(*args: object) -> dict:
+        pytest.fail("a duplicate-member message reached tool dispatch")
+
+    monkeypatch.setattr(mcp.Server, "call", unexpected)
+    inp = io.StringIO(wire + '\n{"jsonrpc":"2.0","id":99,"method":"ping"}\n')
+    out = io.StringIO()
+    assert mcp.serve(inp, out, allow_execution=True) == 0
+    rejected, ping = lines(out.getvalue())
+    assert rejected == {"jsonrpc": "2.0", "id": None, "error": {
+        "code": mcp.PARSE_ERROR, "message": "parse error: duplicate JSON member"}}
+    assert ping == {"jsonrpc": "2.0", "id": 99, "result": {}}
 
 
 # ---------------------------------------------------------------- tools (5-9, 11, 12)
@@ -505,11 +536,11 @@ def test_install_claude_cli_failure_falls_back(home, fake_bin, capsys):
 
 
 def test_install_needs_yes_without_terminal(home, capsys):
-    assert run("mcp", "install") == 2
-    assert "--yes" in capsys.readouterr().err
+    assert run("mcp", "install") == 0
+    assert "Dry run" in capsys.readouterr().out
     assert not (home / ".claude.json").exists()
-    assert run("mcp", "install", "--json") == 2
-    assert json.loads(capsys.readouterr().out)["ok"] is False
+    assert run("mcp", "install", "--json") == 0
+    assert json.loads(capsys.readouterr().out)["dry_run"] is True
 
 
 def test_uninstall_claude(home, fake_bin, capsys):
@@ -994,7 +1025,7 @@ def test_install_cli_fallback_confirms_once_and_warns(home, fake_bin, capsys, mo
     asked = []
     monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
     monkeypatch.setattr(view, "confirm", lambda q, *a, **k: asked.append(q) or True)
-    assert run("mcp", "install") == 0
+    assert run("mcp", "install", "--write") == 0
     cap = capsys.readouterr()
     assert len(asked) == 1
     assert "close Claude Code first" in cap.err

@@ -184,8 +184,8 @@ def test_removed_identity_file_is_deleted(home):
 
 def test_apply_without_terminal_needs_yes(home, capsys):
     write_config(home, CONFIG)
-    assert run("apply") == 2
-    assert "--yes" in capsys.readouterr().err
+    assert run("apply") == 0
+    assert "Dry run" in capsys.readouterr().out
     assert not (home / ".gitconfig").exists()
 
 
@@ -250,12 +250,12 @@ def test_scripts_from_before_packaging_are_migrated(home):
 
 
 def test_init_writes_example_that_must_be_edited(home, capsys):
-    assert run("init") == 0
+    assert run("init", "-y") == 0
     path = home / ".config/gitpro.toml"
     assert path.stat().st_mode & 0o777 == 0o600
     assert run("plan") == 2
     assert "placeholder" in capsys.readouterr().err
-    assert run("init") == 0  # never overwrites
+    assert run("init", "-y") == 0  # never overwrites
 
 
 def test_clone_uses_identity_key_without_alias(home, tmp_path, monkeypatch):
@@ -280,8 +280,8 @@ def test_pin_carries_identity_into_a_container(home, tmp_path, monkeypatch):
     run("apply", "-y")
     repo = repo_with_remote(tmp_path, "app", "git@github.com:corp-org/app.git")
     before = (repo / ".git/config").read_text()
-    assert run("pin", str(repo)) == 0
-    assert run("pin", str(repo)) == 0  # re-pinning replaces, never stacks
+    assert run("pin", "-y", str(repo)) == 0
+    assert run("pin", "-y", str(repo)) == 0  # re-pinning replaces, never stacks
     assert git(repo, "config", "--local", "--get-all", "include.path") == "git-identities"
 
     # What VS Code Dev Containers do: copy ~/.gitconfig alone into a fresh home.
@@ -293,17 +293,17 @@ def test_pin_carries_identity_into_a_container(home, tmp_path, monkeypatch):
     assert git(repo, "config", "user.name") == "Work Me"
 
     monkeypatch.setenv("HOME", str(home))
-    assert run("unpin", str(repo)) == 0
+    assert run("unpin", "-y", str(repo)) == 0
     assert (repo / ".git/config").read_text() == before
     assert not (repo / ".git/git-identities").exists()
-    assert run("unpin", str(repo)) == 0  # nothing to do
+    assert run("unpin", "-y", str(repo)) == 0  # nothing to do
 
 
 def test_pin_refuses_without_identity(home, tmp_path, capsys):
     write_config(home, CONFIG.split("[[identity]]")[0].replace('name = "Personal Me"\nemail = "me@personal.test"\n', ""))
     run("apply", "-y")
     repo = repo_with_remote(tmp_path, "app", "git@github.com:someone/app.git")
-    assert run("pin", str(repo)) == 2
+    assert run("pin", "-y", str(repo)) == 2
     assert "nothing to pin" in capsys.readouterr().err
     assert not (repo / ".git/git-identities").exists()
 
@@ -312,7 +312,7 @@ def test_pin_refuses_identity_not_from_us(home, tmp_path, capsys):
     """Inside a container only a copied ~/.gitconfig is left; pinning its hand-written [user] would be wrong."""
     (home / ".gitconfig").write_text('[user]\n\tname = Old\n\temail = old@corp.test\n')
     repo = repo_with_remote(tmp_path, "app", "git@github.com:corp-org/app.git")
-    assert run("pin", str(repo)) == 2
+    assert run("pin", "-y", str(repo)) == 2
     assert "not from gitpro" in capsys.readouterr().err
 
 
@@ -320,7 +320,7 @@ def test_pin_refuses_identity_not_from_us(home, tmp_path, capsys):
 def test_failed_repin_keeps_existing_pin(cfg, home, tmp_path, monkeypatch, capsys, failure):
     cfg()
     repo = repo_with_remote(tmp_path, "app", "git@github.com:corp-org/app.git")
-    assert run("pin", str(repo)) == 0
+    assert run("pin", "-y", str(repo)) == 0
     path = repo / ".git" / pin.FILE
     if failure == "override":
         git(repo, "config", "user.email", "other@corp.test")
@@ -335,7 +335,7 @@ def test_failed_repin_keeps_existing_pin(cfg, home, tmp_path, monkeypatch, capsy
         monkeypatch.setattr(files, "atomic_write", fail_write)
     before = path.read_bytes(), path.stat().st_mode, (repo / ".git/config").read_bytes()
     capsys.readouterr()
-    assert run("pin", str(repo)) == 2
+    assert run("pin", "-y", str(repo)) == 2
     assert capsys.readouterr().err
     assert (path.read_bytes(), path.stat().st_mode, (repo / ".git/config").read_bytes()) == before
 
@@ -346,14 +346,14 @@ def test_failed_pin_include_rolls_back_file(cfg, tmp_path, capsys, existing_file
     repo = repo_with_remote(tmp_path, "app", "git@github.com:corp-org/app.git")
     path = repo / ".git" / pin.FILE
     if existing_file:
-        assert run("pin", str(repo)) == 0
+        assert run("pin", "-y", str(repo)) == 0
         git(repo, "config", "--local", "--unset-all", "include.path")
         path.write_text(path.read_text().replace("me@corp.test", "old@corp.test"))
     previous = path.read_bytes() if existing_file else None
     before = (repo / ".git/config").read_bytes()
     (repo / ".git/config.lock").write_text("another git process\n")
     capsys.readouterr()
-    assert run("pin", str(repo)) == 2
+    assert run("pin", "-y", str(repo)) == 2
     assert "lock" in capsys.readouterr().err
     assert (path.read_bytes() if path.exists() else None) == previous
     assert (repo / ".git/config").read_bytes() == before
@@ -364,7 +364,7 @@ def test_failed_pin_include_rolls_back_file(cfg, tmp_path, capsys, existing_file
 def test_failed_pin_include_preserves_bytes_and_mode(cfg, tmp_path, crlf, mode):
     cfg()
     repo = repo_with_remote(tmp_path, "app", "git@github.com:corp-org/app.git")
-    assert run("pin", str(repo)) == 0
+    assert run("pin", "-y", str(repo)) == 0
     path = repo / ".git" / pin.FILE
     git(repo, "config", "--local", "--unset-all", "include.path")
     if crlf:
@@ -373,7 +373,7 @@ def test_failed_pin_include_preserves_bytes_and_mode(cfg, tmp_path, crlf, mode):
     before = path.read_bytes(), path.stat().st_mode, (repo / ".git/config").read_bytes()
     (repo / ".git/config.lock").write_text("another git process\n")
 
-    assert run("pin", str(repo)) == 2
+    assert run("pin", "-y", str(repo)) == 2
     assert (path.read_bytes(), path.stat().st_mode, (repo / ".git/config").read_bytes()) == before
 
 
@@ -384,7 +384,7 @@ def test_pin_refuses_symlink_without_changing_its_target(cfg, home, tmp_path, ca
     path = repo / ".git" / pin.FILE
     path.symlink_to(target)
     before = target.read_bytes(), (repo / ".git/config").read_bytes()
-    assert run("pin", str(repo)) == 2
+    assert run("pin", "-y", str(repo)) == 2
     assert "pin file must not be a symlink" in capsys.readouterr().err
     assert path.is_symlink()
     assert (target.read_bytes(), (repo / ".git/config").read_bytes()) == before
@@ -400,13 +400,13 @@ def test_repin_from_subdir_refreshes_without_changing_config(cfg, tmp_path, work
         subprocess.run(["git", "-C", str(repo), "worktree", "add", "--quiet", "--detach", str(linked)],
                        check=True, capture_output=True, timeout=60)
         repo = linked
-    assert run("pin", str(repo)) == 0
+    assert run("pin", "-y", str(repo)) == 0
     common = Path(git(repo, "rev-parse", "--path-format=absolute", "--git-common-dir"))
     before = (common / "config").read_bytes()
     cfg(config_path.read_text().replace("me@corp.test", "new@corp.test"))
     subdir = repo / "sub/deep"
     subdir.mkdir(parents=True)
-    assert run("pin", str(subdir)) == 0
+    assert run("pin", "-y", str(subdir)) == 0
     assert git(repo, "config", "user.email") == "new@corp.test"
     assert (common / "config").read_bytes() == before
 

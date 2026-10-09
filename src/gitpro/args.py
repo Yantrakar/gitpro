@@ -34,10 +34,24 @@ def common() -> argparse.ArgumentParser:
 
 
 def confirm() -> argparse.ArgumentParser:
-    """Parent parser: -y/--yes."""
+    """Explicit execution: --write retains confirmation; -y also answers yes."""
     p = argparse.ArgumentParser(add_help=False)
     p.add_argument("-y", "--yes", action="store_true", help="don't ask for confirmation (needed without a terminal)")
+    p.add_argument("--write", action="store_true", help="execute after confirmation (default: preview only)")
     return p
+
+
+def preview_only(args: object) -> bool:
+    return not (getattr(args, "yes", False) or getattr(args, "write", False))
+
+
+def preview_result(args: object, command: str, data: dict) -> int:
+    if getattr(args, "json", False):
+        from . import jsonout
+        jsonout.emit(command, dict(data, dry_run=True))
+    else:
+        print("Dry run: nothing written. Use -y/--yes or the command's --write option to execute.")
+    return 0
 
 
 def fail(msg: str, args: object) -> int:

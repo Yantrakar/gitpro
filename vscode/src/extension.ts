@@ -81,7 +81,8 @@ function registerCore(context: vscode.ExtensionContext, cli: Cli): void {
     const file = process.env.GITPRO_CONFIG || path.join(os.homedir(), ".config", "gitpro.toml");
     cli.log.info("Opening the configuration wizard in a terminal; no changes are applied automatically.");
     vscode.window.createTerminal({ name: "gitpro setup", shellPath: cli.executable(),
-      shellArgs: ["setup", "-c", file], cwd: cli.dir() || os.homedir() }).show();
+      shellArgs: ["setup", ...(cli.caps.has("dry-run-defaults.v1") ? ["--write"] : []), "-c", file],
+      cwd: cli.dir() || os.homedir() }).show();
   }
 
   function repoDir(): string | undefined {
@@ -136,14 +137,14 @@ function registerCore(context: vscode.ExtensionContext, cli: Cli): void {
       }
       const dir = repoDir();
       if (dir) {
-        await cli.show(["pin", dir], { cwd: dir });
+        await cli.show(["pin", ...(cli.caps.has("dry-run-defaults.v1") ? ["-y"] : []), dir], { cwd: dir });
         await refresh();
       }
     },
     "gitpro.unpin": async () => {
       const dir = repoDir();
       if (dir) {
-        await cli.show(["unpin", dir], { cwd: dir });
+        await cli.show(["unpin", ...(cli.caps.has("dry-run-defaults.v1") ? ["-y"] : []), dir], { cwd: dir });
         await refresh();
       }
     },

@@ -1,8 +1,10 @@
-"""`gitpro mcp`: a stdio MCP server whose tools only read (spec 11), and `gitpro mcp install|uninstall`.
+"""`gitpro mcp`: read-only by default, with operator-opted-in agent operation execution.
 
 The server speaks newline-delimited JSON-RPC 2.0 on stdin/stdout, by hand with the stdlib. Every tool
 runs with stdout redirected to stderr, so a stray print never corrupts the stream; responses go to the
-saved stdout handle. No tool writes a file, changes git config, goes online or returns a token.
+saved stdout handle. Preflight may explicitly opt into network reads. Execution tools require operator
+opt-in; persistent changes additionally require human approval or an operator-selected scoped policy.
+No tool records human approval or returns credential values.
 """
 from __future__ import annotations
 
@@ -25,6 +27,8 @@ from typing import Callable, Dict, IO, List, Optional, Tuple
 
 from . import __version__
 from .config import ConfigError
+from .operation_contract import REQUEST_SCHEMA, OperationError, unique_members
+from .change_contract import REQUEST_SCHEMA as CHANGE_REQUEST_SCHEMA
 
 PROTOCOL_VERSIONS = ("2024-11-05", "2025-03-26", "2025-06-18", "2025-11-25")  # newest last
 STRUCTURED_SINCE = "2025-06-18"   # structuredContent only for clients at this version or newer
@@ -57,10 +61,13 @@ class RpcError(Exception):
 class Ctx:
     """What a tool gets besides its arguments: -c and the config, loaded on first use (per tools/call)."""
 
-    def __init__(self, cfg_path: Optional[Path] = None):
+    def __init__(self, cfg_path: Optional[Path] = None, allow_execution: bool = False,
+                 approval_policy: Optional[Path] = None):
         self.cfg_path = Path(cfg_path) if cfg_path else None
         self.home = Path.home().resolve()
         self._cfg = None
+        self.allow_execution = allow_execution
+        self.approval_policy = approval_policy
 
     def config(self):
         """The config; ConfigError when there is none or it is invalid."""
@@ -180,16 +187,15 @@ def _identity_problems(rep, cfg, args: dict) -> List[dict]:
     if expected is None:
         return []
     out = []
-    want = expected.casefold()
-    if committer.casefold() != want:
+    bad_committer, bad_author = resolve.identity_conflicts(expected, resolve.own_emails(cfg), author, committer)
+    if bad_committer:
         cause = next((p for p in rep.problems if p.code in CAUSE_CODES), None)
         msg = (f"this commit would be committed as {committer or '(no email)'} but {_where(rep)} belongs to "
                f"{_who(rep)}" + (f". cause: {cause.message}" if cause else ""))
         fix = resolve._shown_fix(cause) if cause else f"gitpro why {shlex.quote(str(rep.repo))}"
         out.append(_problem("committer", msg, fix))
-    own = {e.casefold() for e in resolve.own_emails(cfg)}
     a = author.casefold()
-    if a != want and a in own and a != committer.casefold():   # same as the committer: reported above
+    if bad_author and a != committer.casefold():   # same as the committer: reported above
         who = f"{rep.expected.name} <{expected}>"
         out.append(_problem("author", f"the author would be {author}, your own other email; {_where(rep)} belongs "
                                       f"to {_who(rep)}", f"git commit --author={shlex.quote(who)} ..."))
@@ -262,6 +268,48 @@ def tool_scan(args: dict, ctx: Ctx) -> dict:
 def tool_env(args: dict, ctx: Ctx) -> dict:
     repo = _repo(args["path"])
     return _cli("env", ["--json", "--shell", args.get("shell", "sh"), "--", str(repo)], ctx.cfg_path)
+
+
+def tool_preflight(args: dict, ctx: Ctx) -> dict:
+    from .operations import preflight
+    return preflight(args["request"], ctx.cfg_path, online=args.get("online", False))
+
+
+def tool_run_operation(args: dict, ctx: Ctx) -> dict:
+    from .operations import execute
+    return execute(args["request"], args["plan_token"], args["idempotency_key"], ctx.cfg_path,
+                   online=args.get("online", False), authorized=ctx.allow_execution)
+
+
+def tool_operation_status(args: dict, ctx: Ctx) -> dict:
+    from .operations import status
+    return status(args["idempotency_key"])
+
+
+def tool_propose_change(args: dict, ctx: Ctx) -> dict:
+    from .changes import propose
+    return propose(args["request"], ctx.cfg_path, policy_path=ctx.approval_policy)
+
+
+def tool_change_status(args: dict, ctx: Ctx) -> dict:
+    from .changes import status
+    return status(args["plan_id"])
+
+
+def tool_apply_change(args: dict, ctx: Ctx) -> dict:
+    from .changes import apply
+    return apply(args["plan_id"], authorized=ctx.allow_execution, raw=args.get("request"),
+                 policy_path=ctx.approval_policy, cfg_path=ctx.cfg_path)
+
+
+def tool_recover_change(args: dict, ctx: Ctx) -> dict:
+    from .changes import apply
+    return apply(args["plan_id"], authorized=ctx.allow_execution, recover=True)
+
+
+def tool_reconcile_operation(args: dict, ctx: Ctx) -> dict:
+    from .operation_reconcile import reconcile
+    return reconcile(args["idempotency_key"], online=args.get("online", False))
 
 
 LOST_KINDS = ("unpushed", "merged_gone", "stash", "dirty", "no_remote", "duplicate", "stale", "empty")  # offline
@@ -383,8 +431,9 @@ class Tool:
     """One MCP tool; `fn(args, ctx) -> dict` is looked up per call, so tests can replace it."""
 
     def __init__(self, name: str, description: str, schema: dict, fn: Callable[[dict, Ctx], dict],
-                 module: Optional[str] = None):
+                 module: Optional[str] = None, execution: bool = False):
         self.name, self.description, self.schema, self.fn, self.module = name, description, schema, fn, module
+        self.execution = execution
 
     def available(self) -> bool:
         """False when the module behind the tool is not installed (or blocked with sys.modules[...] = None)."""
@@ -398,7 +447,9 @@ class Tool:
 
     def listing(self) -> dict:
         return {"name": self.name, "description": self.description, "inputSchema": self.schema,
-                "annotations": dict(ANNOTATIONS)}
+                "annotations": ({**ANNOTATIONS, "readOnlyHint": False, "destructiveHint": True, "openWorldHint": True}
+                                if self.execution else {**ANNOTATIONS, "openWorldHint":
+                                                        self.name in ("preflight", "reconcile_operation")})}
 
 
 TOOLS: Dict[str, Tool] = {t.name: t for t in (
@@ -436,6 +487,37 @@ TOOLS: Dict[str, Tool] = {t.name: t for t in (
          tool_audit, "gitpro.audit"),
     Tool("identities", "The configured identities (name, email, host, owners, forge accounts, signing); no key "
          "contents, no extra git settings.", _schema({}), tool_identities),
+    Tool("preflight", "Versioned operation decision and state token for commit, push or GitHub PR creation. "
+         "Read-only; online=true explicitly permits account/destination reads. Ready is not authorization.",
+         _schema({"request": REQUEST_SCHEMA, "online": {"type": "boolean"}}, ("request",)), tool_preflight),
+    Tool("operation_status", "Read the durable result of an idempotency key. Never executes or retries.",
+         _schema({"idempotency_key": _string("the original operation key")}, ("idempotency_key",)),
+         tool_operation_status),
+    Tool("reconcile_operation", "Read-only inspection of recorded commit/push/PR intent versus current state. "
+         "Remote reads require online=true. Does not retry writes, change the ledger outcome or prove attribution.",
+         _schema({"idempotency_key": _string("the original operation key"), "online": {"type": "boolean"}},
+                 ("idempotency_key",)), tool_reconcile_operation),
+    Tool("propose_change", "Read-only exact configuration/repair proposal. Does not record approval or change "
+         "target files. Reports coverage by the operator's startup policy; otherwise ask a human to review "
+         "its JSON with gitpro change approve --write in their terminal.",
+         _schema({"request": CHANGE_REQUEST_SCHEMA}, ("request",)), tool_propose_change),
+    Tool("change_status", "Read the approval/apply/recovery status of a persistent change. Does not execute.",
+         _schema({"plan_id": _string("the complete change plan ID")}, ("plan_id",)), tool_change_status),
+    Tool("apply_change", "Apply an exact persistent change with human approval or a covering operator policy. "
+         "Provide request only to obtain a scoped grant from the server's startup policy. Host authorization "
+         "is still required; clients cannot choose policies or approve themselves.",
+         _schema({"plan_id": _string("the complete plan ID"), "request": CHANGE_REQUEST_SCHEMA}, ("plan_id",)),
+         tool_apply_change, execution=True),
+    Tool("recover_change", "Recover an interrupted approved change by restoring its recorded backups only "
+         "where current files match the planned before/after contents and modes. Never retries forward writes.",
+         _schema({"plan_id": _string("the interrupted approved plan ID")}, ("plan_id",)),
+         tool_recover_change, execution=True),
+    Tool("run_operation", "EXECUTES a reviewed commit, push or GitHub PR operation; requires host/user approval. "
+         "Never edits identity configuration. Reuse the exact request, plan_token and idempotency_key for retries. "
+         "Unknown outcomes must be inspected, not retried under a new key.",
+         _schema({"request": REQUEST_SCHEMA, "plan_token": _string("the reviewed ready preflight token"),
+                  "idempotency_key": _string("stable unique operation key"), "online": {"type": "boolean"}},
+                 ("request", "plan_token", "idempotency_key")), tool_run_operation, execution=True),
 )}
 
 
@@ -445,6 +527,12 @@ def _check_value(name: str, spec: dict, value: object) -> None:
         good = isinstance(value, str) and "\0" not in value and len(value) >= spec.get("minLength", 0)
     elif kind == "boolean":
         good = isinstance(value, bool)
+    elif kind == "integer":
+        good = type(value) is int
+    elif kind == "object":
+        good = isinstance(value, dict)
+        if good:
+            validate(spec, value)
     elif kind == "array":
         if isinstance(value, list) and len(value) > spec.get("maxItems", len(value)):
             raise RpcError(INVALID_PARAMS, f"'{name}': at most {spec['maxItems']} entries")
@@ -457,8 +545,10 @@ def _check_value(name: str, spec: dict, value: object) -> None:
         article = "an" if kind[0] in "aeiou" else "a"
         raise RpcError(INVALID_PARAMS, f"'{name}' must be {article} {kind}"
                        + (" (non-empty)" if kind == "string" else ""))
+    if kind == "string" and len(value) > spec.get("maxLength", len(value)):
+        raise RpcError(INVALID_PARAMS, f"'{name}' is too long")
     if "enum" in spec and value not in spec["enum"]:
-        raise RpcError(INVALID_PARAMS, f"'{name}' must be one of {', '.join(spec['enum'])}")
+        raise RpcError(INVALID_PARAMS, f"'{name}' must be one of {', '.join(map(str, spec['enum']))}")
 
 
 def validate(schema: dict, args: object) -> None:
@@ -476,15 +566,12 @@ def validate(schema: dict, args: object) -> None:
 
 # ---------------------------------------------------------------- the server
 
-_URL_IN_TEXT = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*://[^\s\"'<>]+")
-
-
 def redact(value: object) -> object:
     """value with a password or token in any URL userinfo replaced by *** (resolve.redact_url), in every
     string and key, however deep: the backstop that keeps credentials in remote URLs from the model."""
-    from .resolve import redact_url
+    from .resolve import redact_text
     if isinstance(value, str):
-        return _URL_IN_TEXT.sub(lambda m: redact_url(m[0]) or m[0], value) if "@" in value else value
+        return redact_text(value) if "@" in value else value
     if isinstance(value, dict):
         return {redact(k): redact(v) for k, v in value.items()}
     if isinstance(value, (list, tuple)):
@@ -500,8 +587,11 @@ def _open_log(path: Path) -> IO[str]:
 class Server:
     """One client session: the negotiated version, the output handle, the optional log."""
 
-    def __init__(self, out: IO[str], cfg_path: Optional[Path], log: Optional[IO[str]] = None):
+    def __init__(self, out: IO[str], cfg_path: Optional[Path], log: Optional[IO[str]] = None,
+                 allow_execution: bool = False, approval_policy: Optional[Path] = None):
         self.out, self.cfg_path, self.log = out, cfg_path, log
+        self.allow_execution = allow_execution
+        self.approval_policy = approval_policy
         self.version = PROTOCOL_VERSIONS[-1]
 
     def note(self, arrow: str, text: str) -> None:
@@ -524,7 +614,9 @@ class Server:
         """The response to one line, or None (notifications, responses sent to us)."""
         self.note("←", line)
         try:
-            msg = json.loads(line)
+            msg = json.loads(line, object_pairs_hook=unique_members)
+        except OperationError:
+            return _error(None, PARSE_ERROR, "parse error: duplicate JSON member")
         except (ValueError, RecursionError):      # RecursionError: nesting deeper than the parser allows
             return _error(None, PARSE_ERROR, "parse error")
         if not isinstance(msg, dict):
@@ -555,11 +647,18 @@ class Server:
             asked = params.get("protocolVersion")
             self.version = asked if asked in PROTOCOL_VERSIONS else PROTOCOL_VERSIONS[-1]
             return {"protocolVersion": self.version, "capabilities": {"tools": {"listChanged": False}},
-                    "serverInfo": {"name": "gitpro", "version": __version__}, "instructions": INSTRUCTIONS}
+                    "serverInfo": {"name": "gitpro", "version": __version__},
+                    "instructions": (INSTRUCTIONS if not self.allow_execution else
+                                     "Execution tools are enabled. Obtain host/user approval before each write. "
+                                     "A preflight token checks state, not permission. apply_change and "
+                                     "recover_change additionally require recorded approval. apply_change can "
+                                     "use a covering operator startup policy, never a client-selected policy. "
+                                     "There is no approval tool. Other tools remain read-only.")}
         if method == "ping":
             return {}
         if method == "tools/list":
-            return {"tools": [t.listing() for t in TOOLS.values() if t.available()]}
+            return {"tools": [t.listing() for t in TOOLS.values()
+                              if t.available() and (not t.execution or self.allow_execution)]}
         if method == "tools/call":
             return self.call(params)
         empty = {"resources/list": "resources", "resources/templates/list": "resourceTemplates",
@@ -571,7 +670,7 @@ class Server:
     def call(self, params: dict) -> dict:
         name = params.get("name")
         tool = TOOLS.get(name) if isinstance(name, str) else None
-        if tool is None or not tool.available():
+        if tool is None or not tool.available() or (tool.execution and not self.allow_execution):
             raise RpcError(INVALID_PARAMS, f"unknown tool: {name}")
         args = params.get("arguments")
         args = {} if args is None else args
@@ -579,7 +678,7 @@ class Server:
         print(f"gitpro mcp: tools/call {tool.name}", file=sys.stderr)   # the tool only, never its arguments
         try:
             with contextlib.redirect_stdout(sys.stderr):
-                obj = tool.fn(args, Ctx(self.cfg_path))
+                obj = tool.fn(args, Ctx(self.cfg_path, self.allow_execution, self.approval_policy))
             return self.result(obj)
         except RpcError:
             raise
@@ -618,12 +717,13 @@ def _error(mid: object, code: int, message: str) -> dict:
     return {"jsonrpc": "2.0", "id": mid, "error": {"code": code, "message": message}}
 
 
-def serve(stdin: IO[str], stdout: IO[str], cfg_path: Optional[Path] = None, log: Optional[Path] = None) -> int:
+def serve(stdin: IO[str], stdout: IO[str], cfg_path: Optional[Path] = None, log: Optional[Path] = None,
+          allow_execution: bool = False, approval_policy: Optional[Path] = None) -> int:
     """Answer JSON-RPC lines from stdin on stdout until EOF; returns 0."""
     logf = _open_log(log) if log else None
     old = os.environ.get("GIT_TERMINAL_PROMPT")
     os.environ["GIT_TERMINAL_PROMPT"] = "0"
-    server = Server(stdout, cfg_path, logf)
+    server = Server(stdout, cfg_path, logf, allow_execution, approval_policy)
     try:
         while True:
             line = stdin.readline()
@@ -663,8 +763,10 @@ def _private_streams() -> Tuple[IO[str], IO[str]]:
 
 
 def cmd_mcp(args: argparse.Namespace) -> int:
+    from .operation_io import termination_signals
     stdin, stdout = _private_streams()
-    return serve(stdin, stdout, args.config, args.log)
+    with termination_signals():
+        return serve(stdin, stdout, args.config, args.log, args.allow_execution, args.approval_policy)
 
 
 # ---------------------------------------------------------------- install / uninstall
@@ -700,7 +802,7 @@ def _target(args: argparse.Namespace) -> Tuple[Path, str, dict]:
     rel = PROJECT_FILES.get(args.agent)
     if rel is None:
         raise ConfigError(f"{args.agent} has no project-level config; use --scope user")
-    if not args.write:
+    if not args.write and args.yes:
         raise ConfigError(f"{rel} is shared with your team; re-run with --write to edit it (backup + undo), "
                           "or use --scope user")
     top = resolve.is_repo(Path.cwd())
@@ -844,10 +946,10 @@ def _report(args, path: Path, removing: bool, outcome: dict) -> int:
 
 
 def _edit(args: argparse.Namespace, removing: bool) -> int:
-    from .args import fail
+    from .args import fail, preview_only, preview_result
     from . import view
-    if args.json and not args.yes:
-        return fail("--json needs -y (there is no prompt in JSON mode)", args)
+    if args.json and not args.yes and not preview_only(args):
+        return fail("--write --json needs -y (there is no confirmation in JSON mode)", args)
     path, key, entry = _target(args)
     if args.agent == "claude" and not removing and not args.json:
         view.step("plugin users already have the server (the gitpro plugin ships .mcp.json)")
@@ -861,6 +963,12 @@ def _edit(args: argparse.Namespace, removing: bool) -> int:
         return fail(f"{_foreign(path, current)}; re-run with --force to replace it", args)
     if (current is None) if removing else _ours(current, entry):
         return _report(args, path, removing, {"changed": False, "via": "file"})
+    if preview_only(args):
+        if not args.json:
+            print(f"Would {'remove' if removing else 'register'} gitpro in {path}:\n{snippet}")
+        return preview_result(args, "mcp uninstall" if removing else "mcp install",
+                              {"file": str(path), "changed": False, "entry": entry,
+                               "action": "remove" if removing else "install", "backup": None, "undo": None})
     confirm = _confirm_with(args, "Remove it?" if removing else "Register it?")
     outcome = None
     if args.agent == "claude" and args.scope == "user" and shutil.which("claude"):
@@ -927,6 +1035,9 @@ def register(sub, common, confirm) -> None:
     p = sub.add_parser("mcp", parents=[common],
                        help="run the read-only MCP server for AI assistants (stdio); install registers it")
     p.add_argument("--log", type=Path, metavar="FILE", help="append every request and response to FILE (0600)")
+    p.add_argument("--allow-execution", action="store_true",
+                   help="expose operation and approved-change execution; the host must authorize each write")
+    p.add_argument("--approval-policy", type=Path, help="operator-selected scoped grants; never a client argument")
     p.set_defaults(func=cmd_mcp)
     actions = p.add_subparsers(dest="mcp_action", metavar="ACTION")
     for name, func, text in (("install", cmd_install, "register the server with an AI assistant (backup + undo)"),
@@ -935,7 +1046,6 @@ def register(sub, common, confirm) -> None:
         a.add_argument("--agent", choices=AGENTS, default="claude", help="which assistant (default: claude)")
         a.add_argument("--scope", choices=("user", "project"), default="user",
                        help="user config (default) or the repo's tracked file (claude, cursor; needs --write)")
-        a.add_argument("--write", action="store_true", help="allow editing a tracked team file (--scope project)")
         a.add_argument("--json", action="store_true", help="machine-readable output (needs -y)")
         if name == "install":
             a.add_argument("--force", action="store_true",

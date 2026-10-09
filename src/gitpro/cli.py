@@ -8,9 +8,9 @@ config file (first match wins):
   -c PATH, $GITPRO_CONFIG, ~/.config/gitpro.toml
 
 first run on a new machine:
-  gitpro setup             # guided configuration; preview before saving
+  gitpro setup --write     # guided configuration; confirm before saving
   gitpro plan              # review every change as a diff
-  gitpro apply             # write the changes
+  gitpro apply -y          # explicitly write the reviewed changes
   gitpro keys              # public keys to register with each account
   gitpro scan              # every repo and the identity git uses there
 
@@ -33,7 +33,7 @@ from pathlib import Path
 from typing import Dict, Iterator, Optional, Tuple
 
 from . import __version__, config, jsonout
-from .args import CAPABILITIES, capability, common, confirm, fail, guarded  # noqa: F401  (re-exported)
+from .args import CAPABILITIES, capability, common, confirm, fail, guarded, preview_only, preview_result
 
 PROG = "gitpro"
 MIN_GIT = (2, 36)
@@ -43,6 +43,7 @@ MIN_GIT = (2, 36)
 EXTENSIONS = [
     "gitpro.agents",        # 10: agent-check, agent
     "gitpro.audit",         # 08: audit
+    "gitpro.changes",       # approved persistent agent changes
     "gitpro.clone",         # 07: clone
     "gitpro.completion",    # 16: completion
     "gitpro.devcontainer",  # 13: devcontainer
@@ -54,6 +55,7 @@ EXTENSIONS = [
     "gitpro.health",        # 09: auth, keys --health/--upload
     "gitpro.lost",          # 03: lost
     "gitpro.mcp",           # 11: mcp
+    "gitpro.operations",    # versioned agent preflight and scoped execution
     "gitpro.policy",        # 14: policy, team, check --policy
     "gitpro.prompt",        # 16: prompt
     "gitpro.resolve",       # 01: why
@@ -124,7 +126,7 @@ def build_parser() -> Tuple[argparse.ArgumentParser, Subs]:
     p.add_argument("--version", action="store_true", help="print the version (with --json: and the capabilities)")
     p.add_argument("--json", dest="version_json", action="store_true", help=argparse.SUPPRESS)
     sub = p.add_subparsers(dest="command", metavar="COMMAND")
-    sp = sub.add_parser("init", help="create a config from the commented example (never overwrites)")
+    sp = sub.add_parser("init", parents=[conf], help="preview a config example (-y creates it; never overwrites)")
     sp.add_argument("path", nargs="?", type=Path, help=f"default: ~/{config.USER_CONFIG}")
     sp.set_defaults(func=cmd_init)
     sub.add_parser("plan", parents=[com], help="show what apply would change, with diffs").set_defaults(func=cmd_plan)
@@ -151,17 +153,17 @@ def build_parser() -> Tuple[argparse.ArgumentParser, Subs]:
     s.add_argument("--json", action="store_true", help="machine-readable output (with --fix: what was removed)")
     s.add_argument("--plain", action="store_true", help="with --fix: a y/N question instead of the interactive list")
     s.set_defaults(func=cmd_scan)
-    sp = sub.add_parser("pin", help="copy the repo's name and email into its .git (for dev containers)")
+    sp = sub.add_parser("pin", parents=[conf], help="preview pinning the repo identity (-y writes it)")
     sp.add_argument("dir", nargs="?", default=".", help="repo directory (default: .)")
     sp.set_defaults(func=cmd_pin)
-    sp = sub.add_parser("unpin", help="undo pin")
+    sp = sub.add_parser("unpin", parents=[conf], help="preview removing the pin (-y removes it)")
     sp.add_argument("dir", nargs="?", default=".", help="repo directory (default: .)")
     sp.set_defaults(func=cmd_unpin)
     u = sub.add_parser("uninstall", parents=[conf],
                        help="remove everything apply wrote (keeps your config file and SSH keys)")
     u.add_argument("--home", type=Path, default=Path.home(), help=argparse.SUPPRESS)
     u.set_defaults(func=cmd_uninstall)
-    capability("which.json", "check.json")
+    capability("which.json", "check.json", "dry-run-defaults.v1")
 
     mods = list(_extension_modules())
     for mod in mods:
@@ -243,8 +245,11 @@ def cmd_init(args) -> int:
     if target.exists():
         view.ok(f"{target} already exists, left unchanged")
         return 0
-    target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     text = resources.files(__package__).joinpath("example.toml").read_text()
+    if preview_only(args):
+        print(f"Would create {target}:\n{text}")
+        return preview_result(args, "init", {"path": str(target), "content": text})
+    target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(fd, "w") as f:
         f.write(text)
@@ -268,7 +273,10 @@ def cmd_apply(args) -> int:
     cfg, env = _load_all(args)
     print(f"config: {cfg.path} ({cfg.how})")
     changes = _changes(cfg, env)
-    files.show(changes, diffs=False)
+    files.show(changes, diffs=preview_only(args))
+    if preview_only(args):
+        _warn(cfg, env)
+        return preview_result(args, "apply", {})
     if changes:
         if not _confirm(f"apply {len(changes)} change(s)? ('{PROG} plan' shows the diffs)", args.yes):
             view.aborted()
@@ -430,7 +438,10 @@ def _fix(args, repos: list, home: Path) -> int:
 
 def cmd_pin(args) -> int:
     from . import pin, view
-    name, email, path = pin.pin(args.dir)
+    name, email, path = pin.pin(args.dir, dry_run=preview_only(args))
+    if preview_only(args):
+        print(f"Would pin {name} <{email}> in {path}")
+        return preview_result(args, "pin", {})
     view.ok(f"pinned {name} <{email}> in {path}")
     got = subprocess.run(["git", "-C", args.dir, "config", "--show-origin", "--get", "user.email"],
                          capture_output=True, text=True).stdout.strip()
@@ -442,14 +453,20 @@ def cmd_pin(args) -> int:
 
 def cmd_unpin(args) -> int:
     from . import pin, view
-    view.ok("unpinned" if pin.unpin(args.dir) else "not pinned, nothing to do")
+    changed = pin.unpin(args.dir, dry_run=preview_only(args))
+    if preview_only(args):
+        print("Would remove the pin" if changed else "Not pinned, nothing to do")
+        return preview_result(args, "unpin", {})
+    view.ok("unpinned" if changed else "not pinned, nothing to do")
     return 0
 
 
 def cmd_uninstall(args) -> int:
     from . import files, plan, view
     changes = files.diff(*plan.teardown(_env(args)))
-    files.show(changes, diffs=False)
+    files.show(changes, diffs=preview_only(args))
+    if preview_only(args):
+        return preview_result(args, "uninstall", {})
     if not changes:
         return 0
     if not _confirm(f"undo {len(changes)} change(s)?", args.yes):

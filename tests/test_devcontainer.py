@@ -170,7 +170,7 @@ def test_propose_cases():  # 4
     assert dc.propose(["npm", "ci"]) == {"gitpro": LINE, "cmd": ["npm", "ci"]}
     got = dc.propose({"npm": "npm ci", "x": ["a"]})
     assert got == {"gitpro": LINE, "npm": "npm ci", "x": ["a"]} and list(got) == ["gitpro", "npm", "x"]
-    for done in ("gitpro pin .", ["sh", "-c", "gitpro pin \"$1\"", "sh", "x"], {"g": "gitpro  pin ."}, LINE):
+    for done in ("gitpro pin -y .", ["sh", "-c", "gitpro pin -y \"$1\"", "sh", "x"], {"g": "gitpro  pin -y ."}, LINE):
         assert dc.has_pin(done) and dc.propose(done) == done
     assert not dc.has_pin("npm ci") and not dc.has_pin(None)
     assert dc.propose({"gitpro": "gitpro doctor"}) == {"gitpro-pin": LINE, "gitpro": "gitpro doctor"}
@@ -200,7 +200,7 @@ def test_existing_string_written_as_object(repo, home, capsys):  # 4
     assert data["initializeCommand"] == {"gitpro": LINE, "npm": "npm ci"}
 
 
-@pytest.mark.parametrize("value", ["gitpro pin .", ["sh", "-c", "gitpro pin \"$1\"", "sh", "x"], {"a": "gitpro pin ."}])
+@pytest.mark.parametrize("value", ["gitpro pin -y .", ["sh", "-c", "gitpro pin -y \"$1\"", "sh", "x"], {"a": "gitpro pin -y ."}])
 def test_already_set_up(repo, home, capsys, value):  # 4
     text = json.dumps({"image": "y", "initializeCommand": value}) + "\n"
     path = devfile(repo, text)
@@ -258,7 +258,7 @@ def test_unparsable(repo, home, capsys, text):  # 6
 
 def test_status_pinned_and_set_up(repo, home, capsys):  # 7
     devfile(repo, json.dumps({"image": "y", "initializeCommand": LINE}))
-    assert run("pin", str(repo)) == 0
+    assert run("pin", "-y", str(repo)) == 0
     capsys.readouterr()
     rc, o, e = out(capsys, "status", str(repo))
     assert rc == 0, o + e
@@ -339,7 +339,7 @@ def test_container_list_matches_the_extension():
 
 
 def test_status_stale_pin(repo, home, capsys, cfg):  # 8
-    assert run("pin", str(repo)) == 0
+    assert run("pin", "-y", str(repo)) == 0
     cfg(DEFAULT_CONFIG.replace("me@corp.test", "new@corp.test"))
     capsys.readouterr()
     rc, o, e = out(capsys, "status", str(repo))
@@ -365,7 +365,7 @@ def test_line_runs_pin_with_the_exact_path(fake_bin, tmp_path, shell):  # 9
     argv = [shutil.which(shell)] + (["sh"] if shell == "busybox" else []) + ["-c", expand(LINE, NASTY)]
     r = subprocess.run(argv, capture_output=True, text=True, env={"PATH": os.environ["PATH"]}, timeout=30)
     assert r.returncode == 0, r.stderr
-    assert fake_bin.calls("gitpro") == [["pin", NASTY]]
+    assert fake_bin.calls("gitpro") == [["pin", "-y", NASTY]]
     empty = tmp_path / "empty-path"
     empty.mkdir()
     r = subprocess.run(argv, capture_output=True, text=True, env={"PATH": str(empty)}, timeout=30)
@@ -379,7 +379,7 @@ def test_line_is_one_string_for_every_host_shell():
     assert first == "command true || exit 0"
     assert "${localWorkspaceFolder}" in rest and LINE.count("${") == 1
     # pin and exit sit on the read line: nothing after the here-document's first line can ever run
-    assert """IFS= read -r dir <<'GITPRO_PATH'; gitpro pin "$dir" || true; exit 0""" in rest
+    assert """IFS= read -r dir <<'GITPRO_PATH'; gitpro pin -y "$dir" || true; exit 0""" in rest
     assert rest[-2:] == ["${localWorkspaceFolder}", "GITPRO_PATH"]
     assert "'command' is not recognized" in dc.NOTE
 

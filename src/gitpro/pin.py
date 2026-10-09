@@ -43,11 +43,13 @@ def _resolved(repo: str, key: str, pin_path: Path, base: Path) -> str:
     return value
 
 
-def unpin(repo: str) -> bool:
+def unpin(repo: str, *, dry_run: bool = False) -> bool:
     """Remove the pin; return whether there was one."""
     path = _pin_file(repo)
     # --get-all exits 1 when the value is absent: not pinned.
     had = git(repo, "config", "--local", "--fixed-value", "--get-all", "include.path", FILE, ok=(0, 1)) != ""
+    if dry_run:
+        return had or (path.is_file() and render.is_generated(path.read_text()))
     if had:
         git(repo, "config", "--local", "--fixed-value", "--unset-all", "include.path", FILE)
         if not git(repo, "config", "--local", "--get-regexp", r"^include\.", ok=(0, 1)):
@@ -59,7 +61,7 @@ def unpin(repo: str) -> bool:
     return had
 
 
-def pin(repo: str) -> tuple[str, str, Path]:
+def pin(repo: str, *, dry_run: bool = False) -> tuple[str, str, Path]:
     """Write the identity git resolves for repo now (name, email) into the repo; return them."""
     path = _pin_file(repo)
     check(not path.is_symlink(), f"{path}: pin file must not be a symlink; replace it with a regular file")
@@ -67,6 +69,8 @@ def pin(repo: str) -> tuple[str, str, Path]:
     check(previous is None or render.is_generated(previous.decode()), f"{path} exists and was not written by us")
     base = resolve._need_layout(Path(repo)).base
     name, email = (_resolved(repo, key, path, base) for key in ("user.name", "user.email"))
+    if dry_run:
+        return name, email, path
     included = git(repo, "config", "--local", "--fixed-value", "--get-all", "include.path", FILE, ok=(0, 1)) != ""
     previous_mode = stat.S_IMODE(path.stat().st_mode) if previous is not None else 0o600
     mode = previous_mode & 0o755
