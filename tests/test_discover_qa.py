@@ -38,7 +38,7 @@ def test_qa_history_secret_matrix(home, capsys):
     ])
     blobs = []
     for argv in (("discover", "--history", "--json"), ("discover", "--history", "-v"),
-                 ("init", "--discover", "--history")):
+                 ("init", "-y", "--discover", "--history")):
         capsys.readouterr()
         assert run(*argv) == 0
         c_ = capsys.readouterr()
@@ -135,7 +135,7 @@ def test_qa_uncommented_section_survives_unicode_line_separators(home, tmp_path,
     mkrepo(home / "w/a", "git@github.com:own/a.git", name="Line Sep", email="me@corp.test")
     vscdb(home / ".config/Code/User/globalStorage/state.vscdb", [{"folderUri": (home / "w/a").as_uri()}])
     capsys.readouterr()
-    assert run("init", "--discover") == 0
+    assert run("init", "-y", "--discover") == 0
     body = (home / ".config/gitpro.toml").read_text()
     tail = body.split("uncomment what is right ----\n", 1)[1]
     TOML.loads("\n".join(ln[2:] if ln.startswith("# ") else ln for ln in tail.split("\n")))

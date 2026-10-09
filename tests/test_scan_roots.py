@@ -178,7 +178,7 @@ def test_config_flag(home, tmp_path, capsys):  # 10
 
 def test_scan_right_after_init(home, tmp_path, capsys):  # 11
     path = tmp_path / "fresh.toml"
-    assert run("init", str(path)) == 0
+    assert run("init", "-y", str(path)) == 0
     capsys.readouterr()
     assert run("scan", "-c", str(path)) == 0
     assert "✗" not in capsys.readouterr().err

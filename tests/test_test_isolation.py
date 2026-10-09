@@ -24,11 +24,25 @@ def test_home_fixture_does_not_discover_enclosing_checkout(tmp_path):
         "    result = subprocess.run(['git', '-C', str(plain), 'rev-parse', '--show-toplevel'],\n"
         "                            capture_output=True, timeout=10)\n"
         "    assert result.returncode != 0\n"
+        "\n"
+        "def test_injected_environment(home, tmp_path):\n"
+        "    import os\n"
+        "    assert 'GIT_CONFIG_COUNT' not in os.environ\n"
+        "    assert 'GIT_AUTHOR_EMAIL' not in os.environ\n"
+        "    assert 'GIT_DIR' not in os.environ\n"
+        "    bare = tmp_path / 'bare.git'\n"
+        "    subprocess.run(['git', 'init', '-q', '--bare', str(bare)], check=True)\n"
+        "    result = subprocess.run(['git', '-C', str(bare), 'rev-parse', '--is-bare-repository'],\n"
+        "                            capture_output=True, text=True, timeout=10)\n"
+        "    assert result.returncode == 0 and result.stdout.strip() == 'true'\n"
     )
     exclude = repo / ".git/info/exclude"
     before = exclude.read_bytes()
     env = dict(os.environ, PYTHONPATH=str(Path(__file__).resolve().parents[1] / "src"))
     env.pop("GIT_CEILING_DIRECTORIES", None)
+    env.update(GIT_CONFIG_COUNT="1", GIT_CONFIG_KEY_0="safe.bareRepository",
+               GIT_CONFIG_VALUE_0="explicit", GIT_AUTHOR_EMAIL="ambient@wrong.test",
+               GIT_DIR=str(repo / ".git"))
     result = subprocess.run(
         [sys.executable, "-m", "pytest", "-q", "--basetemp", str(repo / "scratch"), str(suite)],
         cwd=suite, env=env, capture_output=True, text=True, timeout=TIMEOUT,

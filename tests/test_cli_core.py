@@ -75,10 +75,10 @@ def test_check_json(cfg, home, capsys):  # 23
 def test_version(capsys):  # 24
     assert run("--version") == 0
     assert capsys.readouterr().out == f"gitpro {gitpro.__version__}\n"
-    assert gitpro.__version__ == "0.2.0"
+    assert gitpro.__version__ == "0.3.0"
     assert run("--version", "--json") == 0
     data = json.loads(capsys.readouterr().out)
-    assert data["ok"] is True and data["command"] == "version" and data["version"] == "0.2.0"
+    assert data["ok"] is True and data["command"] == "version" and data["version"] == "0.3.0"
     assert data["python"] == ".".join(map(str, sys.version_info[:3]))
     assert {"why", "why.config", "which.json", "check.json"} <= set(data["capabilities"])
     assert data["capabilities"] == sorted(data["capabilities"])
@@ -241,7 +241,7 @@ def test_module_without_register_is_ignored(monkeypatch):
 
 def test_extensions_list():
     assert cli.EXTENSIONS == sorted(cli.EXTENSIONS) and "gitpro.resolve" in cli.EXTENSIONS
-    assert len(cli.EXTENSIONS) == 18 and "gitpro.setup" in cli.EXTENSIONS
+    assert len(cli.EXTENSIONS) == 20 and {"gitpro.setup", "gitpro.operations", "gitpro.changes"} <= set(cli.EXTENSIONS)
 
 
 # ---------------------------------------------------------------- hot path (27)

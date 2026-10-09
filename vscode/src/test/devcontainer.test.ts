@@ -24,9 +24,9 @@ const CASES: [unknown, unknown][] = [
 /** Values that already run gitpro pin come back unchanged. */
 const PINNED: unknown[] = [
   LINE,
-  "gitpro pin ${localWorkspaceFolder}",
-  ["gitpro", "pin", "${localWorkspaceFolder}"],
-  { a: "npm ci", b: "gitpro  pin ." },
+  "gitpro pin -y ${localWorkspaceFolder}",
+  ["gitpro", "pin", "-y", "${localWorkspaceFolder}"],
+  { a: "npm ci", b: "gitpro  pin -y ." },
 ];
 
 test("proposeLine: each existing form becomes the object form, the old command kept verbatim", () => {
@@ -48,6 +48,12 @@ test("proposeLine: already pinned is left alone", () => {
   assert.equal(hasPin(42), false);
 });
 
+test("proposeLine: upgrade the old generated preview-only pin command", () => {
+  const old = LINE.replace('gitpro pin -y "$dir"', 'gitpro pin "$dir"');
+  assert.equal(hasPin(old), false);
+  assert.equal(proposeLine(old), LINE);
+});
+
 test("proposeLine: a number, or an object whose gitpro and gitpro-pin keys are both taken, is refused", () => {
   assert.throws(() => proposeLine(42), /not a string, array or object/);
   assert.throws(() => proposeLine({ gitpro: "a", "gitpro-pin": "b" }), /already has keys "gitpro" and "gitpro-pin"/);
@@ -59,7 +65,7 @@ test("LINE: one string whose first line ends cmd.exe, the workspace path read as
   assert.ok(lines.includes("${localWorkspaceFolder}"));
   assert.equal(LINE.split("${").length, 2);
   // pin and exit sit on the read line, so a newline in the path can never start a command
-  assert.equal(lines[3], "IFS= read -r dir <<'GITPRO_PATH'; gitpro pin \"$dir\" || true; exit 0");
+  assert.equal(lines[3], "IFS= read -r dir <<'GITPRO_PATH'; gitpro pin -y \"$dir\" || true; exit 0");
   assert.deepEqual(lines.slice(4), ["${localWorkspaceFolder}", "GITPRO_PATH"]);
   assert.match(NOTE, /'command' is not recognized/);
 });

@@ -36,7 +36,7 @@ SCRIPT_LINES = (
     "command true || exit 0",
     "# runs 'gitpro pin' on hosts that have gitpro, else nothing (line 1 stops Windows cmd)",
     "command -v gitpro >/dev/null 2>&1 || exit 0",
-    """IFS= read -r dir <<'GITPRO_PATH'; gitpro pin "$dir" || true; exit 0""",
+    """IFS= read -r dir <<'GITPRO_PATH'; gitpro pin -y "$dir" || true; exit 0""",
     "${localWorkspaceFolder}",
     "GITPRO_PATH",
 )
@@ -50,7 +50,7 @@ NOTE = ("initializeCommand runs on the host before the container starts. On Linu
 MERGED = ("your command now runs alongside gitpro pin (in parallel); its output appears when it finishes")
 TEAM = ("the line pins only on hosts that have gitpro: every teammate who opens this container needs gitpro "
         "on their host to get the right identity (without it, the line does nothing)")
-_PIN_RE = re.compile(r"gitpro\s+pin\b")
+_PIN_RE = re.compile(r"gitpro\s+pin\b[^\n;|&]*?\s(?:-y|--yes)(?=\s|[;|&]|$)")
 
 
 # ---------------------------------------------------------------- pure parts
@@ -88,6 +88,8 @@ def _empty(value: object) -> bool:
 def propose(existing: object) -> object:
     """The initializeCommand to propose given the current one (None: absent). An existing command is kept
     verbatim, never evaluated: a string or array moves into the object form next to ours."""
+    if isinstance(existing, str) and existing == LINE.replace('gitpro pin -y "$dir"', 'gitpro pin "$dir"'):
+        return LINE
     if has_pin(existing):
         return existing
     if _empty(existing):
@@ -434,8 +436,6 @@ def register(sub, common, confirm) -> None:
         epilog=NOTE)
     sp.add_argument("words", nargs="*", metavar="[status] [DIR]",
                     help="'status' to show the pin state; DIR is the repo (default: .)")
-    sp.add_argument("--write", action="store_true",
-                    help="edit devcontainer.json (preview, confirm, backup, undo); never creates it")
     sp.add_argument("--json", action="store_true", help="machine-readable output")
     sp.set_defaults(func=lambda a: guarded(cmd_devcontainer, a))
     _intermixed(sp)
