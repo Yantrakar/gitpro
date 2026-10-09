@@ -171,6 +171,37 @@ def test_batch_and_non_object_requests_are_invalid():
     assert [m["error"]["code"] for m in out] == [-32600, -32600]
 
 
+@pytest.mark.parametrize("wire", [
+    '{"jsonrpc":"2.0","id":1,"id":2,"method":"ping"}',
+    '{"jsonrpc":"2.0","id":1,"method":"ping","method":"tools/call"}',
+    '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":'
+    '{"name":"preflight","name":"run_operation","arguments":{}}}',
+    '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":'
+    '{"name":"preflight","arguments":{"online":false,"online":true,"request":{}}}}',
+    '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":'
+    '{"name":"preflight","arguments":{"request":{"version":1,"operation":"commit",'
+    '"repo":"/fixture","message":"Reviewed","message":"Different"}}}}',
+    '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":'
+    '{"name":"apply_change","arguments":{"plan_id":"original","plan_id":"other"}}}',
+    '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":'
+    '{"name":"propose_change","arguments":{"request":{"version":1,"kind":"configure",'
+    '"toml":"original","toml":"other"}}}}',
+])
+def test_duplicate_json_members_are_rejected_before_dispatch(
+        wire: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    def unexpected(*args: object) -> dict:
+        pytest.fail("a duplicate-member message reached tool dispatch")
+
+    monkeypatch.setattr(mcp.Server, "call", unexpected)
+    inp = io.StringIO(wire + '\n{"jsonrpc":"2.0","id":99,"method":"ping"}\n')
+    out = io.StringIO()
+    assert mcp.serve(inp, out, allow_execution=True) == 0
+    rejected, ping = lines(out.getvalue())
+    assert rejected == {"jsonrpc": "2.0", "id": None, "error": {
+        "code": mcp.PARSE_ERROR, "message": "parse error: duplicate JSON member"}}
+    assert ping == {"jsonrpc": "2.0", "id": 99, "result": {}}
+
+
 # ---------------------------------------------------------------- tools (5-9, 11, 12)
 
 def test_which_identity_matches_cli(work_repo, capsys):

@@ -530,6 +530,37 @@ def test_ledger_directory_flush_failure_prevents_git_write(op_request: dict,
         assert ledger.db.execute("SELECT COUNT(*) FROM operations").fetchone() == (0,)
 
 
+@pytest.mark.parametrize("value", ["relative-state", ".", "~/.local/state"])
+def test_relative_state_path_blocks_before_any_operation(
+        op_request: dict, home: Path, monkeypatch: pytest.MonkeyPatch, value: str) -> None:
+    repo = Path(op_request["repo"])
+    plan = ready(op_request)
+    head = git(repo, "rev-parse", "HEAD")
+    monkeypatch.setenv("XDG_STATE_HOME", value)
+    for result in (operations.preflight(op_request),
+                   operations.execute(op_request, plan["plan_token"], "invalid-state", authorized=True),
+                   operations.status("invalid-state")):
+        assert result["decision"] == "needs_input" and result["problems"][0]["code"] == "invalid_state_path", result
+    with pytest.raises(OperationError, match="absolute path"):
+        with configuration_lock():
+            pytest.fail("relative state path acquired a lock")
+    assert git(repo, "rev-parse", "HEAD") == head
+    assert not (home / value / "gitpro").exists()
+    assert not (home / ".local/state/gitpro").exists()
+
+
+def test_absolute_state_path_keeps_existing_journal_readable(
+        op_request: dict, home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    root = home / "custom-state"
+    monkeypatch.setenv("XDG_STATE_HOME", str(root))
+    result = execute(op_request, "saved-state")
+    assert result["ok"], result
+    monkeypatch.setenv("XDG_STATE_HOME", "custom-state")
+    assert operations.status("saved-state")["problems"][0]["code"] == "invalid_state_path"
+    monkeypatch.setenv("XDG_STATE_HOME", str(root))
+    assert operations.status("saved-state")["outcome"] == result["outcome"]
+
+
 def test_plan_schema_is_reproducible(capsys: pytest.CaptureFixture) -> None:
     capsys.readouterr()
     assert run("preflight", "--schema") == 0

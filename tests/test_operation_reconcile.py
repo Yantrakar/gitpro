@@ -171,3 +171,11 @@ def test_reconciliation_errors_never_signal_retry_permission(home: Path, monkeyp
     assert result["ok"] is False and result["status"] == "indeterminate"
     assert result["retry_safe"] is False and result["attribution"] == "not_proven"
     assert set(reconcile.SCHEMA["required"]) <= result.keys()
+
+
+def test_relative_state_path_does_not_open_a_journal(home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("XDG_STATE_HOME", "relative-state")
+    result = reconcile.reconcile("saved-operation")
+    assert result["decision"] == "needs_input" and result["problems"][0]["code"] == "invalid_state_path"
+    assert result["retry_safe"] is False and result["attribution"] == "not_proven"
+    assert not (home / "relative-state").exists()

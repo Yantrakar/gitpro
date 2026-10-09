@@ -24,7 +24,7 @@ from .config import Config, ConfigError
 from .operation_contract import (MAX_REQUEST, REQUEST_SCHEMA, RESULT_SCHEMA, VERSION,
                                  OperationError, Request, decode, digest, failure, request_key)
 from .operation_io import (Ledger, Process, configuration_lock, file_hash, locked_index, process,
-                           repository_lock, termination_signals)
+                           repository_lock, state_dir, termination_signals)
 
 OID = re.compile(r"[0-9a-f]{40}(?:[0-9a-f]{24})?")
 MAX_COMMITS = 1000
@@ -525,6 +525,7 @@ def _pr_url(plan: Plan, data: object) -> str:
 
 
 def build(req: Request, cfg_path: Optional[Path] = None, *, online: bool = False) -> Plan:
+    state_dir()
     env = child_environment()
     resolve.require_git()
     if not req.repo.is_dir():

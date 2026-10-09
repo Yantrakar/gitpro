@@ -44,6 +44,17 @@ def _safe_path(path: Path) -> None:
             raise OperationError("unsafe_path", f"A change parent is writable by others: {parent}", "blocked")
 
 
+def _protect_git_metadata(path: Path) -> None:
+    _safe_path(path)
+    for parent in (path, *path.parents):
+        # Bare/separate Git dirs need not be named .git; linked dirs carry commondir.
+        if parent.name.casefold() == ".git" or ((parent / "HEAD").is_file() and (
+                (parent / "objects").is_dir() or (parent / "refs").is_dir() or
+                (parent / "commondir").is_file())):
+            raise OperationError("unsafe_target", f"Managed configuration cannot replace Git metadata: {path}. "
+                                 "Use repo-identity for a supported local identity repair.", "blocked")
+
+
 def _snapshot(path: Path) -> Optional[dict]:
     _safe_path(path)
     try:
@@ -239,6 +250,7 @@ class Builder:
 def _managed(builder: Builder) -> config.Config:
     from . import plan, render
     source = Path(builder.request["config_path"])
+    _protect_git_metadata(source)
     current = builder.read(source)
     if builder.request["kind"] == "configure":
         text = builder.request["toml"]
@@ -257,6 +269,7 @@ def _managed(builder: Builder) -> config.Config:
     managed = builder.read(builder.home / plan.MANAGED_GITCONFIG)
     paths += [env.expand(p) for p in render.manifest_of(_bytes(managed).decode("utf-8"))]
     for path in (source, *paths):
+        _protect_git_metadata(path)
         journal = state_dir().resolve()
         if path == journal or journal in path.parents or path in journal.parents:
             raise OperationError("unsafe_target", "Managed files cannot replace the operation journal or its locks.",

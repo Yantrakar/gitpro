@@ -19,7 +19,7 @@ from pathlib import Path
 import pytest
 from rich.prompt import Confirm
 
-from conftest import DEFAULT_CONFIG, FAKE_PUB, git, repo_with_remote, run, write_config
+from conftest import DEFAULT_CONFIG, FAKE_PUB, TIMEOUT, git, repo_with_remote, run, write_config
 from gitpro import change_contract, changes, config, mcp, operations
 from gitpro.operation_contract import OperationError, digest
 from gitpro.operation_io import configuration_lock, state_dir
@@ -639,3 +639,122 @@ def test_durable_file_modes_lock_cleanup_and_state_directory_chain(home, monkeyp
     for parent in {p.parent for p in expected}:
         events = [locked for path, directory, locked in synced if directory and path == parent]
         assert events and events[-1] is False
+
+
+@pytest.fixture(params=["normal", "bare", "separate", "linked"])
+def git_metadata(home: Path, request: pytest.FixtureRequest) -> Path:
+    metadata = home / "repository-metadata"
+    if request.param == "bare":
+        subprocess.run(["git", "init", "--quiet", "--bare", str(metadata)], check=True, timeout=TIMEOUT)
+        return metadata
+    repo = repo_with_remote(home, "metadata-worktree", None, commits=1)
+    if request.param in ("separate", "linked"):
+        subprocess.run(["git", "-C", str(repo), "init", "--quiet", "--separate-git-dir", str(metadata)],
+                       check=True, timeout=TIMEOUT)
+    if request.param == "linked":
+        linked = home / "linked-worktree"
+        subprocess.run(["git", "-C", str(repo), "worktree", "add", "--quiet", "-b", "linked", str(linked)],
+                       check=True, timeout=TIMEOUT)
+        repo = linked
+    return Path(git(repo, "rev-parse", "--absolute-git-dir"))
+
+
+def custom_file_config(path: Path) -> str:
+    return ('[default]\nname="Review"\nemail="review@corp.test"\n'
+            '[[identity]]\nid="review"\nname="Review"\nemail="review@corp.test"\n'
+            'host="github.com"\nowners=["review-owner"]\n' + f"file={json.dumps(str(path))}\n")
+
+
+@pytest.mark.parametrize("target", ["config", "HEAD", "index", "refs/heads/topic", "objects/info/alternates"])
+@pytest.mark.parametrize("kind", ["configure", "regenerate"])
+def test_managed_changes_reject_git_metadata(home: Path, git_metadata: Path, target: str, kind: str) -> None:
+    text = custom_file_config(git_metadata / target)
+    if kind == "regenerate":
+        write_config(home, text)
+    raw = request(toml=text) if kind == "configure" else request("regenerate")
+    before = tree(home)
+    result = changes.propose(raw)
+    assert result["decision"] == "blocked" and result["problems"][0]["code"] == "unsafe_target", result
+    assert tree(home) == before and not state_dir().exists()
+
+
+def test_configuration_source_cannot_be_inside_git_metadata(home: Path, git_metadata: Path) -> None:
+    before = tree(home)
+    result = changes.propose(request(config_path=str(git_metadata / "source.toml")))
+    assert result["problems"][0]["code"] == "unsafe_target", result
+    assert tree(home) == before
+
+
+def test_stale_manifest_cannot_remove_git_metadata(home: Path, git_metadata: Path) -> None:
+    from gitpro import render
+    write_config(home, DEFAULT_CONFIG)
+    stale = git_metadata / "stale-profile"
+    stale.write_text(render.HEADER + "\n[user]\nname=Old\n")
+    (home / ".gitconfig-identities").write_text(render.HEADER + "\n" + render.MANIFEST + str(stale) + "\n")
+    before = tree(home)
+    result = changes.propose(request("regenerate"))
+    assert result["problems"][0]["code"] == "unsafe_target", result
+    assert tree(home) == before
+
+
+@pytest.mark.parametrize("name", [".git", ".GIT", ".GiT"])
+def test_generated_file_cannot_replace_a_git_directory_pointer(home: Path, name: str) -> None:
+    pointer = home / "worktree" / name
+    pointer.parent.mkdir()
+    pointer.write_text("gitdir: ../repository-metadata\n")
+    result = changes.propose(request(toml=custom_file_config(pointer)))
+    assert result["problems"][0]["code"] == "unsafe_target", result
+    assert pointer.read_text() == "gitdir: ../repository-metadata\n"
+
+
+def test_old_approval_cannot_write_git_metadata(home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    repo = repo_with_remote(home, "legacy", None, commits=1)
+    target = repo / ".git/HEAD"
+    before = target.read_bytes()
+    with monkeypatch.context() as legacy:
+        legacy.setattr(changes, "_protect_git_metadata", lambda path: None)
+        identifier = approve(legacy, changes.propose(request(toml=custom_file_config(target))))
+    result = changes.apply(identifier, authorized=True)
+    assert result["problems"][0]["code"] == "unsafe_target", result
+    assert target.read_bytes() == before
+    assert changes.status(identifier)["status"] == "approved"
+
+
+@pytest.mark.parametrize("recover", [False, True])
+def test_legacy_git_metadata_backups_can_still_be_restored(
+        home: Path, monkeypatch: pytest.MonkeyPatch, recover: bool) -> None:
+    repo = repo_with_remote(home, "legacy", None, commits=1)
+    target = repo / ".git/HEAD"
+    before = target.read_bytes()
+    with monkeypatch.context() as legacy:
+        legacy.setattr(changes, "_protect_git_metadata", lambda path: None)
+        result = apply(legacy, request(toml=custom_file_config(target)))
+    assert target.read_bytes() != before
+    identifier = result["plan_id"]
+    if recover:
+        with contextlib.closing(changes.Store()) as store:
+            store.transition(identifier, "applying")
+        restored = changes.apply(identifier, recover=True, authorized=True)
+    else:
+        restored = apply(monkeypatch, request("undo", change_id=identifier))
+    assert restored["ok"], restored
+    assert target.read_bytes() == before
+
+
+def test_custom_generated_config_in_a_worktree_is_still_supported(
+        home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    repo = repo_with_remote(home, "dotfiles", None, commits=1)
+    head = (repo / ".git/HEAD").read_bytes()
+    target = repo / "git/profile.inc"
+    result = apply(monkeypatch, request(toml=custom_file_config(target)))
+    assert result["status"] == "applied" and b"review@corp.test" in target.read_bytes()
+    assert (repo / ".git/HEAD").read_bytes() == head
+
+
+def test_relative_state_path_rejects_changes_before_approval(
+        home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("XDG_STATE_HOME", "relative-state")
+    before = tree(home)
+    result = changes.propose(request())
+    assert result["decision"] == "needs_input" and result["problems"][0]["code"] == "invalid_state_path"
+    assert tree(home) == before and not (home / "relative-state").exists()

@@ -6,7 +6,7 @@ import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Optional
 
 VERSION = 1
 MAX_REQUEST = 131072
@@ -96,18 +96,20 @@ def digest(value: object) -> str:
                                      ensure_ascii=True, default=str).encode()).hexdigest()
 
 
+def unique_members(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    out: dict[str, object] = {}
+    for key, value in pairs:
+        if key in out:
+            raise OperationError("invalid_request", "Duplicate JSON member.", "needs_input")
+        out[key] = value
+    return out
+
+
 def decode(text: str, *, limit: int = MAX_REQUEST) -> object:
-    def unique(pairs: list) -> dict:
-        out: Dict[str, object] = {}
-        for key, value in pairs:
-            if key in out:
-                raise OperationError("invalid_request", "Duplicate JSON member.", "needs_input")
-            out[key] = value
-        return out
     if len(text.encode("utf-8")) > limit:
         raise OperationError("invalid_request", f"Request exceeds {limit // 1024} KiB.", "needs_input")
     try:
-        return json.loads(text, object_pairs_hook=unique)
+        return json.loads(text, object_pairs_hook=unique_members)
     except (ValueError, RecursionError):
         raise OperationError("invalid_request", "Request must be a JSON object.", "needs_input") from None
 

@@ -27,7 +27,7 @@ from typing import Callable, Dict, IO, List, Optional, Tuple
 
 from . import __version__
 from .config import ConfigError
-from .operation_contract import REQUEST_SCHEMA
+from .operation_contract import REQUEST_SCHEMA, OperationError, unique_members
 from .change_contract import REQUEST_SCHEMA as CHANGE_REQUEST_SCHEMA
 
 PROTOCOL_VERSIONS = ("2024-11-05", "2025-03-26", "2025-06-18", "2025-11-25")  # newest last
@@ -614,7 +614,9 @@ class Server:
         """The response to one line, or None (notifications, responses sent to us)."""
         self.note("←", line)
         try:
-            msg = json.loads(line)
+            msg = json.loads(line, object_pairs_hook=unique_members)
+        except OperationError:
+            return _error(None, PARSE_ERROR, "parse error: duplicate JSON member")
         except (ValueError, RecursionError):      # RecursionError: nesting deeper than the parser allows
             return _error(None, PARSE_ERROR, "parse error")
         if not isinstance(msg, dict):

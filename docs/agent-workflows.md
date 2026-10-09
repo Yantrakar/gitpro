@@ -63,6 +63,9 @@ account independently of the scoped credential helper.
 Requests have `version: 1`, an absolute worktree-root `repo`, an `operation`, and
 only that operation's fields. Unknown fields, duplicate JSON members, unsupported
 versions, arbitrary commands and environment dictionaries are rejected.
+MCP rejects duplicate members anywhere in the JSON-RPC message before dispatch,
+including nested operation/change requests, and remains available for the next
+request.
 
 | Decision | Meaning |
 |---|---|
@@ -156,6 +159,10 @@ The private ledger lives at
 `$XDG_STATE_HOME/gitpro/operations/ledger.sqlite3` (default
 `~/.local/state/gitpro/operations/ledger.sqlite3`). SQLite commits a running
 record before starting a write, and durably records the result afterward.
+A nonempty `XDG_STATE_HOME` must be absolute; a relative value returns
+`invalid_state_path` before any journal, lock or operation write. To inspect an
+older journal created with a relative value, set `XDG_STATE_HOME` to that existing
+directory's absolute path rather than starting new operations with new keys.
 The ledger's directory ancestry is fsynced before execution; a failed flush
 prevents the write rather than silently weakening durability.
 The same transaction records immutable operation intent, including the request's
@@ -249,6 +256,13 @@ non-symlink paths are supported; writable-by-others targets/parents are refused
 (system sticky temporary-directory ancestors are allowed). Existing files that
 change must be owned by the current user. Symlink-based dotfile setups require
 a separate human workflow. Private SSH key files are not change targets.
+Managed configuration sources, generated outputs and stale-output removal cannot
+target `.git` entries or directories that contain Git metadata, including bare,
+separate and linked-worktree Git directories. Keep custom identity files outside
+those directories; only `repo-identity` can perform the supported local
+name/email repair. Previously recorded approvals are revalidated against this
+restriction before forward application; existing rollback/undo backups remain
+available.
 
 `repo-identity` deliberately excludes local includes, pins, worktree-specific
 configuration, signing/transport repairs and repository policy edits. It never

@@ -105,6 +105,9 @@ def file_hash(path: Path) -> Optional[str]:
 
 def state_dir() -> Path:
     base = Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local" / "state")
+    if not base.is_absolute():
+        raise OperationError("invalid_state_path", "XDG_STATE_HOME must be an absolute path; "
+                             "no operation state was opened or created.", "needs_input")
     return base / "gitpro" / "operations"
 
 
