@@ -1718,6 +1718,8 @@ def _edit(args: argparse.Namespace, removing: bool) -> int:
     from . import args as gargs
     from . import jsonfile, jsonout, undo
     command = "agent uninstall" if removing else "agent install"
+    if args.json and not args.yes and not gargs.preview_only(args):
+        return gargs.fail("--write --json needs -y (there is no confirmation in JSON mode)", args)
     agent = args.agent
     say = not args.json
     if agent not in INSTALL_CHOICES:

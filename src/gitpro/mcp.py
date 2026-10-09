@@ -800,7 +800,7 @@ def _target(args: argparse.Namespace) -> Tuple[Path, str, dict]:
     rel = PROJECT_FILES.get(args.agent)
     if rel is None:
         raise ConfigError(f"{args.agent} has no project-level config; use --scope user")
-    if not args.write:
+    if not args.write and args.yes:
         raise ConfigError(f"{rel} is shared with your team; re-run with --write to edit it (backup + undo), "
                           "or use --scope user")
     top = resolve.is_repo(Path.cwd())
@@ -946,6 +946,8 @@ def _report(args, path: Path, removing: bool, outcome: dict) -> int:
 def _edit(args: argparse.Namespace, removing: bool) -> int:
     from .args import fail, preview_only, preview_result
     from . import view
+    if args.json and not args.yes and not preview_only(args):
+        return fail("--write --json needs -y (there is no confirmation in JSON mode)", args)
     path, key, entry = _target(args)
     if args.agent == "claude" and not removing and not args.json:
         view.step("plugin users already have the server (the gitpro plugin ships .mcp.json)")

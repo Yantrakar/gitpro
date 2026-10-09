@@ -621,6 +621,11 @@ def _confirm(question: str, yes: bool) -> bool:
     return view.confirm(question)
 
 
+def _need_yes_for_json(args) -> None:
+    if getattr(args, "json", False) and getattr(args, "write", False) and not args.yes:
+        raise ConfigError("--write --json needs -y (there is no confirmation in JSON mode)")
+
+
 _WARNED_MISSING: set = set()
 
 
@@ -731,6 +736,7 @@ def _show_changes(changes, home: Path) -> None:
 
 
 def cmd_install(args) -> int:
+    _need_yes_for_json(args)
     if getattr(args, "repo", None):
         return _install_repo(args)
     from . import config, files, jsonout, plan, render, resolve, undo
@@ -785,6 +791,7 @@ def cmd_install(args) -> int:
 
 
 def cmd_uninstall(args) -> int:
+    _need_yes_for_json(args)
     if getattr(args, "repo", None):
         return _uninstall_repo(args)
     from . import files, jsonout, plan, render, undo
@@ -928,6 +935,7 @@ def _repo_plan(top: Path, common: Path, hooks: Path) -> Tuple[List[Tuple[str, Pa
 
 
 def _install_repo(args) -> int:
+    _need_yes_for_json(args)
     from . import files, jsonout, undo
     from .args import preview_only, preview_result
     top, common, hooks = _repo_layout(Path(args.repo))
@@ -988,6 +996,7 @@ def _install_repo(args) -> int:
 
 
 def _uninstall_repo(args) -> int:
+    _need_yes_for_json(args)
     from . import files, jsonout, undo
     from .render import has_block, without_block
     from .args import preview_only, preview_result

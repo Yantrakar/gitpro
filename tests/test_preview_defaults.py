@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 import pytest
@@ -106,3 +107,26 @@ def test_legacy_generated_container_line_requires_explicit_migration() -> None:
     assert not devcontainer.has_pin(old)
     assert devcontainer.propose(old) == devcontainer.LINE
     assert devcontainer.has_pin(devcontainer.LINE)
+
+
+@pytest.mark.parametrize("command", ["agent", "mcp", "guard"])
+def test_json_write_requires_yes_even_on_a_terminal(cfg, home: Path, monkeypatch, capsys, command: str) -> None:
+    cfg()
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+    before = snapshot(home)
+    assert run(command, "install", "--write", "--json") == 2
+    result = json.loads(capsys.readouterr().out)
+    assert result["ok"] is False and "needs -y" in result["error"]
+    assert snapshot(home) == before
+
+
+def test_project_mcp_preview_does_not_grant_team_file_permission(home, tmp_path, monkeypatch, capsys) -> None:
+    repo = repo_with_remote(tmp_path, "project", "git@github.com:corp-org/project.git")
+    monkeypatch.chdir(repo)
+    before = snapshot(repo)
+    assert run("mcp", "install", "--scope", "project", "--json") == 0
+    assert json.loads(capsys.readouterr().out)["dry_run"] is True
+    assert snapshot(repo) == before
+    assert run("mcp", "install", "--scope", "project", "-y") == 2
+    assert "shared with your team" in capsys.readouterr().err
+    assert snapshot(repo) == before
