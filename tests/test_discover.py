@@ -522,7 +522,7 @@ def test_init_discover_creates(home, capsys):  # 11
     (home / ".gitconfig").write_text('[includeIf "gitdir:~/work/"]\n\tpath = ~/.gitconfig-work\n')
     (home / ".gitconfig-work").write_text("[user]\n\tname = Work Me\n\temail = me@corp.test\n")
     (home / "work").mkdir()
-    out, _ = text(capsys, "init", "--discover", "--history")
+    out, _ = text(capsys, "init", "-y", "--discover", "--history")
     target = home / ".config/gitpro.toml"
     assert stat.S_IMODE(target.stat().st_mode) == 0o600
     body = target.read_text()

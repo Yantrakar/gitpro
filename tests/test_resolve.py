@@ -240,12 +240,12 @@ def test_repo_override(cfg, tmp_path, capsys):  # 15
 def test_pin_stale(cfg, tmp_path, capsys):  # 16
     cfg()
     repo = repo_with_remote(tmp_path, "app", "git@github.com:corp-org/app.git")
-    assert run("pin", str(repo)) == 0
+    assert run("pin", "-y", str(repo)) == 0
     path = cfg(DEFAULT_CONFIG.replace("me@corp.test", "new@corp.test"))
     rep = resolve.compare(repo, load(path))
     assert rep.effective.pinned and rep.effective.email.scope == "pin"
     assert [p.code for p in rep.problems] == ["pin_stale"]
-    assert rep.problems[0].fix == f"gitpro pin {repo}"
+    assert rep.problems[0].fix == f"gitpro pin -y {repo}"
 
 
 def test_no_identity(cfg, tmp_path, capsys):  # 17
@@ -315,7 +315,7 @@ def test_worktree(cfg, tmp_path):  # 19
     repo = repo_with_remote(tmp_path, "app", "git@github.com:corp-org/app.git", commits=1)
     wt = tmp_path / "wt"
     git(repo, "worktree", "add", "-q", str(wt), "-b", "side")
-    assert run("pin", str(repo)) == 0
+    assert run("pin", "-y", str(repo)) == 0
     rep = resolve.compare(wt, c)
     assert rep.effective.pinned and rep.problems == ()
     assert rep.effective.email.origin == f"file:{repo}/.git/git-identities"
@@ -331,7 +331,7 @@ def test_worktree(cfg, tmp_path):  # 19
 def test_pin_seen_from_subdir_and_bare(cfg, tmp_path):  # V-003: relative origins
     c = load(cfg())
     repo = repo_with_remote(tmp_path, "app", "git@github.com:corp-org/app.git")
-    assert run("pin", str(repo)) == 0
+    assert run("pin", "-y", str(repo)) == 0
     (repo / "sub/deep").mkdir(parents=True)
     rep = resolve.compare(repo / "sub/deep", c)
     assert rep.effective.pinned and rep.effective.email.scope == "pin" and rep.problems == ()

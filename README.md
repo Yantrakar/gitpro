@@ -16,7 +16,7 @@ Install from Git; gitpro is not published on PyPI.
 
 ```sh
 pipx install git+https://github.com/sandeepshelke/gitpro.git
-gitpro setup
+gitpro setup --write
 ```
 
 The wizard helps you choose identities, Git hosts and owners, existing SSH keys,
@@ -25,7 +25,7 @@ configuration before saving; nothing is applied to Git or SSH yet.
 
 ```sh
 gitpro plan              # see exactly what would change
-gitpro apply             # apply only after confirming
+gitpro apply -y          # explicitly apply the reviewed changes
 ```
 
 Then, inside a repository:
@@ -34,7 +34,7 @@ Then, inside a repository:
 gitpro why               # see the expected identity and anything overriding it
 ```
 
-Already have a config? Run `gitpro setup` to add another identity without losing
+Already have a config? Run `gitpro setup --write` to add another identity without losing
 your existing settings or comments. Prefer editing files? The
 [user guide](docs/guide.md#configuration) covers the full TOML format.
 
@@ -56,6 +56,11 @@ in a terminal. The extension also shows the current identity and helps find
 repository-level overrides. [Install the extension](vscode/README.md).
 
 ## Go further when you need to
+
+For agents, [the versioned workflow](docs/agent-workflows.md) provides structured
+preflight, identity-scoped execution and durable idempotency for commits, pushes
+and GitHub PRs. Persistent changes use exact proposals, human approval by default,
+optional operator-scoped preauthorization, and recoverable apply. MCP execution is opt-in.
 
 | I want to… | Start here |
 |---|---|

@@ -134,10 +134,11 @@ def _child_env() -> Dict[str, str]:
     return {k: v for k, v in os.environ.items() if k not in _REDIRECT_VARS}
 
 
-def _git(repo: Path, *args: str) -> subprocess.CompletedProcess:
+def _git(repo: Path, *args: str, env: Optional[Mapping[str, str]] = None) -> subprocess.CompletedProcess:
     try:
         return subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True,
-                              env=_child_env(), stdin=subprocess.DEVNULL, timeout=TIMEOUT)
+                              env=_child_env() if env is None else dict(env),
+                              stdin=subprocess.DEVNULL, timeout=TIMEOUT)
     except FileNotFoundError:
         raise ConfigError("git not found") from None
     except subprocess.TimeoutExpired:
@@ -172,34 +173,35 @@ class _Layout:
         return self.top or self.git_dir
 
 
-def _work_tree_of(repo: Path, git_dir: Path, common_dir: Path) -> Optional[Path]:
+def _work_tree_of(repo: Path, git_dir: Path, common_dir: Path,
+                  env: Optional[Mapping[str, str]] = None) -> Optional[Path]:
     """The work tree when git ran inside a git dir (.git/ or .git/worktrees/<name>/); None when bare."""
-    if _git(repo, "rev-parse", "--is-bare-repository").stdout.strip() != "false":
+    if _git(repo, "rev-parse", "--is-bare-repository", env=env).stdout.strip() != "false":
         return None
     if git_dir != common_dir:                       # linked worktree: gitdir names its .git file
         try:
             return Path((git_dir / "gitdir").read_text(encoding="utf-8").strip()).parent
         except OSError:
             return None
-    wt = _git(repo, "config", "--get", "core.worktree").stdout.strip()
+    wt = _git(repo, "config", "--get", "core.worktree", env=env).stdout.strip()
     return Path(os.path.normpath(os.path.join(str(git_dir), wt))) if wt else git_dir.parent
 
 
-def _layout(repo: Path) -> Optional[_Layout]:
+def _layout(repo: Path, env: Optional[Mapping[str, str]] = None) -> Optional[_Layout]:
     # In a bare repo, or inside a .git dir, --show-toplevel fails (exit 128) after printing the first
     # two lines; use them anyway. git then does not chdir, so relative origins are relative to repo.
-    r = _git(repo, "rev-parse", "--path-format=absolute", "--git-dir", "--git-common-dir", "--show-toplevel")
+    r = _git(repo, "rev-parse", "--path-format=absolute", "--git-dir", "--git-common-dir", "--show-toplevel", env=env)
     lines = r.stdout.splitlines()
     if len(lines) < 2:
         return None
     git_dir, common_dir = Path(lines[0]), Path(lines[1])
     if len(lines) > 2 and lines[2]:
         return _Layout(git_dir, common_dir, Path(lines[2]), Path(lines[2]))
-    return _Layout(git_dir, common_dir, _work_tree_of(repo, git_dir, common_dir), Path(os.path.abspath(repo)))
+    return _Layout(git_dir, common_dir, _work_tree_of(repo, git_dir, common_dir, env), Path(os.path.abspath(repo)))
 
 
-def _need_layout(repo: Path) -> _Layout:
-    lay = _layout(repo)
+def _need_layout(repo: Path, env: Optional[Mapping[str, str]] = None) -> _Layout:
+    lay = _layout(repo, env)
     if lay is None:
         raise ConfigError(f"{repo}: not a git repository")
     return lay
@@ -211,11 +213,11 @@ def is_repo(path: Path) -> Optional[Path]:
     return lay.root if lay else None
 
 
-def _remote_urls(repo: Path) -> List[Tuple[str, str]]:
+def _remote_urls(repo: Path, env: Optional[Mapping[str, str]] = None) -> List[Tuple[str, str]]:
     """Every (name, raw url) in config order, several per remote when it has several urls: includeIf
     hasconfig:remote.*.url matches any of them (before insteadOf, never pushurl)."""
     out: List[Tuple[str, str]] = []
-    for entry in _git(repo, "config", "-z", "--get-regexp", r"^remote\..*\.url$").stdout.split("\0"):
+    for entry in _git(repo, "config", "-z", "--get-regexp", r"^remote\..*\.url$", env=env).stdout.split("\0"):
         key, nl, value = entry.partition("\n")
         if nl and key.startswith("remote.") and key.endswith(".url"):
             out.append((key[len("remote."):-len(".url")], value))
@@ -272,6 +274,14 @@ SECRET_QUERY_KEYS = ("access_token", "private_token", "oauth_token", "refresh_to
                      "key", "sig", "signature", "x-amz-signature", "x-amz-credential", "x-amz-security-token", "jwt")
 _SECRET_QUERY_RE = re.compile(r"([?&;](?:" + "|".join(re.escape(k) for k in SECRET_QUERY_KEYS) + r")=)[^&;#\s]*",
                               re.IGNORECASE)
+
+
+_URL_IN_TEXT = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*://[^\s\"'<>]+")
+
+
+def redact_text(value: str) -> str:
+    """Redact credential-bearing URLs embedded in a diagnostic or configuration excerpt."""
+    return _URL_IN_TEXT.sub(lambda m: redact_url(m[0]) or m[0], value) if "://" in value else value
 
 
 def redact_url(url: Optional[str]) -> Optional[str]:
@@ -528,9 +538,9 @@ def _absolute(origin: str, lay: _Layout) -> str:
     return origin
 
 
-def _effective(repo: Path) -> Tuple[Effective, _Layout, List[Tuple[str, str]]]:
-    lay = _need_layout(repo)
-    r = _git(repo, "config", "-z", "--show-scope", "--show-origin", "--get-regexp", _KEYS_RE)
+def _effective(repo: Path, env: Optional[Mapping[str, str]] = None) -> Tuple[Effective, _Layout, List[Tuple[str, str]]]:
+    lay = _need_layout(repo, env)
+    r = _git(repo, "config", "-z", "--show-scope", "--show-origin", "--get-regexp", _KEYS_RE, env=env)
     if r.returncode not in (0, 1):
         raise ConfigError(r.stderr.strip() or f"git config failed in {repo} ({r.returncode})")
     parts = r.stdout.split("\0")
@@ -546,7 +556,7 @@ def _effective(repo: Path) -> Tuple[Effective, _Layout, List[Tuple[str, str]]]:
         scope = _scope(git_scope, origin, lay, generated)
         pinned = pinned or scope == "pin"
         found[_KEYS[key.lower()]] = Setting(value, origin, scope)   # git prints every definition; the last wins
-    urls = _remote_urls(repo)
+    urls = _remote_urls(repo, env)
     eff = Effective(found.get("name", UNSET), found.get("email", UNSET), found.get("signingkey", UNSET),
                     found.get("gpgsign", UNSET), found.get("sshcommand", UNSET), pinned, _by_name(urls))
     return eff, lay, urls
@@ -649,15 +659,18 @@ def _home_has_block(home: Path) -> bool:
 
 def compare(repo: Path, cfg: Config, *, remote: Optional[str] = None,
             remote_url: Optional[str] = None, env: Optional[Mapping[str, str]] = None,
-            home: Optional[Path] = None) -> Report:
+            home: Optional[Path] = None, git_env: Optional[Mapping[str, str]] = None,
+            extra_checks: bool = True) -> Report:
     """Expected vs effective, with every problem that applies (order: PROBLEM_CODES, then EXTRA_CHECKS).
     remote= is a remote name or a url; remote_url= overrides its fetch URLs with the push destination.
     env= is the environment whose GIT_AUTHOR_*/GIT_COMMITTER_* are
     judged (default os.environ; a git hook passes one without GIT_AUTHOR_*, which git always exports
     there). home= is where ~/.gitconfig is looked for (default: the real home; `--home` passes its own).
-    Child git processes never see GIT_DIR/GIT_WORK_TREE/GIT_INDEX_FILE/GIT_PREFIX/GIT_COMMON_DIR."""
+    By default child Git strips repository-redirection variables. git_env= supplies a caller-owned,
+    already scoped child environment without modifying os.environ. extra_checks=False lets strict
+    operation evaluators run policy checks explicitly rather than inherit fail-open hook behavior."""
     repo = Path(repo)
-    eff, lay, urls = _effective(repo)
+    eff, lay, urls = _effective(repo, git_env)
     top = lay.root
     candidates = _candidates(urls, remote, remote_url)
     exp = _expected_for(cfg, candidates)
@@ -695,7 +708,7 @@ def compare(repo: Path, cfg: Config, *, remote: Optional[str] = None,
     if stale:
         what = ", ".join(f"user.{k} {s.value}" for k, s in stale)
         out.append(_p("pin_stale", f"the repo's pin ({PIN_FILE}) still says {what}; {who} is "
-                                   f"{exp.name} <{exp.email}>", ["gitpro", "pin", str(top)]))
+                                   f"{exp.name} <{exp.email}>", ["gitpro", "pin", "-y", str(top)]))
 
     beats = [(k, s) for k, s, want in (("name", eff.name, exp.name), ("email", eff.email, exp.email))
              if s.scope in ("global", "system", "other") and want is not None and s.value != want]
@@ -757,7 +770,7 @@ def compare(repo: Path, cfg: Config, *, remote: Optional[str] = None,
         out.append(envp)
 
     base = Report(top, exp, eff, tuple(out))
-    for extra in list(EXTRA_CHECKS):
+    for extra in list(EXTRA_CHECKS) if extra_checks else ():
         try:
             out.extend(extra(base) or ())
         except Exception as e:  # noqa: BLE001 - another package's check must never break compare
@@ -769,6 +782,17 @@ def compare(repo: Path, cfg: Config, *, remote: Optional[str] = None,
 def own_emails(cfg: Config) -> Set[str]:
     """Every email in [default] and the identities."""
     return {e for e in [cfg.default.email, *(i.email for i in cfg.identities)] if e}
+
+
+def identity_conflicts(expected_email: Optional[str], own: Iterable[str], author: Optional[str],
+                       committer: Optional[str]) -> Tuple[bool, bool]:
+    """Shared committer/author rule; a colleague's authorship is not an identity override."""
+    if expected_email is None:
+        return False, False
+    want = expected_email.casefold()
+    return (committer is not None and committer.casefold() != want,
+            author is not None and author.casefold() != want and
+            author.casefold() in {email.casefold() for email in own})
 
 
 # ---------------------------------------------------------------- display

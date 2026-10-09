@@ -62,14 +62,15 @@ def accounts(cfg: "Config") -> List[Account]:
     return list(dict.fromkeys(out))
 
 
-def _stripped(names: Tuple[str, ...]) -> Dict[str, str]:
-    return {k: v for k, v in os.environ.items() if k not in names}
+def _stripped(names: Tuple[str, ...], base_env: Optional[Dict[str, str]] = None) -> Dict[str, str]:
+    return {k: v for k, v in (os.environ if base_env is None else base_env).items() if k not in names}
 
 
-def gh_env(host: str, login: str) -> Dict[str, str]:
+def gh_env(host: str, login: str, *, base_env: Optional[Dict[str, str]] = None) -> Dict[str, str]:
     """os.environ without ambient gh tokens, plus GH_HOST and the token of `login` on `host`
-    (GH_TOKEN on github.com, GH_ENTERPRISE_TOKEN elsewhere). The token lives only in this dict."""
-    env = _stripped(_GH_TOKEN_VARS)
+    (GH_TOKEN on github.com, GH_ENTERPRISE_TOKEN elsewhere). The token lives only in this dict.
+    base_env lets scoped executors preserve their own child environment without global mutation."""
+    env = _stripped(_GH_TOKEN_VARS, base_env)
     try:
         r = subprocess.run(["gh", "auth", "token", "-u", login, "-h", host], env=env, stdin=subprocess.DEVNULL,
                            capture_output=True, text=True, timeout=TOKEN_TIMEOUT)

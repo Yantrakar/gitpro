@@ -67,6 +67,15 @@ ssh_key = "~/.ssh/id_personal"
 FAKE_PUB = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGl0aXNub3RhcmVhbGtleWl0aXNub3RhcmVhbGtleQ"
 
 
+@pytest.fixture(autouse=True)
+def isolated_git_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Agent hosts and Git hooks inject config, identity and repository overrides."""
+    for name in tuple(os.environ):
+        if name.startswith("GIT_"):
+            monkeypatch.delenv(name)
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+
+
 @pytest.fixture
 def home(tmp_path, monkeypatch):
     """A throwaway $HOME; git subprocesses see it too."""
