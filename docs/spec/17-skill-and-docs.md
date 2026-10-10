@@ -100,7 +100,7 @@ doctor` (the guard failed open).
   `pyproject.toml` if it carries a literal, `vscode/package.json`,
   `.claude-plugin/plugin.json`, `marketplace.json`.
 - Install line everywhere: `pipx install
-  git+https://github.com/sandeepshelke/gitpro.git` (Q7); no PyPI.
+  git+https://github.com/Yantrakar/gitpro.git` (Q7); no PyPI.
 
 ## 4. `README.md` changes
 
@@ -116,7 +116,7 @@ Insert, in this order, each from the package's "Docs text":
 5. "AI assistants": agent hook (10), MCP (11), `env` (12), devcontainer
    (13), `audit` (08), trailer policy.
 6. "Teams": policy file, CI check, Action (`uses:
-   sandeepshelke/gitpro@main`), `team` (14).
+   Yantrakar/gitpro@main`), `team` (14).
 7. Config reference: the full TOML from README spec §7 replaces the
    current example; every new key gets its one-line comment.
 8. "Undo everything": `uninstall` scope + the per-command undo list
@@ -149,7 +149,7 @@ feature detection (no minimum version), settings table.
   --generate, init`.
 - Every entry in `cli.EXTENSIONS` imports (no `ModuleNotFoundError`) —
   the release has no missing package.
-- README install line contains `git+https://github.com/sandeepshelke/gitpro.git`
+- README install line contains `git+https://github.com/Yantrakar/gitpro.git`
   and no `pip install gitpro`/`pipx install gitpro` bare form.
 
 ## 6. Out of scope

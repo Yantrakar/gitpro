@@ -128,7 +128,7 @@ def cmd_setup(args) -> int:
     _validate(original if cfg is not None else "[default]\n", path, home)
     text = original if cfg is not None else (
         "# Created with gitpro setup.\n"
-        "# Reference: https://github.com/sandeepshelke/gitpro/blob/main/docs/guide.md\n\n")
+        "# Reference: https://github.com/Yantrakar/gitpro/blob/main/docs/guide.md\n\n")
     out = view.console()
     out.print(Text("gitpro setup", style="bold"))
     out.print("Configure once, then let Git pick the identity for each remote.")

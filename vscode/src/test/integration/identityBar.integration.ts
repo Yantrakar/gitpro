@@ -89,7 +89,7 @@ export async function run(api: Api): Promise<void> {
     assert.match(seen.warn[0], /^gitpro 0\.1\.9 has no 'env'; update: pipx install --force /);
   });
   const ids = new Set(await vscode.commands.getCommands(true));
-  const declared = (vscode.extensions.getExtension("sandeepshelke.gitpro")?.packageJSON.contributes.commands ?? [])
+  const declared = (vscode.extensions.getExtension("yantrakar.gitpro")?.packageJSON.contributes.commands ?? [])
     .map((c: { command: string }) => c.command) as string[];
   for (const c of [...FEATURE_COMMANDS.map((n) => `gitpro.${n}`), ...declared]) {
     assert.ok(declared.includes(c), `${c} is not declared in package.json`);

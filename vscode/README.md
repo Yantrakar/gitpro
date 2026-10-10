@@ -5,10 +5,10 @@ commits with, turns red when it is the wrong one, and offers the fix. It also
 finds repo-level overrides and lost work, clones with the right identity and
 keeps the identity inside dev containers.
 
-It needs the [gitpro](https://github.com/sandeepshelke/gitpro) CLI:
+It needs the [gitpro](https://github.com/Yantrakar/gitpro) CLI:
 
 ```sh
-pipx install git+https://github.com/sandeepshelke/gitpro.git
+pipx install gitpro
 ```
 
 Set `gitpro.path` if it is not on `PATH`.

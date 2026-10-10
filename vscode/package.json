@@ -2,12 +2,12 @@
   "name": "gitpro",
   "displayName": "gitpro",
   "description": "Shows the git name and email this repo commits with, finds repos that override gitpro, and runs gitpro plan, apply and pin.",
-  "version": "0.3.0",
-  "publisher": "sandeepshelke",
+  "version": "0.3.1",
+  "publisher": "yantrakar",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/sandeepshelke/gitpro"
+    "url": "https://github.com/Yantrakar/gitpro"
   },
   "engines": {
     "vscode": "^1.85.0"
@@ -276,7 +276,7 @@
         "gitpro.path": {
           "type": "string",
           "default": "gitpro",
-          "markdownDescription": "Path to the `gitpro` command. Install it with `pipx install git+https://github.com/sandeepshelke/gitpro.git`."
+          "markdownDescription": "Path to the `gitpro` command. Install it with `pipx install gitpro`."
         },
         "gitpro.scanDirs": {
           "type": "array",
@@ -310,6 +310,7 @@
     "dev": "tsc -p . && code --extensionDevelopmentPath=\"$PWD\"",
     "test": "tsc -p . && node --test out/test/*.test.js",
     "package": "vsce package",
+    "vscode:prepublish": "npm run compile",
     "test:integration": "tsc -p . && node out/test/integration/runTest.js"
   },
   "devDependencies": {

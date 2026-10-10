@@ -285,7 +285,7 @@ DECISIONS Q7) into a venv under `$RUNNER_TEMP` (V-012): the runner's
 (PEP 668 "externally-managed-environment") and would otherwise pollute
 the runner's Python; the venv's `gitpro` is called by absolute path, so
 nothing needs to be on PATH. The version used is the ref in `uses:
-sandeepshelke/gitpro@<ref>`. Inputs reach the shell through `env:`,
+Yantrakar/gitpro@<ref>`. Inputs reach the shell through `env:`,
 never interpolated into `run:` (a crafted `range` input cannot inject).
 The default range is empty on non-`pull_request` events (`push`,
 `workflow_dispatch`: the two `sha` fields are unset) and the step fails
@@ -317,7 +317,7 @@ gitpro-policy:
   script:
     - git fetch --quiet origin "$CI_MERGE_REQUEST_TARGET_BRANCH_NAME"
     - useradd --create-home ci && chown -R ci "$CI_PROJECT_DIR"
-    - su ci -c 'python3 -m venv ~/gitpro && ~/gitpro/bin/pip install --quiet "git+https://github.com/sandeepshelke/gitpro.git@<ref>"'
+    - su ci -c 'python3 -m venv ~/gitpro && ~/gitpro/bin/pip install --quiet "git+https://github.com/Yantrakar/gitpro.git@<ref>"'
     - su ci -s /bin/bash -c 'set -o pipefail; ~/gitpro/bin/gitpro check --policy .gitpro-policy.toml --range "${CI_MERGE_REQUEST_TARGET_BRANCH_SHA:-$CI_MERGE_REQUEST_DIFF_BASE_SHA}..$CI_COMMIT_SHA" --json | tee gitpro-policy.json'
   artifacts:
     when: always
@@ -489,7 +489,7 @@ New `policy.py` (`load`, `applicable(repo_or_url, cfg)`, `check_machine`,
 > `gitpro why` shows the policy problems of a repo next to the identity
 > ones. The guard blocks offending commits, and `gitpro check --policy
 > FILE --range base..head` verifies a PR in CI (`uses:
-> sandeepshelke/gitpro@main`; the policy file is read from the PR's base,
+> Yantrakar/gitpro@main`; the policy file is read from the PR's base,
 > so protect it with CODEOWNERS). `gitpro team` is the one-screen summary
 > and ends with the `gitpro check --policy …` command for the details.
 > Plain `gitpro check` is unchanged: it only says whether `gitpro apply`

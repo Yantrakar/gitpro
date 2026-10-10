@@ -1,4 +1,4 @@
-# gitpro config. Docs: https://github.com/sandeepshelke/gitpro
+# gitpro config. Docs: https://github.com/Yantrakar/gitpro
 #
 # [default] applies to every repo. Each [[identity]] overrides it for repos with
 # a remote URL on `host` under one of `owners` (GitHub users/orgs, GitLab groups

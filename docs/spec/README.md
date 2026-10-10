@@ -540,7 +540,7 @@ forbidden forms.
 
 ## 12. Install line and plugin layout
 
-- Install: `pipx install git+https://github.com/sandeepshelke/gitpro.git`
+- Install: `pipx install git+https://github.com/Yantrakar/gitpro.git`
   (no PyPI name is assumed, DECISIONS Q7). The GitHub Action installs from
   its own checkout.
 - The repo root is the Claude Code plugin root: `.claude-plugin/plugin.json`

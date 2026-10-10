@@ -17,8 +17,9 @@ ROOT = Path(__file__).resolve().parent.parent
 GUIDE = (ROOT / "docs/guide.md").read_text(encoding="utf-8")
 README = (ROOT / "README.md").read_text(encoding="utf-8")
 SKILL = (ROOT / "skills/gitpro/SKILL.md").read_text(encoding="utf-8")
-VERSION = "0.3.0"
-INSTALL = "git+https://github.com/sandeepshelke/gitpro.git"
+VERSION = "0.3.1"
+GIT_URL = "git+https://github.com/Yantrakar/gitpro.git"
+INSTALL = "pipx install gitpro"
 
 # Spec 17 §5: the commands that write, each of which the skill's table must mark as writing.
 WRITING = ["apply", "scan --fix", "pin", "unpin", "uninstall", "guard install", "guard uninstall",
@@ -224,10 +225,10 @@ def test_guide_documents_every_action_input():
 
 
 def test_guide_action_with_keys_are_inputs():
-    blocks = [b for b in re.findall(r"```yaml\n(.*?)```", GUIDE, re.S) if "uses: sandeepshelke/gitpro@" in b]
+    blocks = [b for b in re.findall(r"```yaml\n(.*?)```", GUIDE, re.S) if "uses: Yantrakar/gitpro@" in b]
     assert blocks, "guide has no workflow that uses the Action"
     for block in blocks:
-        after = block.split("uses: sandeepshelke/gitpro@", 1)[1]
+        after = block.split("uses: Yantrakar/gitpro@", 1)[1]
         keys = re.findall(r"^\s+#?\s*([\w-]+):", after.split("with:", 1)[1], re.M)
         assert keys and set(keys) <= set(_action_inputs()), keys
 
@@ -264,7 +265,7 @@ def test_action_refuses_shallow_and_empty_range():
 def test_gitlab_job_uses_the_target_branch_base():
     job = GUIDE.split("**GitLab CI.**", 1)[1].split("\n### ", 1)[0]
     assert "${CI_MERGE_REQUEST_TARGET_BRANCH_SHA:-$CI_MERGE_REQUEST_DIFF_BASE_SHA}..$CI_COMMIT_SHA" in job
-    assert f'"{INSTALL}@<ref>"' in job
+    assert f'"{GIT_URL}@<ref>"' in job
     assert 'GIT_DEPTH: "0"' in job
     assert "set -o pipefail" in job  # `| tee` must not hide the exit code
     assert "useradd" in job          # gitpro refuses to run as root
@@ -433,10 +434,10 @@ def test_every_extension_imports(name):
 # ---------------------------------------------------------------- install line
 
 @pytest.mark.parametrize("name", ["README.md", "docs/guide.md", "skills/gitpro/SKILL.md", "vscode/README.md"])
-def test_install_from_git_only(name):
+def test_install_from_pypi(name):
     text = (ROOT / name).read_text(encoding="utf-8")
-    assert f"pipx install {INSTALL}" in text, name
-    assert not re.search(r"pipx? install (--\S+ )*gitpro(\[\w+\])?(\s|$|`)", text), f"{name}: bare PyPI install"
+    assert INSTALL in text, name
+    assert "git+https://" not in text.replace(f'"{GIT_URL}@<ref>"', ""), f"{name}: install from PyPI, not git"
 
 
 def test_readme_is_a_short_onboarding_page():
