@@ -1,0 +1,2 @@
+Installed-artifact MCP pilot for v0.3.0.
+Base: cc7c956d53908ac8bdce6611845a0da59a0d768c
