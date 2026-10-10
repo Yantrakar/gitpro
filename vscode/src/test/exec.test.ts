@@ -2,15 +2,25 @@ import * as assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { test } from "node:test";
+import { after, test } from "node:test";
 import { Child, exec, KILL_GRACE, killAll, liveCount, redactUrl, within } from "../exec";
 
 const node = process.execPath;
 const posix = process.platform !== "win32";
 
+const dirs: string[] = [];
+
 function tmp(): string {
-  return fs.mkdtempSync(path.join(os.tmpdir(), "gitpro-exec-"));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gitpro-exec-"));
+  dirs.push(dir);
+  return dir;
 }
+
+after(() => {
+  for (const dir of dirs) {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 function alive(pid: number): boolean {
   try {
@@ -71,7 +81,6 @@ test("abort resolves at once; Child.exited waits for the child's own exit", asyn
   assert.ok(!fs.existsSync(marker), "run() should not wait for the cleanup");
   assert.equal(await within(child!.exited, 5000), 5);
   assert.ok(fs.existsSync(marker), "exited resolved before the child finished");
-  fs.rmSync(dir, { recursive: true, force: true });
 });
 
 test("abort signals the whole process group on POSIX (no orphaned grandchild)", { skip: !posix }, async () => {
@@ -93,7 +102,6 @@ test("abort signals the whole process group on POSIX (no orphaned grandchild)", 
     if (alive(grandchild)) {
       process.kill(grandchild, "SIGKILL");
     }
-    fs.rmSync(dir, { recursive: true, force: true });
   }
 });
 
@@ -117,7 +125,6 @@ test("abort escalates after its grace period without delaying ABORT_ERR", { skip
       process.kill(child.pid, "SIGKILL");
       await child.exited;
     }
-    fs.rmSync(dir, { recursive: true, force: true });
   }
 });
 
@@ -148,7 +155,6 @@ test("abort kills an ignoring grandchild even after the leader exits", { skip: !
     if (grandchild && alive(grandchild)) {
       process.kill(grandchild, "SIGKILL");
     }
-    fs.rmSync(dir, { recursive: true, force: true });
   }
 });
 
@@ -217,7 +223,6 @@ test("timeout SIGKILLs a child that ignores SIGTERM after the grace period", { s
   assert.ok(fs.existsSync(ready));
   assert.ok(took >= KILL_GRACE && took < KILL_GRACE + 10_000, `took ${took} ms`);
   assert.equal(await within(child!.exited, 5000), "SIGKILL");
-  fs.rmSync(dir, { recursive: true, force: true });
 });
 
 test("maxBuffer counts stdout and stderr separately, like execFile", async () => {
@@ -267,6 +272,5 @@ test("killAll ends every live child's process group", { skip: !posix }, async ()
     if (alive(grandchild)) {
       process.kill(grandchild, "SIGKILL");
     }
-    fs.rmSync(dir, { recursive: true, force: true });
   }
 });
