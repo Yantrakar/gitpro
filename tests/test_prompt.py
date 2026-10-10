@@ -30,9 +30,13 @@ ssh_key = "~/.ssh/id_work"
 """
 
 
+SLOW_OK = ["--max-ms", "60000"]   # a loaded CI runner can exceed the 80 ms budget; only the budget tests use it
+
+
 def say(capsys, *argv) -> str:
     """Run `gitpro prompt ARGV` through hot.main (the real route) and return stdout; exit must be 0."""
-    assert hot.main(["prompt", *map(str, argv)]) == 0
+    argv = [*map(str, argv)]
+    assert hot.main(["prompt", *argv, *([] if "--max-ms" in argv else SLOW_OK)]) == 0
     return capsys.readouterr().out
 
 
@@ -93,7 +97,7 @@ def test_outside_a_repo_is_empty(cfg, tmp_path, capsys):  # 10
 def test_subdirectory_and_cli_route(work_repo, capsys):
     sub = work_repo / "src" / "deep"
     sub.mkdir(parents=True)
-    assert run("prompt", str(sub)) == 0
+    assert run("prompt", str(sub), *SLOW_OK) == 0
     assert capsys.readouterr().out == "✓ work-github\n"
 
 
@@ -314,7 +318,7 @@ def test_bash_install_line_works(work_repo, home):
     gitpro_bin = home.parent / "bin"
     gitpro_bin.mkdir()
     script = gitpro_bin / "gitpro"
-    script.write_text(f"#!{sys.executable}\nimport sys\nfrom gitpro import hot\nsys.exit(hot.main(sys.argv[1:]))\n")
+    script.write_text(f"#!{sys.executable}\nimport sys\nfrom gitpro import hot\nsys.exit(hot.main(sys.argv[1:] + {SLOW_OK!r}))\n")
     script.chmod(0o755)
     env = dict(os.environ, PATH=f"{gitpro_bin}{os.pathsep}{os.environ['PATH']}")
     r = subprocess.run(["bash", "--norc", "--noprofile", "-c", f"PS1='$ '; {line}; eval \"echo $PS1\""],

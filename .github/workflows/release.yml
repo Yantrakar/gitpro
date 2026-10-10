@@ -79,24 +79,10 @@ jobs:
       - uses: pypa/gh-action-pypi-publish@release/v1
 
   marketplace:
-    needs: build
-    runs-on: ubuntu-latest
-    environment: marketplace
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - uses: actions/download-artifact@v4
-        with:
-          name: dist
-          path: dist
-      - name: Publish the VSIX
-        working-directory: vscode
-        env:
-          VSCE_PAT: ${{ secrets.VSCE_PAT }}
-        run: |
-          npm ci
-          npx vsce publish --packagePath ../dist/*.vsix
+    needs: github
+    uses: ./.github/workflows/marketplace.yml
+    with:
+      tag: ${{ github.ref_name }}
+    permissions:
+      contents: read
+      id-token: write

@@ -1,0 +1,61 @@
+name: Marketplace
+
+# Publishes the VSIX attached to a GitHub release, signing in with a
+# Microsoft Entra managed identity (Azure DevOps retired the global PATs
+# the Marketplace needed). Needs repository variables AZURE_CLIENT_ID and
+# AZURE_TENANT_ID; without them it does nothing. Run it by hand with
+# `whoami` once to print the identity's Marketplace profile ID.
+on:
+  workflow_call:
+    inputs:
+      tag:
+        type: string
+        required: true
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag whose VSIX to publish, e.g. v0.3.1
+        type: string
+        required: true
+      whoami:
+        description: Only print the identity's profile ID; publish nothing
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    if: vars.AZURE_CLIENT_ID != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: marketplace
+    permissions:
+      contents: read
+      id-token: write  # federated sign-in; no secret is stored
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          allow-no-subscriptions: true
+      - name: Profile ID to add as a publisher member
+        if: inputs.whoami
+        run: az rest -u https://app.vssps.visualstudio.com/_apis/profile/profiles/me --resource 499b84ac-1321-427f-aa17-267ca6975798 --query id -o tsv
+      - name: Publish the release VSIX
+        if: ${{ !inputs.whoami }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern '*.vsix' --dir dist
+          cd vscode && npm ci
+          npx vsce verify-pat yantrakar --azure-credential
+          npx vsce publish --packagePath ../dist/*.vsix --skip-duplicate --azure-credential
