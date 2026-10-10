@@ -12,10 +12,10 @@ personal keys, or keep finding the wrong email on your commits.
 ## Try it
 
 Requires **Linux or macOS**, Git **2.36+**, Python **3.9+** and OpenSSH.
-Install from Git; gitpro is not published on PyPI.
+Install from [PyPI](https://pypi.org/project/gitpro/) with pipx.
 
 ```sh
-pipx install git+https://github.com/sandeepshelke/gitpro.git
+pipx install gitpro
 gitpro setup --write
 ```
 

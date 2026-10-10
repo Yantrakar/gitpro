@@ -39,7 +39,7 @@ test("loadCapabilities: JSON, old text, failure", async () => {
 test("missing names the version, the capability and the update line", () => {
   const c = parseCapabilities('{"version":"0.2.0","capabilities":[]}')!;
   assert.equal(missing(c, "clone"), `gitpro 0.2.0 has no 'clone'; update: ${UPDATE}`);
-  assert.equal(UPDATE, "pipx install --force git+https://github.com/sandeepshelke/gitpro.git");
+  assert.equal(UPDATE, "pipx install --force gitpro");
 });
 
 test("LiveCapabilities answers from whatever was set last", () => {

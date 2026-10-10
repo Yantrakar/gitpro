@@ -4,7 +4,7 @@ import type { Cli } from "./cli";
 
 export type Capabilities = { version: string; has(cap: string): boolean };
 
-export const UPDATE = "pipx install --force git+https://github.com/sandeepshelke/gitpro.git";
+export const UPDATE = "pipx install --force gitpro";
 
 /** `{"version": "0.2.0", "capabilities": ["why", ...]}` → Capabilities; anything else (an old CLI's text) → null. */
 export function parseCapabilities(stdout: string): Capabilities | null {

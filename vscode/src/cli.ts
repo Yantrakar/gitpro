@@ -9,7 +9,7 @@ import { missing } from "./capabilities";
 import { exec, redactUrl, Result, RunOptions } from "./exec";
 import { tilde } from "./scan";
 
-export const INSTALL = "pipx install git+https://github.com/sandeepshelke/gitpro.git";
+export const INSTALL = "pipx install gitpro";
 
 export { exec, killAll, redactUrl, within } from "./exec";
 export type { Child, Result, RunOptions } from "./exec";

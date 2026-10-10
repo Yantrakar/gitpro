@@ -417,12 +417,12 @@ def test_status_json(home, tmp_path, monkeypatch, capsys):  # 14
     run("agent", "install", "-y")
     run("agent", "install", "--scope", "project", "-y")
     obj = json.loads(settings(home).read_text())
-    settings(home).write_text(json.dumps({**obj, "enabledPlugins": {"gitpro@sandeepshelke": True}}))
+    settings(home).write_text(json.dumps({**obj, "enabledPlugins": {"gitpro@gitpro": True}}))
     capsys.readouterr()
     assert run("agent", "status", "--json") == 0
     claude_ = json.loads(capsys.readouterr().out)["agents"]["claude"]
     assert claude_ == {"user": str(settings(home)), "project": str(repo / ".claude/settings.local.json"),
-                       "plugin": "gitpro@sandeepshelke", "experimental": False}
+                       "plugin": "gitpro@gitpro", "experimental": False}
 
 
 def test_status_text_and_guard_stub(home, cfg, monkeypatch, capsys):  # 14

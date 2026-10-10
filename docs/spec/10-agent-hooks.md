@@ -252,7 +252,7 @@ launch, a container); `agent status` (2.3) checks this (V-028).
 
 ```
 agents:   [agents] hook = block
-  claude   hook: user ~/.claude/settings.json; plugin: enabled (gitpro@sandeepshelke)
+  claude   hook: user ~/.claude/settings.json; plugin: enabled (gitpro@gitpro)
   cursor   not installed (experimental) → gitpro agent install --agent cursor --experimental
   gemini   not installed (experimental)
   codex    no pre-tool hook; covered by the git guard (installed) and MCP
@@ -290,7 +290,7 @@ Capabilities registered: `agent-check`, `agent.install`, `agent.status`.
 `agent status --json`: `{"ok": true, "command": "agent status", "mode":
 "block", "agents": {"claude": {"user": "/home/me/.claude/settings.json"|null,
 "project": "/repo/.claude/settings.local.json"|null, "plugin":
-"gitpro@sandeepshelke"|null, "experimental": false}, "cursor": {...,
+"gitpro@gitpro"|null, "experimental": false}, "cursor": {...,
 "experimental": true}, ...}, "guard_installed": true|false|null}`. `agent
 install/uninstall --json` (needs `-y`): `{"ok", "command", "file",
 "changed", "backup", "undo"}` (fields from `jsonfile.Result`).
@@ -409,7 +409,7 @@ with `monkeypatch.setattr("sys.stdin", io.StringIO(payload))` and
 13. `agent uninstall -y` → entry removed, empty containers removed, other
     keys intact.
 14. `agent status --json` reflects user/project/plugin installs
-    (`enabledPlugins: {"gitpro@sandeepshelke": true}` → `plugin` set).
+    (`enabledPlugins: {"gitpro@gitpro": true}` → `plugin` set).
 15. Static: repo-root `hooks/hooks.json` parses, its command contains
     `gitpro agent-check --agent claude`; `.claude-plugin/plugin.json`
     parses and has **no** `hooks` key (10 does not edit it).

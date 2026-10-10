@@ -55,7 +55,7 @@ enforce a policy locally and in CI. Everything is free and MIT licensed, and
 nothing goes online unless you pass `--online`.
 
 ```sh
-pipx install git+https://github.com/sandeepshelke/gitpro.git
+pipx install gitpro
 ```
 
 ## Install
@@ -63,11 +63,10 @@ pipx install git+https://github.com/sandeepshelke/gitpro.git
 Requires Linux or macOS, **git 2.36+**, Python 3.9+ and OpenSSH.
 
 ```sh
-pipx install git+https://github.com/sandeepshelke/gitpro.git
+pipx install gitpro
 ```
 
-This installs a `gitpro` command. gitpro is not on PyPI; always install from
-the git URL. To upgrade: `pipx upgrade gitpro`. `gitpro --version` prints the
+This installs a `gitpro` command from [PyPI](https://pypi.org/project/gitpro/). To upgrade: `pipx upgrade gitpro`. `gitpro --version` prints the
 version.
 
 ## Quick start
@@ -407,7 +406,7 @@ environment) and lists what to fix.
 
 ```text
 $ gitpro doctor
-gitpro 0.3.0  python 3.12.3  git 2.43.0  linux
+gitpro 0.3.1  python 3.12.3  git 2.43.0  linux
 config    ~/.config/gitpro.toml (user config)  1 identity         ✓
 applied   up to date                                              ✓
 files     ~/.gitconfig block last ✓  ~/.ssh/config block first ✓  ✓
@@ -606,7 +605,7 @@ dry run, nothing changed. Remove 1 setting from 1 repo: gitpro scan --fix
 
 `gitpro scan` changes nothing. `gitpro scan --fix` removes the overrides. If
 gitpro was installed with the `tui` extra
-(`pipx install 'gitpro[tui] @ git+https://github.com/sandeepshelke/gitpro.git'`),
+(`pipx install 'gitpro[tui]'`),
 it opens a list where you tick the repos to fix. Without the extra, or with
 `--plain`, it asks y/N. Either way it saves an undo script under
 `~/.local/state/gitpro/` and prints the command to run it. It keeps any
@@ -1239,7 +1238,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0          # the whole history; a shallow clone is refused
-      - uses: sandeepshelke/gitpro@<ref>
+      - uses: Yantrakar/gitpro@<ref>
         with:
           policy: .gitpro-policy.toml
           # comment: "true"       # post the violations as a PR comment
@@ -1271,7 +1270,7 @@ gitpro-policy:
   script:
     - git fetch --quiet origin "$CI_MERGE_REQUEST_TARGET_BRANCH_NAME"
     - useradd --create-home ci && chown -R ci "$CI_PROJECT_DIR"
-    - su ci -c 'python3 -m venv ~/gitpro && ~/gitpro/bin/pip install --quiet "git+https://github.com/sandeepshelke/gitpro.git@<ref>"'
+    - su ci -c 'python3 -m venv ~/gitpro && ~/gitpro/bin/pip install --quiet "git+https://github.com/Yantrakar/gitpro.git@<ref>"'
     - su ci -s /bin/bash -c 'set -o pipefail; ~/gitpro/bin/gitpro check --policy .gitpro-policy.toml --range "${CI_MERGE_REQUEST_TARGET_BRANCH_SHA:-$CI_MERGE_REQUEST_DIFF_BASE_SHA}..$CI_COMMIT_SHA" --json | tee gitpro-policy.json'
   artifacts:
     when: always
@@ -1382,7 +1381,7 @@ $ gitpro --version --json
 {
   "ok": true,
   "command": "version",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "python": "3.12.3",
   "capabilities": [
     "agent-check",
@@ -1434,14 +1433,14 @@ comparing version numbers.
   the fix, and runs `plan`, `apply`, `pin`, `clone` and more. It has views for
   repo-level overrides and lost work. It is not on the Marketplace yet; build
   and install it with
-  `cd vscode && npm ci && npx vsce package && code --install-extension gitpro-0.3.0.vsix`.
+  `cd vscode && npm ci && npx vsce package && code --install-extension gitpro-0.3.1.vsix`.
   See [`vscode/README.md`](../vscode/README.md).
 - **Claude Code**: a [skill](../skills/gitpro/SKILL.md) teaches Claude to
   edit the config from plain requests, show `plan`, and `apply` only after you
   confirm. Install it as a plugin:
 
   ```
-  /plugin marketplace add sandeepshelke/gitpro
+  /plugin marketplace add Yantrakar/gitpro
   /plugin install gitpro@gitpro
   ```
 
@@ -1457,7 +1456,7 @@ comparing version numbers.
 ```sh
 python -m venv .venv && .venv/bin/pip install -e . pytest && .venv/bin/pytest
 .venv/bin/python -m pip wheel --no-deps --wheel-dir dist .
-.venv/bin/python tests/smoke_wheel.py dist/gitpro-0.3.0-py3-none-any.whl
+.venv/bin/python tests/smoke_wheel.py dist/gitpro-0.3.1-py3-none-any.whl
 cd vscode && npm ci && npm test                  # extension unit tests
 xvfb-run -a npm run test:integration             # starts VS Code; drop xvfb-run with a display
 ```
@@ -1472,6 +1471,13 @@ disposable home. It exercises default approval refusal, operator-scoped apply,
 idempotent replay, undo and MCP execution gates without network access or live
 configuration changes. CI runs it on the Python/Linux/macOS matrix and retains
 wheel/VSIX artifacts; uploading an artifact does not publish a release.
+
+To release, bump the version in `src/gitpro/__init__.py`, `vscode/package.json`
+and the plugin manifests, merge, then push a tag `vX.Y.Z`. The release workflow
+checks the tag against both versions, builds and tests once, and publishes the
+same files to GitHub Releases (with `SHA256SUMS`), PyPI (trusted publishing,
+environment `pypi`) and the VS Code Marketplace (secret `VSCE_PAT`, environment
+`marketplace`).
 
 Live GitHub qualification is separate and opt-in: `python tests/smoke_github.py --help`.
 It previews by default; `-y` authorizes a private clone/configuration, candidate
