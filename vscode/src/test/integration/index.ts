@@ -7,7 +7,7 @@ import * as vscode from "vscode";
 import type { Api } from "../../extension";
 
 export async function run(): Promise<void> {
-  const ext = vscode.extensions.getExtension<Api>("sandeepshelke.gitpro");
+  const ext = vscode.extensions.getExtension<Api>("yantrakar.gitpro");
   assert.ok(ext, "extension not found");
   const api = await ext.activate();
   const files = fs.readdirSync(__dirname).filter((f) => f.endsWith(".integration.js")).sort();

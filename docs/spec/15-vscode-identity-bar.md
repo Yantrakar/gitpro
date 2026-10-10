@@ -46,7 +46,7 @@ user.email in .git/config`, and it is green again."
 
 Commands whose CLI capability is missing are still registered (so the
 palette entry exists) and show `gitpro <ver> has no '<cap>'; update: pipx install --force
-git+https://github.com/sandeepshelke/gitpro.git` when invoked.
+git+https://github.com/Yantrakar/gitpro.git` when invoked.
 
 ### 2.2 `features.ts`
 
@@ -97,7 +97,7 @@ No minimum version (DECISIONS Q12): each feature asks `caps.has("why")`,
 `caps.has("lost")`, … and degrades. `gitpro --version` without `--json`
 support (an old CLI) → `version "0.1.0"`, no capabilities, status bar in
 the `gitpro?` state with `update: pipx install --force
-git+https://github.com/sandeepshelke/gitpro.git`.
+git+https://github.com/Yantrakar/gitpro.git`.
 
 ### 2.5 Integration test layout
 

@@ -1,14 +1,14 @@
 {
   "name": "gitpro",
   "owner": {
-    "name": "Sandeep Shelke"
+    "name": "Yantrakar"
   },
   "description": "Claude Code plugin for the gitpro CLI",
   "plugins": [
     {
       "name": "gitpro",
       "source": "./",
-      "version": "0.3.0",
+      "version": "0.3.1",
       "description": "gitpro skill, wrong-identity hook and read-only MCP server for the gitpro CLI"
     }
   ]

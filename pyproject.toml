@@ -9,7 +9,7 @@ description = "Per-remote git identities (name, email, SSH key, commit signing) 
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
-authors = [{ name = "Sandeep Shelke" }]
+authors = [{ name = "Yantrakar" }, { name = "Sandeep Shelke" }]
 requires-python = ">=3.9"
 dependencies = ['tomli>=1.1; python_version < "3.11"', "rich>=13"]
 keywords = ["git", "ssh", "identity", "gitconfig", "includeif", "signing"]
@@ -26,7 +26,9 @@ classifiers = [
 tui = ["textual>=0.80"]  # interactive scan --fix
 
 [project.urls]
-Homepage = "https://github.com/sandeepshelke/gitpro"
+Homepage = "https://github.com/Yantrakar/gitpro"
+Documentation = "https://github.com/Yantrakar/gitpro/blob/main/docs/guide.md"
+Issues = "https://github.com/Yantrakar/gitpro/issues"
 
 [project.scripts]
 gitpro = "gitpro.hot:main"
@@ -36,6 +38,9 @@ path = "src/gitpro/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/gitpro"]
+
+[tool.hatch.build.targets.sdist]
+include = ["/src/gitpro", "/README.md", "/LICENSE"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
