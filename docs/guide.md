@@ -1476,8 +1476,10 @@ To release, bump the version in `src/gitpro/__init__.py`, `vscode/package.json`
 and the plugin manifests, merge, then push a tag `vX.Y.Z`. The release workflow
 checks the tag against both versions, builds and tests once, and publishes the
 same files to GitHub Releases (with `SHA256SUMS`), PyPI (trusted publishing,
-environment `pypi`) and the VS Code Marketplace (secret `VSCE_PAT`, environment
-`marketplace`).
+environment `pypi`) and the VS Code Marketplace (`marketplace.yml`: a Microsoft
+Entra managed identity, variables `AZURE_CLIENT_ID` and `AZURE_TENANT_ID`,
+environment `marketplace`; skipped while the variables are unset, and runnable
+by hand for an existing tag).
 
 Live GitHub qualification is separate and opt-in: `python tests/smoke_github.py --help`.
 It previews by default; `-y` authorizes a private clone/configuration, candidate
