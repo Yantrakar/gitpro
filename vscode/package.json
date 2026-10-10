@@ -27,7 +27,8 @@
       {
         "command": "gitpro.which",
         "title": "Show Identity for This Repo",
-        "category": "gitpro"
+        "category": "gitpro",
+        "icon": "$(account)"
       },
       {
         "command": "gitpro.plan",
@@ -232,6 +233,20 @@
           "command": "gitpro.lostRefresh",
           "when": "view == gitpro.lost",
           "group": "navigation@1"
+        }
+      ],
+      "scm/title": [
+        {
+          "command": "gitpro.which",
+          "when": "scmProvider == git",
+          "group": "navigation@9"
+        }
+      ],
+      "scm/sourceControl": [
+        {
+          "command": "gitpro.which",
+          "when": "scmProvider == git",
+          "group": "inline"
         }
       ],
       "commandPalette": [
