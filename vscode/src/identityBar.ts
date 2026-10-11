@@ -272,6 +272,12 @@ export function pickFolder(activeEditor: string | undefined, lastActive: string 
   return folders[0];
 }
 
+/** The repo folder a Source Control menu passes (a SourceControl with a file rootUri), if any. */
+export function scmRoot(arg: unknown): string | undefined {
+  const uri = (arg as { rootUri?: { scheme?: unknown; fsPath?: unknown } } | undefined)?.rootUri;
+  return uri?.scheme === "file" && typeof uri.fsPath === "string" ? uri.fsPath : undefined;
+}
+
 /** The `undo` path a command printed (`↩ undo: sh <path>` or JSON `"undo": "<path>"`), if any. The path runs to
  * the end of the line (it may contain spaces); shell quotes around it are removed. */
 export function undoPath(stdout: string): string | undefined {

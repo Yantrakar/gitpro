@@ -17,7 +17,7 @@ ROOT = Path(__file__).resolve().parent.parent
 GUIDE = (ROOT / "docs/guide.md").read_text(encoding="utf-8")
 README = (ROOT / "README.md").read_text(encoding="utf-8")
 SKILL = (ROOT / "skills/gitpro/SKILL.md").read_text(encoding="utf-8")
-VERSION = "0.3.1"
+VERSION = "0.3.2"
 GIT_URL = "git+https://github.com/Yantrakar/gitpro.git"
 INSTALL = "pipx install gitpro"
 

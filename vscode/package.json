@@ -2,7 +2,8 @@
   "name": "gitpro",
   "displayName": "gitpro",
   "description": "Shows the git name and email this repo commits with, finds repos that override gitpro, and runs gitpro plan, apply and pin.",
-  "version": "0.3.1",
+  "version": "0.3.2",
+  "icon": "media/icon.png",
   "publisher": "yantrakar",
   "license": "MIT",
   "repository": {
@@ -26,7 +27,8 @@
       {
         "command": "gitpro.which",
         "title": "Show Identity for This Repo",
-        "category": "gitpro"
+        "category": "gitpro",
+        "icon": "$(account)"
       },
       {
         "command": "gitpro.plan",
@@ -231,6 +233,20 @@
           "command": "gitpro.lostRefresh",
           "when": "view == gitpro.lost",
           "group": "navigation@1"
+        }
+      ],
+      "scm/title": [
+        {
+          "command": "gitpro.which",
+          "when": "scmProvider == git",
+          "group": "navigation@9"
+        }
+      ],
+      "scm/sourceControl": [
+        {
+          "command": "gitpro.which",
+          "when": "scmProvider == git",
+          "group": "inline"
         }
       ],
       "commandPalette": [
