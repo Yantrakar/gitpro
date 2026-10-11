@@ -65,6 +65,16 @@ export async function run(api: Api): Promise<void> {
   assert.equal(spawnSync("git", ["-C", repo, "config", "--local", "--get", "user.email"]).status, 1);
   assert.equal(api.status().text, WORK);
 
+  // The Source Control button passes that repo's SourceControl: its fixes, not the bar's folder, and the bar stays.
+  execFileSync("git", ["-C", repoB, "config", "user.email", "wrong@x"]);
+  await withUi(api, {}, async (seen) => {
+    await vscode.commands.executeCommand("gitpro.which", { rootUri: vscode.Uri.file(repoB) });
+    assert.equal(seen.pick.length, 1);
+    assert.equal(seen.pick[0][0], "Unset user.email in .git/config");
+  });
+  execFileSync("git", ["-C", repoB, "config", "--unset", "user.email"]);
+  assert.equal(api.status().text, WORK);
+
   // 10: apply with nothing to change says so and never asks.
   await withUi(api, { modal: "Apply" }, async (seen) => {
     await vscode.commands.executeCommand("gitpro.apply");

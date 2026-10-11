@@ -406,7 +406,7 @@ environment) and lists what to fix.
 
 ```text
 $ gitpro doctor
-gitpro 0.3.1  python 3.12.3  git 2.43.0  linux
+gitpro 0.3.2  python 3.12.3  git 2.43.0  linux
 config    ~/.config/gitpro.toml (user config)  1 identity         ✓
 applied   up to date                                              ✓
 files     ~/.gitconfig block last ✓  ~/.ssh/config block first ✓  ✓
@@ -1381,7 +1381,7 @@ $ gitpro --version --json
 {
   "ok": true,
   "command": "version",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "python": "3.12.3",
   "capabilities": [
     "agent-check",
@@ -1431,9 +1431,9 @@ comparing version numbers.
 - **VS Code**: the extension in [`vscode/`](../vscode/) shows the current repo's
   identity and SSH key in the status bar, turns red on a mismatch and offers
   the fix, and runs `plan`, `apply`, `pin`, `clone` and more. It has views for
-  repo-level overrides and lost work. It is not on the Marketplace yet; build
-  and install it with
-  `cd vscode && npm ci && npx vsce package && code --install-extension gitpro-0.3.1.vsix`.
+  repo-level overrides and lost work. Install it from the Marketplace with
+  `code --install-extension yantrakar.gitpro`, or build it from source with
+  `cd vscode && npm ci && npx vsce package && code --install-extension gitpro-0.3.2.vsix`.
   See [`vscode/README.md`](../vscode/README.md).
 - **Claude Code**: a [skill](../skills/gitpro/SKILL.md) teaches Claude to
   edit the config from plain requests, show `plan`, and `apply` only after you
@@ -1456,7 +1456,7 @@ comparing version numbers.
 ```sh
 python -m venv .venv && .venv/bin/pip install -e . pytest && .venv/bin/pytest
 .venv/bin/python -m pip wheel --no-deps --wheel-dir dist .
-.venv/bin/python tests/smoke_wheel.py dist/gitpro-0.3.1-py3-none-any.whl
+.venv/bin/python tests/smoke_wheel.py dist/gitpro-0.3.2-py3-none-any.whl
 cd vscode && npm ci && npm test                  # extension unit tests
 xvfb-run -a npm run test:integration             # starts VS Code; drop xvfb-run with a display
 ```

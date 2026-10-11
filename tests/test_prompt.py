@@ -269,7 +269,7 @@ def test_import_cost():  # 16
 
 
 def test_hot_route_never_loads_rich(work_repo):  # 16: the whole run, not only the import
-    code = ("import sys\nfrom gitpro import hot\nrc = hot.main(['prompt', sys.argv[1]])\n"
+    code = (f"import sys\nfrom gitpro import hot\nrc = hot.main(['prompt', sys.argv[1], *{SLOW_OK!r}])\n"
             "bad = [m for m in sys.modules if m == 'rich' or m.startswith('rich.') or m in ('gitpro.cli', 'gitpro.view')]\n"
             "print(rc, bad)\n")
     r = subprocess.run([sys.executable, "-c", code, str(work_repo)], capture_output=True, text=True,
@@ -345,7 +345,7 @@ def test_mirrored_constants_and_find(home, tmp_path, monkeypatch):
 
 
 def test_cache_hit_imports_neither_config_nor_resolve(work_repo):
-    code = ("import sys\nfrom gitpro import hot\nrc = hot.main(['prompt', sys.argv[1]])\n"
+    code = (f"import sys\nfrom gitpro import hot\nrc = hot.main(['prompt', sys.argv[1], *{SLOW_OK!r}])\n"
             "print(rc, sorted(m for m in ('gitpro.config', 'gitpro.resolve') if m in sys.modules))\n")
     outs = [subprocess.run([sys.executable, "-c", code, str(work_repo)], capture_output=True, text=True,
                            timeout=TIMEOUT).stdout.splitlines() for _ in range(2)]

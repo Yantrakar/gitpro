@@ -1,8 +1,8 @@
 import * as assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Capabilities } from "../capabilities";
-import { actionsFor, containerFix, esc, inContainer, pickFolder, sshKeyOf, stateFrom, tooltipFrom, undoPath,
-  WhyJson } from "../identityBar";
+import { actionsFor, containerFix, esc, inContainer, pickFolder, scmRoot, sshKeyOf, stateFrom, tooltipFrom,
+  undoPath, WhyJson } from "../identityBar";
 
 const unset = { value: null, origin: null, scope: null };
 const gen = "file:/home/me/.gitconfig-work-github";
@@ -160,6 +160,14 @@ test("actionsFor: one fix per problem using the CLI's argv, then the always-item
   assert.deepEqual(all, ["Explain (gitpro why)", "Copy env for terminal", "Run doctor", "Open config", "Show Log"]);
   assert.ok(!actionsFor(match(), caps("doctor")).some((a) => a.label === "Copy env for terminal"));
   assert.deepEqual(actionsFor(undefined, caps()).map((a) => a.label), always);
+});
+
+test("scmRoot: a Source Control repo's file root, nothing else", () => {
+  assert.equal(scmRoot({ rootUri: { scheme: "file", fsPath: "/w/app" } }), "/w/app");
+  assert.equal(scmRoot({ rootUri: { scheme: "vscode-vfs", fsPath: "/w/app" } }), undefined);
+  assert.equal(scmRoot({ rootUri: undefined }), undefined);
+  assert.equal(scmRoot(undefined), undefined);
+  assert.equal(scmRoot("not a repo"), undefined);
 });
 
 test("pickFolder: active editor's folder, else last active, else first", () => {

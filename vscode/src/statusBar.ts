@@ -8,8 +8,8 @@ import type { Capabilities } from "./capabilities";
 import { UPDATE } from "./capabilities";
 import { Cli, exec, failure, Result, shq, ui } from "./cli";
 import { parseOrigin, status as whichStatus } from "./identity";
-import { Action, actionsFor, BarState, inContainer, OtherFolder, pickFolder, stateFrom, tooltipFrom, undoPath,
-  updateTooltip, WhyJson } from "./identityBar";
+import { Action, actionsFor, BarState, inContainer, OtherFolder, pickFolder, scmRoot, stateFrom, tooltipFrom,
+  undoPath, updateTooltip, WhyJson } from "./identityBar";
 import { Report, suggestions, tilde } from "./scan";
 
 const WHY_TIMEOUT = 5_000;
@@ -330,7 +330,33 @@ export function registerIdentityBar(context: vscode.ExtensionContext, cli: Cli, 
 
   type ActionItem = vscode.QuickPickItem & { action: Action };
 
-  async function click(): Promise<void> {
+  async function choose(dir: string, j: WhyJson | undefined, placeHolder: string): Promise<void> {
+    const items: ActionItem[] = actionsFor(j, caps, home).map((action) => ({ label: action.label, action,
+      description: action.argv ? action.argv.map(shq).join(" ") : undefined, detail: action.detail }));
+    const pick = await ui.pick(items, { title: `gitpro: ${tilde(dir, home)}`, placeHolder });
+    if (!pick) {
+      log.info("status bar: cancelled");
+      return;
+    }
+    await perform(pick.action, dir);
+  }
+
+  /** The Source Control button: the same actions for the repo whose row was clicked, the bar left as it is. */
+  async function clickRepo(dir: string): Promise<void> {
+    const r = await cli.run(["why", "--json", dir], { cwd: dir, quiet: true, timeout: WHY_TIMEOUT, accept: [0, 1] });
+    const j = r && (r.code === 0 || r.code === 1) ? parseWhy(r) : undefined;
+    if (!j) {
+      log.warn(`⚠ gitpro why gave no identity for ${tilde(dir, home)}; offering the generic actions`);
+    }
+    const text = j ? stateFrom(j, settings().get<boolean>("showKey", true)).text : "";
+    await choose(dir, j, text.replace(/^\$\([\w-]+\)\s*/, ""));
+  }
+
+  async function click(arg?: unknown): Promise<void> {
+    const repo = caps.has("why") ? scmRoot(arg) : undefined;
+    if (repo) {
+      return clickRepo(repo);
+    }
     await refresh();
     const dir = cli.dir();
     if (!dir || mode === "hidden") {
@@ -347,15 +373,7 @@ export function registerIdentityBar(context: vscode.ExtensionContext, cli: Cli, 
     }
     // Only fixes for this repo: a result kept from another folder (e.g. after a timeout) offers none.
     const mine = shownDir === dir ? why : undefined;
-    const items: ActionItem[] = actionsFor(mine, caps, home).map((action) => ({ label: action.label, action,
-      description: action.argv ? action.argv.map(shq).join(" ") : undefined, detail: action.detail }));
-    const pick = await ui.pick(items, { title: `gitpro: ${tilde(dir, home)}`,
-      placeHolder: item.text.replace(/^\$\([\w-]+\)\s*/, "") });
-    if (!pick) {
-      log.info("status bar: cancelled");
-      return;
-    }
-    await perform(pick.action, dir);
+    await choose(dir, mine, item.text.replace(/^\$\([\w-]+\)\s*/, ""));
   }
 
   // ---------------------------------------------------------------- triggers

@@ -57,6 +57,10 @@ Click it for a menu:
   terminal. It copies the commands that fetch tokens, never a token.
 - **Run doctor**, **Open config**, **Show Log**.
 
+The same menu is in the Source Control view: the person-icon button in its
+title bar, and on each repository's row when several are open, offers the
+fixes for that repository without moving the status bar.
+
 In a dev container the status bar shows what git resolves inside the
 container. If it warns, run `gitpro pin` in the repo on the host, or use
 [Set up devcontainer pin](#dev-containers).
