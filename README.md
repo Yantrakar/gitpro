@@ -1,6 +1,10 @@
+<a href="https://gitpro.dev"><img src="https://gitpro.dev/icon.png" alt="gitpro" width="72" height="72"></a>
+
 # gitpro
 
 **The right Git identity, SSH key and signature for every repository.**
+
+[gitpro.dev](https://gitpro.dev) · [PyPI](https://pypi.org/project/gitpro/) · [VS Code](https://marketplace.visualstudio.com/items?itemName=yantrakar.gitpro) · made by [Yantrakar](https://yantrakar.com)
 
 Work on a company repository, commit with your work email. Switch to a personal
 project, use your personal identity. Gitpro chooses by **remote URL**, not by

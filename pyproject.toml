@@ -26,9 +26,11 @@ classifiers = [
 tui = ["textual>=0.80"]  # interactive scan --fix
 
 [project.urls]
-Homepage = "https://github.com/Yantrakar/gitpro"
+Homepage = "https://gitpro.dev"
+Source = "https://github.com/Yantrakar/gitpro"
 Documentation = "https://github.com/Yantrakar/gitpro/blob/main/docs/guide.md"
 Issues = "https://github.com/Yantrakar/gitpro/issues"
+"VS Code extension" = "https://marketplace.visualstudio.com/items?itemName=yantrakar.gitpro"
 
 [project.scripts]
 gitpro = "gitpro.hot:main"
