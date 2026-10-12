@@ -90,7 +90,7 @@
 		S.build(S, T, S.n, k => G(S, k));
 		T.ev.sort((a, b) => a[0] - b[0]); S.tl = T;
 	}
-	/* routes come from figures.py; chain() joins them with hidden jumps, so packets never cross a box */
+	/* routes come from design/figures.py; chain() joins them with hidden jumps, so packets never cross a box */
 	const route = (S, k) => (S.R || (S.R = JSON.parse(S.svg.dataset.routes)))[k];
 	const chain = (S, legs) => {
 		const out = [];
