@@ -1,38 +1,43 @@
-"""Draw the store icon: python3 media/make_icon.py media/icon.png 256 (needs Pillow)."""
+"""Draw the store icon: python3 media/make_icon.py media/icon.png 256 (needs Pillow).
+
+The mark is site/favicon.svg: an orange g on the dark Yantrakar tile.
+"""
 import sys
 from PIL import Image, ImageDraw
 
 N = 1024                       # draw large, then downsample for smooth edges
 OUT = int(sys.argv[2]) if len(sys.argv) > 2 else 256
+S = N / 32                     # favicon.svg units -> pixels
+W = 2.46                       # stroke width in favicon units
+INK, ACCENT = (15, 18, 21, 255), (245, 158, 87, 255)   # #0F1215, #F59E57
 
-def lerp(a, b, t):
-    return tuple(round(x + (y - x) * t) for x, y in zip(a, b))
-
-top, bottom = (14, 165, 233), (79, 70, 229)           # sky-500 -> indigo-600
-grad = Image.new("RGBA", (N, N))
-gd = ImageDraw.Draw(grad)
-for y in range(N):
-    gd.line([(0, y), (N, y)], fill=lerp(top, bottom, y / (N - 1)) + (255,))
-mask = Image.new("L", (N, N), 0)
-ImageDraw.Draw(mask).rounded_rectangle([0, 0, N - 1, N - 1], radius=int(N * 0.22), fill=255)
 img = Image.new("RGBA", (N, N), (0, 0, 0, 0))
-img.paste(grad, (0, 0), mask)
-
-person = Image.new("L", (N, N), 0)
-pd = ImageDraw.Draw(person)
-cx = N * 0.44
-pd.ellipse([cx - 150, 200, cx + 150, 500], fill=255)                  # head
-pd.ellipse([cx - 290, 560, cx + 290, 1140], fill=255)                 # shoulders
-person = Image.composite(person, Image.new("L", (N, N), 0), mask)     # clip to the tile
-img.paste((255, 255, 255, 255), (0, 0), person)
-
 d = ImageDraw.Draw(img)
-bx, by, r = N * 0.745, N * 0.735, 175                                 # check badge
-d.ellipse([bx - r - 34, by - r - 34, bx + r + 34, by + r + 34], fill=bottom + (255,))
-d.ellipse([bx - r, by - r, bx + r, by + r], fill=(34, 197, 94, 255))  # green-500
-d.line([(bx - 85, by + 5), (bx - 22, by + 70), (bx + 92, by - 62)], fill=(255, 255, 255, 255),
-       width=52, joint="curve")
-for x, y in [(bx - 85, by + 5), (bx + 92, by - 62)]:
-    d.ellipse([x - 26, y - 26, x + 26, y + 26], fill=(255, 255, 255, 255))
+d.rounded_rectangle([0, 0, N - 1, N - 1], radius=int(6 * S), fill=INK)
+
+def line(x0, y0, x1, y1, ext0=False, ext1=False):
+    """Stroke a horizontal or vertical segment; ext adds a square cap or fills a corner."""
+    h = W / 2
+    xs, ys = sorted((x0, x1)), sorted((y0, y1))
+    if y0 == y1:
+        a, b = xs[0] - (h if (ext0 if x0 < x1 else ext1) else 0), xs[1] + (h if (ext1 if x0 < x1 else ext0) else 0)
+        box = [a, y0 - h, b, y0 + h]
+    else:
+        a, b = ys[0] - (h if (ext0 if y0 < y1 else ext1) else 0), ys[1] + (h if (ext1 if y0 < y1 else ext0) else 0)
+        box = [x0 - h, a, x0 + h, b]
+    d.rectangle([v * S for v in box], fill=ACCENT)
+
+def arc(cx, cy, r, start, end):
+    R = r + W / 2              # Pillow grows the width inward from the box
+    d.arc([(cx - R) * S, (cy - R) * S, (cx + R) * S, (cy + R) * S], start, end, fill=ACCENT, width=round(W * S))
+
+# bowl: half circle on the left, square on the right
+arc(15.25, 13.5, 5, 90, 270)
+line(15.25, 8.5, 20.5, 8.5, ext1=True)
+line(15.25, 18.5, 20.5, 18.5, ext1=True)
+# stem and tail
+line(20.5, 8.5, 20.5, 20.5, ext0=True)
+arc(16, 20.5, 4.5, 0, 90)
+line(16, 25, 11.5, 25, ext1=True)
 
 img.resize((OUT, OUT), Image.LANCZOS).save(sys.argv[1], optimize=True)
