@@ -1,3 +1,5 @@
+<img src="https://gitpro.dev/icon.png" alt="gitpro" width="72" height="72">
+
 # gitpro for VS Code
 
 Shows in the status bar which git identity and SSH key the current repo
@@ -5,7 +7,7 @@ commits with, turns red when it is the wrong one, and offers the fix. It also
 finds repo-level overrides and lost work, clones with the right identity and
 keeps the identity inside dev containers.
 
-It needs the [gitpro](https://github.com/Yantrakar/gitpro) CLI:
+It needs the [gitpro](https://gitpro.dev) CLI:
 
 ```sh
 pipx install gitpro

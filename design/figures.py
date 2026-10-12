@@ -3,7 +3,7 @@
 
 Each figure has a wide variant and a narrow one (about 320 units, for phones). The SVG goes into
 index.html between <!-- fig:NAME --> and <!-- /fig:NAME -->, and the routes the packets travel go
-into data-routes for site.js. Run it after changing a figure: python3 site/figures.py
+into data-routes for site.js. Run it after changing a figure: python3 design/figures.py
 
 It exits 1 when a text would leave its box, two texts overlap, or a route crosses a text or a box.
 Text widths are estimates (sans 0.56 em, mono 0.6 em per character), so look at the result too.
@@ -16,7 +16,7 @@ import re
 import sys
 from pathlib import Path
 
-INDEX = Path(__file__).with_name("index.html")
+INDEX = Path(__file__).resolve().parent.parent / "site" / "index.html"
 
 # (font size, em per character, letter spacing in em) per class, wide and narrow; narrow follows svg.nv in styles.css
 FONTS = {
