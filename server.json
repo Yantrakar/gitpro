@@ -1,0 +1,36 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.Yantrakar/gitpro",
+  "title": "gitpro",
+  "description": "Read-only checks of which git name, email and SSH key a repository uses, and why.",
+  "websiteUrl": "https://gitpro.dev",
+  "repository": {
+    "url": "https://github.com/Yantrakar/gitpro",
+    "source": "github"
+  },
+  "icons": [
+    {
+      "src": "https://gitpro.dev/icon.png",
+      "mimeType": "image/png",
+      "sizes": ["256x256"]
+    }
+  ],
+  "version": "0.3.3",
+  "packages": [
+    {
+      "registryType": "pypi",
+      "identifier": "gitpro",
+      "version": "0.3.3",
+      "runtimeHint": "uvx",
+      "transport": {
+        "type": "stdio"
+      },
+      "packageArguments": [
+        {
+          "type": "positional",
+          "value": "mcp"
+        }
+      ]
+    }
+  ]
+}

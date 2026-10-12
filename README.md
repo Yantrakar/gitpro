@@ -2,6 +2,8 @@
 
 # gitpro
 
+<!-- mcp-name: io.github.Yantrakar/gitpro -->
+
 **The right Git identity, SSH key and signature for every repository.**
 
 [gitpro.dev](https://gitpro.dev) · [PyPI](https://pypi.org/project/gitpro/) · [VS Code](https://marketplace.visualstudio.com/items?itemName=yantrakar.gitpro) · made by [Yantrakar](https://yantrakar.com)
