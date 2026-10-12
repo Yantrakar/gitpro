@@ -1,0 +1,619 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>gitpro · The right git identity in every repository</title>
+<meta name="description" content="gitpro sets the right git name, email and SSH key for every repository by its remote URL, and stops AI coding agents from committing as the wrong person. Open source, MIT.">
+<meta name="color-scheme" content="light dark">
+<link rel="canonical" href="https://gitpro.dev/">
+<meta property="og:title" content="gitpro · The right git identity in every repository">
+<meta property="og:description" content="The right git name, email and SSH key in every repository, for you and for the AI agents that commit for you.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://gitpro.dev/">
+<meta property="og:image" content="https://gitpro.dev/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<script>try{var t=localStorage.getItem("yk-theme");if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="icon" href="favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600&amp;family=IBM+Plex+Mono:wght@400;500&amp;display=swap">
+<link rel="stylesheet" href="styles.css">
+<script src="site.js" defer></script>
+</head>
+<body id="top">
+<a class="skip" href="#main">Skip to content</a>
+<header class="site-header">
+<div class="wrap bar">
+<div class="brand">
+<a class="wordmark product" href="#top" aria-label="gitpro, back to top"><svg class="wm-mark" viewBox="0 0 26 26" width="18" height="18" aria-hidden="true" focusable="false"><path d="M2.00 2.00 L13.00 13.00 L24.00 2.00 M13.00 13.00 L13.00 24.00" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="square" stroke-linejoin="miter"/></svg>gitpro</a>
+<a class="by" href="https://yantrakar.com" rel="noopener">by Yantrakar ↗</a>
+</div>
+<nav class="nav" aria-label="Main">
+<ul>
+<li><a href="#how">How it works</a></li>
+<li><a href="#agents">Agents</a></li>
+<li><a href="#start">Quickstart</a></li>
+<li class="nav-optional"><a href="#commands">Commands</a></li>
+<li class="nav-optional"><a href="#roadmap">Roadmap</a></li>
+<li><a class="btn btn-primary btn-sm" href="https://github.com/Yantrakar/gitpro" rel="noopener">GitHub</a></li>
+</ul>
+</nav>
+<button class="theme-toggle" type="button" hidden aria-label="Switch theme"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="8" cy="8" r="6.25" fill="none" stroke="currentColor" stroke-width="1.25"/><path d="M8 1.75a6.25 6.25 0 0 1 0 12.5z" fill="currentColor"/></svg><span>Theme</span></button>
+</div>
+</header>
+<main id="main">
+
+<section class="hero hero-home" aria-labelledby="hero-h">
+<div class="wrap hero-grid">
+<div class="hero-text">
+<p class="eyebrow">OPEN SOURCE · MIT · v0.3.2</p>
+<h1 id="hero-h">The right git name, email and SSH key in every repository. <span class="h1-quiet">For you, and for the AI agents that commit for you.</span></h1>
+<p class="lead">gitpro picks the identity by the repository's remote URL, not by the folder you cloned it into. It writes plain git and SSH config, so nothing runs in the background.</p>
+<div class="cmd">
+<p class="term"><code><span class="prompt">$</span> pipx install gitpro</code></p>
+<button class="copy" type="button" data-copy="pipx install gitpro" hidden>Copy</button>
+</div>
+<div class="actions">
+<a class="btn btn-primary" href="https://github.com/Yantrakar/gitpro" rel="noopener">GitHub</a>
+<a class="btn btn-secondary" href="https://pypi.org/project/gitpro/" rel="noopener">PyPI</a>
+<a class="btn btn-secondary" href="https://marketplace.visualstudio.com/items?itemName=yantrakar.gitpro" rel="noopener">VS Code</a>
+<a class="btn btn-secondary" href="https://github.com/Yantrakar/gitpro/blob/main/docs/guide.md" rel="noopener">Guide</a>
+</div>
+</div>
+<figure class="fig hero-fig" data-anim>
+<div class="fig-head"><span class="fig-no">FIG. 01</span><span class="fig-title">THE PROBLEM</span></div>
+<div class="fig-body cq">
+<!-- fig:f01 -->
+<svg class="f01w wv sw" data-fig="f01" data-v="w" viewBox="0 0 600 304" role="img" aria-labelledby="f01w-t f01w-d" data-routes='{"c-r1":[[56,100],[36,100],[36,182],[56,182]],"c-r2":[[56,100],[36,100],[36,254],[56,254]],"p-m1":[[300,182],[372,182]],"p-m2":[[300,254],[372,254]]}' xmlns="http://www.w3.org/2000/svg">
+<title id="f01w-t">One email for every repository</title>
+<desc id="f01w-d">Without gitpro, one laptop has a single user.email in ~/.gitconfig, jane@personal.dev. Two repositories on the laptop, a work repository employer-org/app and a personal one jane/dotfiles, both commit with it. The personal account on GitHub gets the right address; the employer&#x27;s organisation on GitHub gets the personal address in its history.</desc>
+<defs><marker id="f01w-m" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="6" markerHeight="6" markerUnits="userSpaceOnUse" orient="auto"><path class="arrow" d="M0 0L10 5L0 10z"/></marker></defs>
+<text class="st" data-k="st" x="584" y="22" text-anchor="end"></text>
+<rect class="band" data-k="laptop" x="16" y="36" width="300" height="256" rx="2"/>
+<text class="lbl-mono" x="30" y="58">THIS LAPTOP</text>
+<rect class="box-accent" data-k="gc" x="56" y="74" width="244" height="52" rx="2"/>
+<text class="lbl" x="178" y="97.3" text-anchor="middle">~/.gitconfig</text>
+<text class="sub" x="178" y="113.5" text-anchor="middle">user.email jane@personal.dev</text>
+<rect class="box" data-k="r1" x="56" y="156" width="244" height="52" rx="2"/>
+<text class="lbl" x="178" y="179.3" text-anchor="middle">employer-org/app</text>
+<text class="sub" x="178" y="195.5" text-anchor="middle">work repository</text>
+<rect class="box" data-k="r2" x="56" y="228" width="244" height="52" rx="2"/>
+<text class="lbl" x="178" y="251.3" text-anchor="middle">jane/dotfiles</text>
+<text class="sub" x="178" y="267.5" text-anchor="middle">personal repository</text>
+<path class="ln" d="M56 100 L36 100 L36 182 L56 182" marker-end="url(#f01w-m)"/>
+<path class="ln" d="M56 100 L36 100 L36 254 L56 254" marker-end="url(#f01w-m)"/>
+<rect class="box" data-k="m1" x="372" y="156" width="212" height="52" rx="2"/>
+<text class="lbl" x="478" y="179.3" text-anchor="middle">employer-org on GitHub</text>
+<text class="sub-ink" data-k="m1-v" x="478" y="195.5" text-anchor="middle">no commits yet</text>
+<path class="ln" d="M300 182 L372 182" marker-end="url(#f01w-m)"/>
+<text class="lbl-mono" x="336" y="172" text-anchor="middle">PUSH</text>
+<rect class="box" data-k="m2" x="372" y="228" width="212" height="52" rx="2"/>
+<text class="lbl" x="478" y="251.3" text-anchor="middle">jane on GitHub</text>
+<text class="sub-ink" data-k="m2-v" x="478" y="267.5" text-anchor="middle">no commits yet</text>
+<path class="ln" d="M300 254 L372 254" marker-end="url(#f01w-m)"/>
+<text class="lbl-mono" x="336" y="244" text-anchor="middle">PUSH</text>
+</svg>
+<svg class="f01n nv sw" data-fig="f01" data-v="n" viewBox="0 0 320 334" role="img" aria-labelledby="f01n-t f01n-d" data-routes='{"c-r1":[[83,114],[83,150]],"c-r2":[[237,114],[237,150]],"p-m1":[[83,202],[83,254]],"p-m2":[[237,202],[237,254]]}' xmlns="http://www.w3.org/2000/svg">
+<title id="f01n-t">One email for every repository</title>
+<desc id="f01n-d">Without gitpro, one laptop has a single user.email in ~/.gitconfig, jane@personal.dev. Two repositories on the laptop, a work repository employer-org/app and a personal one jane/dotfiles, both commit with it. The personal account on GitHub gets the right address; the employer&#x27;s organisation on GitHub gets the personal address in its history.</desc>
+<defs><marker id="f01n-m" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="6" markerHeight="6" markerUnits="userSpaceOnUse" orient="auto"><path class="arrow" d="M0 0L10 5L0 10z"/></marker></defs>
+<text class="st" data-k="st" x="316" y="16" text-anchor="end"></text>
+<rect class="band" data-k="laptop" x="2" y="28" width="316" height="186" rx="2"/>
+<text class="lbl-mono" x="16" y="50">THIS LAPTOP</text>
+<rect class="box-accent" data-k="gc" x="10" y="62" width="300" height="52" rx="2"/>
+<text class="lbl" x="160" y="84.9" text-anchor="middle">~/.gitconfig</text>
+<text class="sub" x="160" y="100.8" text-anchor="middle">user.email jane@personal.dev</text>
+<rect class="box" data-k="r1" x="10" y="150" width="146" height="52" rx="2"/>
+<text class="lbl" x="83" y="172.9" text-anchor="middle">employer-org/app</text>
+<text class="sub" x="83" y="188.8" text-anchor="middle">work</text>
+<rect class="box" data-k="r2" x="164" y="150" width="146" height="52" rx="2"/>
+<text class="lbl" x="237" y="172.9" text-anchor="middle">jane/dotfiles</text>
+<text class="sub" x="237" y="188.8" text-anchor="middle">personal</text>
+<path class="ln" d="M83 114 L83 150" marker-end="url(#f01n-m)"/>
+<path class="ln" d="M237 114 L237 150" marker-end="url(#f01n-m)"/>
+<rect class="box" data-k="m1" x="10" y="254" width="146" height="70" rx="2"/>
+<text class="lbl" x="83" y="278.1" text-anchor="middle">employer-org</text>
+<text class="sub" x="83" y="294" text-anchor="middle">on GitHub</text>
+<text class="sub-ink" data-k="m1-v" x="83" y="309.6" text-anchor="middle">no commits yet</text>
+<path class="ln" d="M83 202 L83 254" marker-end="url(#f01n-m)"/>
+<rect class="box" data-k="m2" x="164" y="254" width="146" height="70" rx="2"/>
+<text class="lbl" x="237" y="278.1" text-anchor="middle">jane</text>
+<text class="sub" x="237" y="294" text-anchor="middle">on GitHub</text>
+<text class="sub-ink" data-k="m2-v" x="237" y="309.6" text-anchor="middle">no commits yet</text>
+<path class="ln" d="M237 202 L237 254" marker-end="url(#f01n-m)"/>
+<text class="lbl-mono" x="91" y="232">PUSH</text>
+</svg>
+<!-- /fig:f01 -->
+<figcaption>One email in ~/.gitconfig, two repositories. The work repository ends up with the personal address in its history.</figcaption>
+</div>
+</figure>
+</div>
+</section>
+
+<section class="sec" id="how" aria-labelledby="how-h">
+<div class="wrap split">
+<div class="split-text">
+<h2 id="how-h">Matched by remote URL</h2>
+<p class="prose">You describe each identity once: a name, an email, an SSH key, and the hosts and owners it belongs to. gitpro turns that into git's own <code>includeIf</code> rules and SSH host entries, so git picks the identity from the remote URL on every commit.</p>
+<ul class="proof">
+<li><span class="tag">PLAIN CONFIG</span><p>Ordinary git and SSH files in a marked block. No daemon, no wrapper around git.</p></li>
+<li><span class="tag">PREVIEW</span><p><code>gitpro plan</code> shows every change as a diff before anything is written.</p></li>
+<li><span class="tag">BACKUPS</span><p>Hand-written files are backed up, and <code>gitpro uninstall</code> removes everything again.</p></li>
+<li><span class="tag tag-accent">GUARD</span><p>Optional hooks refuse a commit or push with the wrong identity and print the command that fixes it.</p></li>
+</ul>
+</div>
+<div class="split-fig">
+<figure class="fig" data-anim>
+<div class="fig-head"><span class="fig-no">FIG. 02</span><span class="fig-title">MATCHED BY REMOTE URL</span></div>
+<div class="fig-body cq">
+<!-- fig:f02 -->
+<svg class="f02w wv sw" data-fig="f02" data-v="w" viewBox="0 0 680 362" role="img" aria-labelledby="f02w-t f02w-d" data-routes='{"a1":[[212,90],[244,90]],"b1":[[456,90],[488,90]],"a2":[[212,162],[244,162]],"b2":[[456,162],[488,162]],"a3":[[212,234],[244,234]],"b3":[[456,234],[488,234]],"c-ov":[[32,90],[18,90],[18,324],[32,324]],"c-g":[[212,324],[244,324]],"c-x":[[456,324],[486,324]]}' xmlns="http://www.w3.org/2000/svg">
+<title id="f02w-t">Matched by remote URL</title>
+<desc id="f02w-d">Three repositories, employer-org/app on github.com, platform/api on gitlab.employer.com and jane/dotfiles on github.com, are each matched by their remote URL to one identity: work-github, work-gitlab or the default. Below, a user.email override in the work repository&#x27;s .git/config would commit as the wrong person; the gitpro guard hook stops that commit.</desc>
+<defs><marker id="f02w-m" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="6" markerHeight="6" markerUnits="userSpaceOnUse" orient="auto"><path class="arrow" d="M0 0L10 5L0 10z"/></marker></defs>
+<text class="st" data-k="st" x="664" y="20" text-anchor="end"></text>
+<text class="lbl-mono" x="32" y="48">REPOSITORY</text>
+<text class="lbl-mono" x="248" y="48">REMOTE URL MATCHES</text>
+<text class="lbl-mono" x="488" y="48">IDENTITY</text>
+<rect class="band" data-k="pats" x="236" y="58" width="228" height="220" rx="2"/>
+<rect class="box" data-k="r1" x="32" y="64" width="180" height="52" rx="2"/>
+<text class="lbl" x="122" y="87.3" text-anchor="middle">employer-org/app</text>
+<text class="sub" x="122" y="103.5" text-anchor="middle">github.com</text>
+<rect class="chip" data-k="p1" x="244" y="70" width="212" height="40" rx="2"/>
+<text class="lbl-c" x="350" y="94.7" text-anchor="middle">github.com / employer-org</text>
+<rect class="box" data-k="id1" x="488" y="64" width="176" height="52" rx="2"/>
+<text class="lbl" x="576" y="87.3" text-anchor="middle">work-github</text>
+<text class="sub" x="576" y="103.5" text-anchor="middle">jane.doe@employer.com</text>
+<path class="ln" d="M212 90 L244 90" marker-end="url(#f02w-m)"/>
+<path class="ln" d="M456 90 L488 90" marker-end="url(#f02w-m)"/>
+<rect class="box" data-k="r2" x="32" y="136" width="180" height="52" rx="2"/>
+<text class="lbl" x="122" y="159.3" text-anchor="middle">platform/api</text>
+<text class="sub" x="122" y="175.5" text-anchor="middle">gitlab.employer.com</text>
+<rect class="chip" data-k="p2" x="244" y="142" width="212" height="40" rx="2"/>
+<text class="lbl-c" x="350" y="166.7" text-anchor="middle">gitlab.employer.com</text>
+<rect class="box" data-k="id2" x="488" y="136" width="176" height="52" rx="2"/>
+<text class="lbl" x="576" y="159.3" text-anchor="middle">work-gitlab</text>
+<text class="sub" x="576" y="175.5" text-anchor="middle">jane.doe@employer.com</text>
+<path class="ln" d="M212 162 L244 162" marker-end="url(#f02w-m)"/>
+<path class="ln" d="M456 162 L488 162" marker-end="url(#f02w-m)"/>
+<rect class="box" data-k="r3" x="32" y="208" width="180" height="52" rx="2"/>
+<text class="lbl" x="122" y="231.3" text-anchor="middle">jane/dotfiles</text>
+<text class="sub" x="122" y="247.5" text-anchor="middle">github.com</text>
+<rect class="chip" data-k="p3" x="244" y="214" width="212" height="40" rx="2"/>
+<text class="lbl-c" x="350" y="238.7" text-anchor="middle">anything else</text>
+<rect class="box" data-k="id3" x="488" y="208" width="176" height="52" rx="2"/>
+<text class="lbl" x="576" y="231.3" text-anchor="middle">default</text>
+<text class="sub" x="576" y="247.5" text-anchor="middle">jane@personal.dev</text>
+<path class="ln" d="M212 234 L244 234" marker-end="url(#f02w-m)"/>
+<path class="ln" d="M456 234 L488 234" marker-end="url(#f02w-m)"/>
+<rect class="box" data-k="ov" x="32" y="298" width="180" height="52" rx="2"/>
+<text class="lbl" x="122" y="321.3" text-anchor="middle">user.email override</text>
+<text class="sub" x="122" y="337.5" text-anchor="middle">in .git/config</text>
+<rect class="box-accent" data-k="guard" x="244" y="298" width="212" height="52" rx="2"/>
+<text class="lbl" x="350" y="321.3" text-anchor="middle">gitpro guard</text>
+<text class="sub" x="350" y="337.5" text-anchor="middle">pre-commit hook</text>
+<path class="ln" d="M32 90 L18 90 L18 324 L32 324" marker-end="url(#f02w-m)"/>
+<path class="ln" d="M212 324 L244 324" marker-end="url(#f02w-m)"/>
+<path class="ln" d="M456 324 L486 324"/>
+<g class="xm" data-k="x-mark"><line class="ln-accent" x1="491" y1="319" x2="501" y2="329"/><line class="ln-accent" x1="491" y1="329" x2="501" y2="319"/></g>
+<text class="lbl-mono acc-raw" x="510" y="328">COMMIT BLOCKED</text>
+</svg>
+<svg class="f02n nv sw" data-fig="f02" data-v="n" viewBox="0 0 320 394" role="img" aria-labelledby="f02n-t f02n-d" data-routes='{"a1":[[152,84],[184,84]],"a2":[[152,152],[184,152]],"a3":[[152,220],[184,220]],"c-ov":[[16,84],[6,84],[6,296],[16,296]],"c-g":[[152,296],[184,296]],"c-x":[[248,322],[248,352]]}' xmlns="http://www.w3.org/2000/svg">
+<title id="f02n-t">Matched by remote URL</title>
+<desc id="f02n-d">Three repositories, employer-org/app on github.com, platform/api on gitlab.employer.com and jane/dotfiles on github.com, are each matched by their remote URL to one identity: work-github, work-gitlab or the default. Below, a user.email override in the work repository&#x27;s .git/config would commit as the wrong person; the gitpro guard hook stops that commit.</desc>
+<defs><marker id="f02n-m" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="6" markerHeight="6" markerUnits="userSpaceOnUse" orient="auto"><path class="arrow" d="M0 0L10 5L0 10z"/></marker></defs>
+<text class="st" data-k="st" x="316" y="16" text-anchor="end"></text>
+<text class="lbl-mono" x="16" y="46">REPOSITORY</text>
+<text class="lbl-mono" x="184" y="46">IDENTITY</text>
+<rect class="box" data-k="r1" x="16" y="58" width="136" height="52" rx="2"/>
+<text class="lbl" x="84" y="80.9" text-anchor="middle">employer-org/app</text>
+<text class="sub" x="84" y="96.8" text-anchor="middle">github.com</text>
+<rect class="box" data-k="id1" x="184" y="58" width="128" height="52" rx="2"/>
+<text class="lbl" x="248" y="80.9" text-anchor="middle">work-github</text>
+<text class="sub" x="248" y="96.8" text-anchor="middle">work email</text>
+<path class="ln" d="M152 84 L184 84" marker-end="url(#f02n-m)"/>
+<rect class="box" data-k="r2" x="16" y="126" width="136" height="52" rx="2"/>
+<text class="lbl" x="84" y="148.9" text-anchor="middle">platform/api</text>
+<text class="sub" x="84" y="164.8" text-anchor="middle">work GitLab</text>
+<rect class="box" data-k="id2" x="184" y="126" width="128" height="52" rx="2"/>
+<text class="lbl" x="248" y="148.9" text-anchor="middle">work-gitlab</text>
+<text class="sub" x="248" y="164.8" text-anchor="middle">work email</text>
+<path class="ln" d="M152 152 L184 152" marker-end="url(#f02n-m)"/>
+<rect class="box" data-k="r3" x="16" y="194" width="136" height="52" rx="2"/>
+<text class="lbl" x="84" y="216.9" text-anchor="middle">jane/dotfiles</text>
+<text class="sub" x="84" y="232.8" text-anchor="middle">github.com</text>
+<rect class="box" data-k="id3" x="184" y="194" width="128" height="52" rx="2"/>
+<text class="lbl" x="248" y="216.9" text-anchor="middle">default</text>
+<text class="sub" x="248" y="232.8" text-anchor="middle">personal email</text>
+<path class="ln" d="M152 220 L184 220" marker-end="url(#f02n-m)"/>
+<rect class="box" data-k="ov" x="16" y="270" width="136" height="52" rx="2"/>
+<text class="lbl" x="84" y="292.9" text-anchor="middle">override</text>
+<text class="sub" x="84" y="308.8" text-anchor="middle">.git/config</text>
+<rect class="box-accent" data-k="guard" x="184" y="270" width="128" height="52" rx="2"/>
+<text class="lbl" x="248" y="292.9" text-anchor="middle">gitpro guard</text>
+<text class="sub" x="248" y="308.8" text-anchor="middle">pre-commit</text>
+<path class="ln" d="M16 84 L6 84 L6 296 L16 296" marker-end="url(#f02n-m)"/>
+<path class="ln" d="M152 296 L184 296" marker-end="url(#f02n-m)"/>
+<path class="ln" d="M248 322 L248 352"/>
+<g class="xm" data-k="x-mark"><line class="ln-accent" x1="243" y1="359" x2="253" y2="369"/><line class="ln-accent" x1="243" y1="369" x2="253" y2="359"/></g>
+<text class="lbl-mono acc-raw" x="234" y="368" text-anchor="end">COMMIT BLOCKED</text>
+</svg>
+<!-- /fig:f02 -->
+<figcaption>Each repository's remote URL picks its identity. A stray <code>user.email</code> in one repository is caught by the guard before the commit is made.</figcaption>
+</div>
+</figure>
+<pre class="term out" aria-label="Example guard message"><code><span class="xmk">✗</span> gitpro: this commit would be committed as jane@personal.dev
+  but origin (git@github.com:employer-org/app.git) belongs to
+  identity work-github &lt;jane.doe@employer.com&gt;
+  cause: user.email is set in the repo's .git/config
+  fix:   git -C ~/work/github.com/employer-org/app config --unset user.email</code></pre>
+</div>
+</div>
+</section>
+
+<section class="sec" id="agents" aria-labelledby="agents-h">
+<div class="wrap split">
+<div class="split-text">
+<h2 id="agents-h">AI agents commit too</h2>
+<p class="prose">Coding agents run <code>git commit</code>, <code>git push</code> and <code>gh pr create</code> on their own. gitpro checks each of those calls before it runs. When the identity is wrong, the call is denied with a reason, and the agent has to ask you.</p>
+<ul class="proof">
+<li><span class="tag tag-accent">HOOK</span><p>A Claude Code PreToolUse hook, from <code>gitpro agent install</code> or the plugin. It only denies; it never grants anything.</p></li>
+<li><span class="tag">MCP</span><p>A read-only MCP server, <code>gitpro mcp</code>, so an agent can ask which identity a repository uses and why.</p></li>
+<li><span class="tag">APPROVAL</span><p>Changes an agent proposes wait for your approval, and an interrupted apply can be recovered.</p></li>
+<li><span class="tag">AUDIT</span><p><code>gitpro audit</code> finds commits made as the wrong identity or by an agent; <code>--rewrite</code> fixes the unpushed ones.</p></li>
+</ul>
+</div>
+<div class="split-fig">
+<figure class="fig" data-anim>
+<div class="fig-head"><span class="fig-no">FIG. 03</span><span class="fig-title">AN AGENT TRIES TO COMMIT</span></div>
+<div class="fig-body cq">
+<!-- fig:f03 -->
+<svg class="f03w wv sw" data-fig="f03" data-v="w" viewBox="0 0 680 268" role="img" aria-labelledby="f03w-t f03w-d" data-routes='{"u1":[[98,176],[98,96]],"u2":[[114,96],[114,176]],"q1":[[196,196],[268,196]],"q2":[[268,212],[196,212]],"g1":[[464,204],[512,204]],"g-stop":[[464,204],[486,204]]}' xmlns="http://www.w3.org/2000/svg">
+<title id="f03w-t">An AI agent tries to commit</title>
+<desc id="f03w-d">An AI coding agent such as Claude Code runs git commit. The gitpro agent-check hook sees the wrong identity and denies the call, and the reason goes back to the agent. The agent asks you, you approve the fix, and the same commit then goes through to git as the right identity.</desc>
+<defs><marker id="f03w-m" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="6" markerHeight="6" markerUnits="userSpaceOnUse" orient="auto"><path class="arrow" d="M0 0L10 5L0 10z"/></marker></defs>
+<text class="st" data-k="st" x="664" y="20" text-anchor="end"></text>
+<rect class="box" data-k="you" x="16" y="44" width="180" height="52" rx="2"/>
+<text class="lbl" x="106" y="67.3" text-anchor="middle">You</text>
+<text class="sub" x="106" y="83.5" text-anchor="middle">approve or fix</text>
+<rect class="box" data-k="agent" x="16" y="176" width="180" height="56" rx="2"/>
+<text class="lbl" x="106" y="201.3" text-anchor="middle">AI coding agent</text>
+<text class="sub" x="106" y="217.5" text-anchor="middle">Claude Code, Cursor</text>
+<rect class="box-accent" data-k="check" x="268" y="176" width="196" height="56" rx="2"/>
+<text class="lbl" x="366" y="201.3" text-anchor="middle">gitpro agent-check</text>
+<text class="sub" x="366" y="217.5" text-anchor="middle">PreToolUse hook</text>
+<rect class="box" data-k="git" x="512" y="176" width="152" height="56" rx="2"/>
+<text class="lbl" x="588" y="201.3" text-anchor="middle">git commit</text>
+<text class="sub" x="588" y="217.5" text-anchor="middle">push, gh pr create</text>
+<path class="ln" d="M98 176 L98 96" marker-end="url(#f03w-m)"/>
+<path class="ln" d="M114 96 L114 176" marker-end="url(#f03w-m)"/>
+<text class="lbl-mono" x="88" y="140" text-anchor="end">ASKS</text>
+<text class="lbl-mono" x="124" y="140">APPROVES</text>
+<path class="ln" d="M196 196 L268 196" marker-end="url(#f03w-m)"/>
+<path class="ln" d="M268 212 L196 212" marker-end="url(#f03w-m)"/>
+<path class="ln" d="M464 204 L512 204" marker-end="url(#f03w-m)"/>
+<g class="xm" data-k="x-mark"><line class="ln-accent" x1="479" y1="245" x2="489" y2="255"/><line class="ln-accent" x1="479" y1="255" x2="489" y2="245"/></g>
+<text class="lbl-mono acc-raw" x="498" y="254">DENIED</text>
+</svg>
+<svg class="f03n nv sw" data-fig="f03" data-v="n" viewBox="0 0 320 442" role="img" aria-labelledby="f03n-t f03n-d" data-routes='{"u1":[[152,140],[152,84]],"u2":[[168,84],[168,140]],"q1":[[152,196],[152,252]],"q2":[[168,252],[168,196]],"g1":[[160,308],[160,376]],"g-stop":[[160,308],[160,336]]}' xmlns="http://www.w3.org/2000/svg">
+<title id="f03n-t">An AI agent tries to commit</title>
+<desc id="f03n-d">An AI coding agent such as Claude Code runs git commit. The gitpro agent-check hook sees the wrong identity and denies the call, and the reason goes back to the agent. The agent asks you, you approve the fix, and the same commit then goes through to git as the right identity.</desc>
+<defs><marker id="f03n-m" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="6" markerHeight="6" markerUnits="userSpaceOnUse" orient="auto"><path class="arrow" d="M0 0L10 5L0 10z"/></marker></defs>
+<text class="st" data-k="st" x="316" y="16" text-anchor="end"></text>
+<rect class="box" data-k="you" x="40" y="32" width="240" height="52" rx="2"/>
+<text class="lbl" x="160" y="54.9" text-anchor="middle">You</text>
+<text class="sub" x="160" y="70.8" text-anchor="middle">approve or fix</text>
+<rect class="box" data-k="agent" x="40" y="140" width="240" height="56" rx="2"/>
+<text class="lbl" x="160" y="164.9" text-anchor="middle">AI coding agent</text>
+<text class="sub" x="160" y="180.8" text-anchor="middle">Claude Code, Cursor</text>
+<rect class="box-accent" data-k="check" x="40" y="252" width="240" height="56" rx="2"/>
+<text class="lbl" x="160" y="276.9" text-anchor="middle">gitpro agent-check</text>
+<text class="sub" x="160" y="292.8" text-anchor="middle">PreToolUse hook</text>
+<rect class="box" data-k="git" x="40" y="376" width="240" height="56" rx="2"/>
+<text class="lbl" x="160" y="400.9" text-anchor="middle">git commit</text>
+<text class="sub" x="160" y="416.8" text-anchor="middle">push, gh pr create</text>
+<path class="ln" d="M152 140 L152 84" marker-end="url(#f03n-m)"/>
+<path class="ln" d="M168 84 L168 140" marker-end="url(#f03n-m)"/>
+<text class="lbl-mono" x="144" y="116" text-anchor="end">ASKS</text>
+<text class="lbl-mono" x="176" y="116">APPROVES</text>
+<path class="ln" d="M152 196 L152 252" marker-end="url(#f03n-m)"/>
+<path class="ln" d="M168 252 L168 196" marker-end="url(#f03n-m)"/>
+<path class="ln" d="M160 308 L160 376" marker-end="url(#f03n-m)"/>
+<g class="xm" data-k="x-mark"><line class="ln-accent" x1="177" y1="335" x2="187" y2="345"/><line class="ln-accent" x1="177" y1="345" x2="187" y2="335"/></g>
+<text class="lbl-mono acc-raw" x="196" y="344">DENIED</text>
+</svg>
+<!-- /fig:f03 -->
+<figcaption>The hook denies a commit with the wrong identity. The agent asks you, and after your fix the same commit goes through as work-github.</figcaption>
+</div>
+</figure>
+</div>
+</div>
+</section>
+
+<section class="sec" id="start" aria-labelledby="start-h">
+<div class="wrap split">
+<div class="split-text">
+<h2 id="start-h">Set up in a few minutes</h2>
+<p class="prose">Linux or macOS, Git 2.36 or newer, Python 3.9 or newer and OpenSSH.</p>
+<ol class="steps">
+<li><div><strong>Install pipx if you don't have it.</strong> <code>brew install pipx</code> on macOS, <code>sudo apt install pipx</code> on Ubuntu.</div></li>
+<li><div><strong>Answer a few questions.</strong> The wizard asks for identities, hosts, owners and existing SSH keys. Nothing is applied yet.</div></li>
+<li><div><strong>Look, then apply.</strong> <code>gitpro plan</code> shows every change; <code>gitpro apply -y</code> writes it.</div></li>
+<li><div><strong>Ask a repository.</strong> <code>gitpro why</code> shows the identity it should use, the one it uses, and the fix if they differ.</div></li>
+</ol>
+<div class="cmd">
+<pre class="term"><code><span class="prompt">$</span> pipx install gitpro
+<span class="prompt">$</span> gitpro setup --write
+<span class="prompt">$</span> gitpro plan
+<span class="prompt">$</span> gitpro apply -y
+<span class="prompt">$</span> gitpro why</code></pre>
+<button class="copy" type="button" data-copy="pipx install gitpro&#10;gitpro setup --write&#10;gitpro plan&#10;gitpro apply -y&#10;gitpro why" hidden>Copy</button>
+</div>
+</div>
+<div class="split-fig">
+<figure class="fig" data-anim>
+<div class="fig-head"><span class="fig-no">FIG. 04</span><span class="fig-title">SETUP</span></div>
+<div class="fig-body cq">
+<!-- fig:f04 -->
+<svg class="f04w wv sw" data-fig="f04" data-v="w" viewBox="0 0 680 234" role="img" aria-labelledby="f04w-t f04w-d" data-routes='{"k1":[[164,68],[188,68]],"k2":[[328,68],[352,68]],"k3":[[492,68],[516,68]],"d3":[[590,96],[590,164]],"d2":[[590,96],[590,130],[418,130],[418,164]],"d1":[[590,96],[590,130],[246,130],[246,164]],"w":[[172,192],[148,192]]}' xmlns="http://www.w3.org/2000/svg">
+<title id="f04w-t">Setup in four steps</title>
+<desc id="f04w-d">gitpro setup asks a few questions and saves ~/.config/gitpro.toml. gitpro plan previews every change. gitpro apply writes a marked block in ~/.gitconfig, one file per identity and the SSH host entries. From then on git and ssh read those files themselves. gitpro uninstall removes them again.</desc>
+<defs><marker id="f04w-m" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="6" markerHeight="6" markerUnits="userSpaceOnUse" orient="auto"><path class="arrow" d="M0 0L10 5L0 10z"/></marker></defs>
+<text class="st" data-k="st" x="664" y="20" text-anchor="end"></text>
+<rect class="box" data-k="s1" x="24" y="40" width="140" height="56" rx="2"/>
+<text class="lbl" x="94" y="65.3" text-anchor="middle">gitpro setup</text>
+<text class="sub" x="94" y="81.5" text-anchor="middle">--write</text>
+<rect class="box-accent" data-k="s2" x="188" y="40" width="140" height="56" rx="2"/>
+<text class="lbl" x="258" y="65.3" text-anchor="middle">gitpro.toml</text>
+<text class="sub" x="258" y="81.5" text-anchor="middle">~/.config</text>
+<path class="ln" d="M164 68 L188 68" marker-end="url(#f04w-m)"/>
+<rect class="box" data-k="s3" x="352" y="40" width="140" height="56" rx="2"/>
+<text class="lbl" x="422" y="65.3" text-anchor="middle">gitpro plan</text>
+<text class="sub" x="422" y="81.5" text-anchor="middle">preview only</text>
+<path class="ln" d="M328 68 L352 68" marker-end="url(#f04w-m)"/>
+<rect class="box" data-k="s4" x="516" y="40" width="140" height="56" rx="2"/>
+<text class="lbl" x="586" y="65.3" text-anchor="middle">gitpro apply</text>
+<text class="sub" x="586" y="81.5" text-anchor="middle">-y</text>
+<path class="ln" d="M492 68 L516 68" marker-end="url(#f04w-m)"/>
+<rect class="box" data-k="o1" x="172" y="164" width="148" height="56" rx="2"/>
+<text class="lbl" x="246" y="189.3" text-anchor="middle">~/.gitconfig</text>
+<text class="sub" x="246" y="205.5" text-anchor="middle">marked block</text>
+<rect class="box" data-k="o2" x="344" y="164" width="148" height="56" rx="2"/>
+<text class="lbl" x="418" y="189.3" text-anchor="middle">per identity</text>
+<text class="sub" x="418" y="205.5" text-anchor="middle">~/.gitconfig-&lt;id&gt;</text>
+<rect class="box" data-k="o3" x="516" y="164" width="148" height="56" rx="2"/>
+<text class="lbl" x="590" y="189.3" text-anchor="middle">~/.ssh/config</text>
+<text class="sub" x="590" y="205.5" text-anchor="middle">key per host</text>
+<path class="ln" d="M590 96 L590 164" marker-end="url(#f04w-m)"/>
+<path class="ln" d="M590 96 L590 130 L418 130 L418 164" marker-end="url(#f04w-m)"/>
+<path class="ln" d="M590 96 L590 130 L246 130 L246 164" marker-end="url(#f04w-m)"/>
+<rect class="box" data-k="w0" x="24" y="164" width="124" height="56" rx="2"/>
+<text class="lbl" x="86" y="189.3" text-anchor="middle">git, ssh</text>
+<text class="sub" x="86" y="205.5" text-anchor="middle">read these</text>
+<path class="ln" d="M172 192 L148 192" marker-end="url(#f04w-m)"/>
+</svg>
+<svg class="f04n nv sw" data-fig="f04" data-v="n" viewBox="0 0 320 558" role="img" aria-labelledby="f04n-t f04n-d" data-routes='{"k1":[[160,78],[160,100]],"k2":[[160,148],[160,170]],"k3":[[160,218],[160,240]],"d1":[[40,264],[20,264],[20,332],[40,332]],"d2":[[40,264],[20,264],[20,396],[40,396]],"d3":[[40,264],[20,264],[20,460],[40,460]],"w":[[280,332],[300,332],[300,526],[280,526]]}' xmlns="http://www.w3.org/2000/svg">
+<title id="f04n-t">Setup in four steps</title>
+<desc id="f04n-d">gitpro setup asks a few questions and saves ~/.config/gitpro.toml. gitpro plan previews every change. gitpro apply writes a marked block in ~/.gitconfig, one file per identity and the SSH host entries. From then on git and ssh read those files themselves. gitpro uninstall removes them again.</desc>
+<defs><marker id="f04n-m" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="6" markerHeight="6" markerUnits="userSpaceOnUse" orient="auto"><path class="arrow" d="M0 0L10 5L0 10z"/></marker></defs>
+<text class="st" data-k="st" x="316" y="16" text-anchor="end"></text>
+<rect class="box" data-k="s1" x="40" y="30" width="240" height="48" rx="2"/>
+<text class="lbl" x="160" y="50.9" text-anchor="middle">gitpro setup</text>
+<text class="sub" x="160" y="66.8" text-anchor="middle">--write</text>
+<rect class="box-accent" data-k="s2" x="40" y="100" width="240" height="48" rx="2"/>
+<text class="lbl" x="160" y="120.9" text-anchor="middle">gitpro.toml</text>
+<text class="sub" x="160" y="136.8" text-anchor="middle">~/.config</text>
+<path class="ln" d="M160 78 L160 100" marker-end="url(#f04n-m)"/>
+<rect class="box" data-k="s3" x="40" y="170" width="240" height="48" rx="2"/>
+<text class="lbl" x="160" y="190.9" text-anchor="middle">gitpro plan</text>
+<text class="sub" x="160" y="206.8" text-anchor="middle">preview only</text>
+<path class="ln" d="M160 148 L160 170" marker-end="url(#f04n-m)"/>
+<rect class="box" data-k="s4" x="40" y="240" width="240" height="48" rx="2"/>
+<text class="lbl" x="160" y="260.9" text-anchor="middle">gitpro apply</text>
+<text class="sub" x="160" y="276.8" text-anchor="middle">-y</text>
+<path class="ln" d="M160 218 L160 240" marker-end="url(#f04n-m)"/>
+<rect class="box" data-k="o1" x="40" y="308" width="240" height="48" rx="2"/>
+<text class="lbl" x="160" y="328.9" text-anchor="middle">~/.gitconfig</text>
+<text class="sub" x="160" y="344.8" text-anchor="middle">marked block</text>
+<path class="ln" d="M40 264 L20 264 L20 332 L40 332" marker-end="url(#f04n-m)"/>
+<rect class="box" data-k="o2" x="40" y="372" width="240" height="48" rx="2"/>
+<text class="lbl" x="160" y="392.9" text-anchor="middle">per identity</text>
+<text class="sub" x="160" y="408.8" text-anchor="middle">~/.gitconfig-&lt;id&gt;</text>
+<path class="ln" d="M40 264 L20 264 L20 396 L40 396" marker-end="url(#f04n-m)"/>
+<rect class="box" data-k="o3" x="40" y="436" width="240" height="48" rx="2"/>
+<text class="lbl" x="160" y="456.9" text-anchor="middle">~/.ssh/config</text>
+<text class="sub" x="160" y="472.8" text-anchor="middle">key per host</text>
+<path class="ln" d="M40 264 L20 264 L20 460 L40 460" marker-end="url(#f04n-m)"/>
+<rect class="box" data-k="w0" x="40" y="502" width="240" height="48" rx="2"/>
+<text class="lbl" x="160" y="522.9" text-anchor="middle">git, ssh</text>
+<text class="sub" x="160" y="538.8" text-anchor="middle">read these</text>
+<path class="ln" d="M280 332 L300 332 L300 526 L280 526" marker-end="url(#f04n-m)"/>
+</svg>
+<!-- /fig:f04 -->
+<figcaption>Setup saves a config and applies nothing. Plan previews, apply writes plain files, and git reads them from then on.</figcaption>
+</div>
+</figure>
+</div>
+</div>
+<div class="wrap">
+<h3 class="label-h sub-h">In your editor and agent</h3>
+<div class="tiles">
+<div class="panel tile">
+<span class="tag">VS CODE</span>
+<h3>Extension</h3>
+<p>Shows the identity in the status bar and Source Control, runs the setup wizard, and finds repository overrides.</p>
+<div class="tile-foot">
+<p class="term"><code>code --install-extension yantrakar.gitpro</code></p>
+<p class="tile-links"><a href="https://marketplace.visualstudio.com/items?itemName=yantrakar.gitpro" rel="noopener">Marketplace ↗</a></p>
+</div>
+</div>
+<div class="panel tile">
+<span class="tag tag-accent">CLAUDE CODE</span>
+<h3>Plugin</h3>
+<p>Brings the commit hook, the MCP server and a skill that edits the config from plain requests and applies only after you confirm.</p>
+<div class="tile-foot">
+<pre class="term"><code>/plugin marketplace add Yantrakar/gitpro
+/plugin install gitpro@gitpro</code></pre>
+</div>
+</div>
+<div class="panel tile">
+<span class="tag">OTHER AGENTS</span>
+<h3>MCP server</h3>
+<p>Registers the read-only server with Cursor, Gemini or opencode. The Cursor and Gemini commit hooks are experimental.</p>
+<div class="tile-foot">
+<p class="term"><code>gitpro mcp install --agent cursor -y</code></p>
+</div>
+</div>
+</div>
+</div>
+</section>
+
+<section class="sec" id="commands" aria-labelledby="commands-h">
+<div class="wrap">
+<div class="sec-head">
+<h2 id="commands-h">Main commands</h2>
+<p class="prose">Every command has <code>--help</code>, and the ones that read have <code>--json</code>. The <a href="https://github.com/Yantrakar/gitpro/blob/main/docs/guide.md#commands" rel="noopener">guide</a> has the full list.</p>
+</div>
+<table class="dtable cmds">
+<caption class="sr-only">The main gitpro commands and what each one does</caption>
+<thead><tr><th scope="col">Command</th><th scope="col">What it does</th></tr></thead>
+<tbody>
+<tr><td data-label="Command"><code>gitpro setup</code></td><td data-label="What it does">Guided, offline configuration. Keeps existing settings and backs up the file. Applies nothing.</td></tr>
+<tr><td data-label="Command"><code>gitpro plan</code></td><td data-label="What it does">Shows what <code>apply</code> would change, as diffs.</td></tr>
+<tr><td data-label="Command"><code>gitpro apply</code></td><td data-label="What it does">Writes the git and SSH config. Previews by default; <code>-y</code> writes.</td></tr>
+<tr><td data-label="Command"><code>gitpro why</code></td><td data-label="What it does">Which identity a repository should use, which it uses, why, and the fix.</td></tr>
+<tr><td data-label="Command"><code>gitpro scan</code></td><td data-label="What it does">Lists your repositories by the identity git uses. <code>--fix</code> removes repository overrides.</td></tr>
+<tr><td data-label="Command"><code>gitpro keys</code></td><td data-label="What it does">Each SSH key and where to register it. <code>--generate</code> creates the missing ones.</td></tr>
+<tr><td data-label="Command"><code>gitpro guard install</code></td><td data-label="What it does">Git hooks that refuse a commit or push with the wrong identity.</td></tr>
+<tr><td data-label="Command"><code>gitpro agent install</code></td><td data-label="What it does">The hook that stops an AI agent committing as the wrong identity.</td></tr>
+<tr><td data-label="Command"><code>gitpro audit</code></td><td data-label="What it does">Finds commits made as the wrong identity or with an AI agent.</td></tr>
+<tr><td data-label="Command"><code>gitpro clone</code></td><td data-label="What it does"><code>git clone</code> with the identity, SSH alias and folder the URL calls for.</td></tr>
+<tr><td data-label="Command"><code>gitpro lost</code></td><td data-label="What it does">Unpushed branches, stashes and dirty trees across your repositories.</td></tr>
+<tr><td data-label="Command"><code>gitpro uninstall</code></td><td data-label="What it does">Removes everything <code>apply</code> wrote. Keeps your config and SSH keys.</td></tr>
+</tbody>
+</table>
+</div>
+</section>
+
+<section class="sec" id="roadmap" aria-labelledby="roadmap-h">
+<div class="wrap">
+<div class="sec-head">
+<h2 id="roadmap-h">Done, and what comes next</h2>
+<p class="prose">Planned work has no dates, and the order may change. Ideas and requests go to <a href="https://github.com/Yantrakar/gitpro/issues" rel="noopener">GitHub issues</a>.</p>
+</div>
+<div class="road">
+<div>
+<p class="label-h">Shipped</p>
+<ol class="log">
+<li><span class="tag">0.3.2 · 2026-10-11</span><p>VS Code Marketplace extension, with the identity in Source Control.</p></li>
+<li><span class="tag">0.3 · 2026-10-09</span><p>Guided setup. Agent operations: preflight, approved changes and recoverable apply.</p></li>
+<li><span class="tag">0.2</span><p>Guard hooks, audit, the MCP server, the Claude Code hook, team policy in CI, dev containers, the VS Code identity bar and <code>lost</code>.</p></li>
+<li><span class="tag">0.1</span><p>Identities by remote URL, generated git and SSH config, plan and apply.</p></li>
+</ol>
+</div>
+<div>
+<p class="label-h">Next</p>
+<ol class="log">
+<li><span class="tag">PLANNED</span><p>Agent identities: commits that record both the agent and the person it acted for.</p></li>
+<li><span class="tag">PLANNED</span><p>Scoped grants that expire, so an agent can be allowed one kind of change for a limited time.</p></li>
+<li><span class="tag">PLANNED</span><p>A guard for instruction files: changes to AGENTS.md, CLAUDE.md, .cursorrules, MCP configs and hooks, and hidden Unicode in them.</p></li>
+<li><span class="tag">PLANNED</span><p>Handoff and review of risky agent steps, with the agent's stated intent attached.</p></li>
+</ol>
+</div>
+</div>
+</div>
+</section>
+
+<section class="sec" id="built" aria-labelledby="built-h">
+<div class="wrap">
+<div class="sec-head">
+<h2 id="built-h">Built with gitpro</h2>
+</div>
+<div class="tiles tiles-2">
+<a class="panel tile" href="https://verako.no" rel="noopener">
+<span class="tag tag-accent">NORWAY · FREE</span>
+<h3>Verako</h3>
+<p>A free service that helps people in Norway check whether their electricity contract or savings rate is a good one. Coding agents wrote much of it, and gitpro checked the identity on their commits.</p>
+<div class="tile-foot">
+<span class="more">verako.no <span class="arr">↗</span></span>
+</div>
+</a>
+<a class="panel tile" href="https://yantrakar.com" rel="noopener">
+<span class="tag">THE MAKER</span>
+<h3>Yantrakar AS</h3>
+<p>gitpro is made by Yantrakar, a software company in Stavanger working on machine systems and private AI.</p>
+<div class="tile-foot">
+<span class="more">yantrakar.com <span class="arr">↗</span></span>
+</div>
+</a>
+</div>
+</div>
+</section>
+
+<section class="sec" id="help" aria-labelledby="help-h">
+<div class="wrap how-band">
+<h2 id="help-h">Help with a rollout</h2>
+<div class="how-body">
+<p>gitpro stays free and MIT licensed. If your team wants help putting it in place, I offer paid consulting through Yantrakar AS: rolling it out across a team, identity and signing policy in CI, agent hooks and the MCP server, or adapting it to your forge.</p>
+<div class="actions">
+<a class="btn btn-primary" href="https://yantrakar.com/#contact" rel="noopener">Contact Yantrakar ↗</a>
+</div>
+</div>
+</div>
+</section>
+
+<section class="sec" id="faq" aria-labelledby="faq-h">
+<div class="wrap">
+<div class="sec-head"><h2 id="faq-h">Questions</h2></div>
+<div class="faq">
+<details>
+<summary>Where does the configuration live?</summary>
+<p>In <code>~/.config/gitpro.toml</code>, or wherever <code>$GITPRO_CONFIG</code> points. <code>gitpro setup</code> writes it for you; the <a href="https://github.com/Yantrakar/gitpro/blob/main/docs/guide.md#configuration" rel="noopener">guide</a> covers the format if you prefer to edit it.</p>
+</details>
+<details>
+<summary>What does it change on my machine?</summary>
+<p>A block between <code># BEGIN gitpro</code> and <code># END gitpro</code> in <code>~/.gitconfig</code> and <code>~/.ssh/config</code>, one <code>~/.gitconfig-&lt;id&gt;</code> file per identity, and the SSH host entries. Existing files are backed up first.</p>
+</details>
+<details>
+<summary>How do I undo it?</summary>
+<p><code>gitpro uninstall</code> removes everything <code>apply</code> wrote and the global guard hooks. Your config and SSH keys stay.</p>
+</details>
+<details>
+<summary>Does it send anything anywhere?</summary>
+<p>No. Commands only go online when you pass <code>--online</code>, and then through <code>gh</code>, <code>glab</code> or <code>ssh</code>.</p>
+</details>
+<details>
+<summary>Does anything run when I use git?</summary>
+<p>Only the guard hooks, if you install them. Otherwise git reads the config gitpro wrote, and gitpro is not involved.</p>
+</details>
+<details>
+<summary>Which systems does it run on?</summary>
+<p>Linux and macOS, with Git 2.36 or newer, Python 3.9 or newer and OpenSSH.</p>
+</details>
+</div>
+</div>
+</section>
+</main>
+<footer class="site-footer">
+<div class="wrap foot">
+<p>© 2026 Yantrakar AS and Sandeep Shelke · MIT licence</p>
+<nav aria-label="Footer">
+<ul>
+<li><a href="https://github.com/Yantrakar/gitpro" rel="noopener">GitHub</a></li>
+<li><a href="https://pypi.org/project/gitpro/" rel="noopener">PyPI</a></li>
+<li><a href="https://marketplace.visualstudio.com/items?itemName=yantrakar.gitpro" rel="noopener">VS Code</a></li>
+<li><a href="https://github.com/Yantrakar/gitpro/issues" rel="noopener">Report an issue</a></li>
+<li><a href="https://yantrakar.com" rel="noopener">Made by Yantrakar AS ↗</a></li>
+<li><a href="https://verako.no" rel="noopener">Verako ↗</a></li>
+<li><a href="#top">Back to top ↑</a></li>
+</ul>
+</nav>
+</div>
+</footer>
+</body>
+</html>
