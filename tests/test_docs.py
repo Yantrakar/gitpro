@@ -433,7 +433,8 @@ def test_every_extension_imports(name):
 
 # ---------------------------------------------------------------- install line
 
-@pytest.mark.parametrize("name", ["README.md", "docs/guide.md", "skills/gitpro/SKILL.md", "vscode/README.md"])
+@pytest.mark.parametrize("name", ["README.md", "docs/guide.md", "skills/gitpro/SKILL.md", "vscode/README.md",
+                                  "site/index.html"])
 def test_install_from_pypi(name):
     text = (ROOT / name).read_text(encoding="utf-8")
     assert INSTALL in text, name
