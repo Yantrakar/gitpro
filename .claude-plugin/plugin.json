@@ -1,6 +1,6 @@
 {
   "name": "gitpro",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "description": "Per-repo git identities (name, email, SSH key, signing) with the gitpro CLI: a skill, a PreToolUse hook that stops Claude committing or pushing as the wrong identity, and a read-only MCP server. The hook and the server need gitpro on the plain sh PATH (pipx install gitpro); without it the hook does nothing.",
   "author": { "name": "Yantrakar" },
   "repository": "https://github.com/Yantrakar/gitpro",
