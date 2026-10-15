@@ -612,7 +612,7 @@ def _kind(args: Any) -> str:
     return "crash" if args.crash else "denial" if args.denial else "security" if args.security else "bug"
 
 
-def _preview(d: Draft, *, show_url: bool) -> None:
+def _preview(d: Draft, *, show_url: bool, login: Optional[str] = None) -> None:
     from . import forge
     if d.kind == "security":
         print(d.full_body)
@@ -624,8 +624,11 @@ def _preview(d: Draft, *, show_url: bool) -> None:
         print(forge.safe(d.title))
         print(d.full_body)
         print()
-        print("→ prefilled issue: github.com/Yantrakar/gitpro (you still press Submit)")
-        if d.truncated:
+        if login:
+            print(f"→ files as {forge.safe(login)} on github.com, public")
+        else:
+            print("→ prefilled issue: github.com/Yantrakar/gitpro (you still press Submit)")
+        if d.truncated and not login:
             print("→ the draft is long; the rest was printed above for you to paste")
         print(NOTE_PUBLIC)
     if show_url:
@@ -639,15 +642,67 @@ def _json(d: Draft, sent: Optional[Mapping[str, str]] = None) -> None:
                             "truncated": d.truncated, "sent": dict(sent) if sent else None})
 
 
+ISSUE_RE = re.compile(r"^https://github\.com/Yantrakar/gitpro/issues/\d+$")
+
+
+def _pick_account(args: Any) -> Tuple[Any, Any]:
+    """(session, account) for --online: the one github.com gh login that files the issue. Raises ReportError."""
+    from . import config as cfgmod, forge
+    try:
+        path, how = cfgmod.find(args.config, args.home)
+        cfg = cfgmod.load_all(path, how)
+        session = forge.Session(cfg, args.home, ids=[args.as_] if args.as_ else None, as_json=bool(args.json))
+    except cfgmod.ConfigError as e:
+        raise ReportError(str(e)) from None
+    session.targets = [t for t in session.targets if t.acc.cli == "gh" and t.acc.host == "github.com"]
+    session.warnings, session._queue = [], []     # "identity X has no account" is noise here, and names an id
+    accs = session.accounts()
+    if not accs:
+        raise ReportError("report --online: no identity has a github.com gh_account; drop --online to use the browser")
+    if len(accs) > 1:
+        ids = ", ".join(dict.fromkeys(t.id for t in session.targets))
+        raise ReportError(f"report --online: more than one gh login could file this ({ids}); pick one with --as ID")
+    return session, accs[0]
+
+
+def _file_issue(d: Draft, session: Any, acc: Any, args: Any) -> int:
+    """gh issue create with the full body on stdin; prints (or emits) the issue url."""
+    from . import forge
+    try:
+        env = session.env(acc)
+    except Exception as e:   # noqa: BLE001 - a ConfigError names the fix, never the token
+        return _fail(forge.redact(str(e), session.secrets()), args)
+    r = forge._exec(acc, ["issue", "create", "--repo", REPO, "--title", d.title, "--body-file", "-"], env,
+                    stdin=d.full_body)
+    if r.returncode != 0:
+        err = forge.safe(forge.redact(r.stderr.strip(), session.secrets()))
+        return _fail(f"gh issue create failed ({r.returncode}): {err}", args)
+    url = (r.stdout or "").strip()
+    if not ISSUE_RE.match(url):
+        return _fail("gh issue create printed something that is not an issue url on "
+                     "github.com/Yantrakar/gitpro; check the issue list yourself", args)
+    if args.json:
+        _json(d, {"issue": url})
+    else:
+        print(f"✓ filed {url}")
+    return 0
+
+
 def cmd_report(args) -> int:
     from . import jsonout
     kind = _kind(args)
     as_json = bool(args.json)
-    if getattr(args, "online", False) and args.security:
+    online = bool(getattr(args, "online", False))
+    if online and args.security:
         return _fail("security reports go to the private form only; run gitpro report --security", args)
+    if getattr(args, "as_", None) and not online:
+        return _fail("--as only goes with --online", args)
     try:
         d = build_draft(kind, message=args.message, repo=args.repo, why_cwd=kind in ("bug", "denial"),
                         client=args.client, config=args.config, home=args.home)
+        session = acc = None
+        if online:
+            session, acc = _pick_account(args)
     except ReportError as e:
         return _fail(str(e), args)
     if d.hits:
@@ -656,7 +711,7 @@ def cmd_report(args) -> int:
         else:
             print(block_text(d.hits), file=sys.stderr)
         return 2
-    printing = args.print or as_json
+    printing = args.print or (as_json and not (online and args.yes))
     if not printing and not args.yes and not _tty():
         printing = True
     if printing:
@@ -665,6 +720,17 @@ def cmd_report(args) -> int:
         else:
             _preview(d, show_url=True)
         return 0
+    if online:
+        code = session.gate("report", "to file a public issue on Yantrakar/gitpro", "the draft shown above",
+                            explicit=True, args=args)
+        if code is not None:
+            return code
+        if not as_json:
+            _preview(d, show_url=False, login=acc.login)
+        if not args.yes and not _ask(f"file this as a public issue on github.com/{REPO} as "
+                                     f"{_safe(acc.login)}? [y/N]"):
+            return 0
+        return _file_issue(d, session, acc, args)
     if not as_json:
         _preview(d, show_url=False)
     question = ("open the private security advisory form?" if d.kind == "security"
@@ -679,6 +745,11 @@ def cmd_report(args) -> int:
     else:
         _json(d)
     return 0
+
+
+def _safe(text: str) -> str:
+    from . import forge
+    return forge.safe(text)
 
 
 def _fail(msg: str, args: Any) -> int:
@@ -699,6 +770,9 @@ def register(sub, common, confirm) -> None:
     sp.add_argument("--repo", type=Path, metavar="PATH", help="include the redacted why of this repository")
     sp.add_argument("--client", metavar="NAME/VERSION", help="the tool that asks (e.g. vscode/0.3.3)")
     sp.add_argument("--print", action="store_true", help="print the draft and the url; open nothing")
+    sp.add_argument("--online", action="store_true",
+                    help="file the issue with gh (as one of your github.com gh_accounts) instead of the browser")
+    sp.add_argument("--as", dest="as_", metavar="ID", help="the identity whose gh_account files it (with --online)")
     sp.add_argument("-y", "--yes", action="store_true", help="answer yes to the question")
     sp.add_argument("--json", action="store_true", help="machine-readable output (implies --print)")
     sp.set_defaults(func=lambda a: guarded(cmd_report, a))

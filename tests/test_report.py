@@ -24,9 +24,6 @@ import pytest
 from conftest import TIMEOUT, git, run, write_config
 from gitpro import cli
 
-# step 4 lands `gitpro report`, step 3 the redactor and the scan, step 5 --security/--online
-NO_ONLINE_YET = pytest.mark.xfail(strict=True, reason="--online lands in step 5")
-
 CANARY_EMAIL = "canary.person@canary-corp.test"
 CANARY_HOST = "git.canary-corp.test"
 CANARY_TOKEN = "ghp_CANARYCANARYCANARYCANARYCANARYCANARY12"
@@ -244,7 +241,6 @@ def test_the_draft_still_helps(world, monkeypatch, capsys):
     assert "gitpro" in out.lower()
 
 
-@NO_ONLINE_YET
 def test_planted_values_not_in_the_gh_call(world, monkeypatch, capsys):
     record_world(world, monkeypatch, capsys)
     rc, out, err = go(world, capsys, "--online", "-y", "--repo", str(world.repo), "-m", f"{CANARY_EMAIL} broke")
@@ -255,7 +251,10 @@ def test_planted_values_not_in_the_gh_call(world, monkeypatch, capsys):
     assert "--body-file" in calls[0]["argv"] and calls[0]["argv"][-1] == "-"
     assert_clean(" ".join(calls[0]["argv"]), world, "gh argv")
     assert_clean(calls[0]["stdin"].decode(), world, "gh stdin")
-    assert_clean(out, world, "stdout")
+    # the two lines that name the gh login to the person at the terminal (spec 6.3 and 7.1) are the only
+    # place a login is shown; the draft, the url and the gh call never hold it
+    assert [l for l in out.splitlines() if "canarylogin" in l and not l.startswith(("online: asking", "→ files as"))] == []
+    assert_clean("\n".join(l for l in out.splitlines() if "canarylogin" not in l), world, "stdout")
     assert_clean(err, world, "stderr")
 
 
@@ -465,3 +464,158 @@ def test_the_redactor_rewrites_message_text_longest_value_first():
     out = red.rewrite("clone acme/acme-tools failed")
     assert "acme" not in out
     assert out == "clone owner-1/repo-1 failed"
+
+
+# ================================================================ 10.4 paths
+
+ISSUE_URL = "https://github.com/Yantrakar/gitpro/issues/7"
+
+
+def gh_issue_calls(world):
+    return [e for e in world.fake_bin.entries("gh") if e["argv"][:2] == ["issue", "create"]]
+
+
+def test_no_gh_call_without_online_even_if_the_config_says_online(world, monkeypatch, capsys):
+    write_config(world.home, CONFIG + "\n[forge]\nonline = true\n")
+    for argv in (["--print"], ["-y"], ["--json"], ["--security", "-y"]):
+        rc, out, err = go(world, capsys, *argv)
+        assert rc == 0, out + err
+    assert world.fake_bin.calls("gh") == []
+
+
+def test_online_files_with_exactly_this_argv_after_a_yes(world, monkeypatch, capsys):
+    monkeypatch.setattr(sys, "stdin", io.StringIO("y\n"))
+    monkeypatch.setattr("gitpro.report._tty", lambda: True)
+    rc, out, err = go(world, capsys, "--online", "-m", "it broke")
+    assert rc == 0, out + err
+    (call,) = gh_issue_calls(world)
+    title = call["argv"][5]
+    assert call["argv"] == ["issue", "create", "--repo", "Yantrakar/gitpro", "--title", title, "--body-file", "-"]
+    assert "it broke" in call["stdin"].decode() and title
+    assert "→ files as canarylogin on github.com, public" in out and ISSUE_URL in out
+    assert world.opened == []
+
+
+def test_online_n_sends_nothing(world, monkeypatch, capsys):
+    monkeypatch.setattr(sys, "stdin", io.StringIO("n\n"))
+    monkeypatch.setattr("gitpro.report._tty", lambda: True)
+    rc, out, err = go(world, capsys, "--online")
+    assert rc == 0
+    assert "file this as a public issue on github.com/Yantrakar/gitpro as canarylogin? [y/N]" in out
+    assert gh_issue_calls(world) == [] and world.opened == []
+
+
+def test_online_without_a_terminal_or_yes_only_prints(world, capsys):
+    rc, out, err = go(world, capsys, "--online")
+    assert rc == 0 and gh_issue_calls(world) == [] and world.opened == []
+    assert "https://github.com/Yantrakar/gitpro/issues/new?" in out
+
+
+def test_online_security_exits_two(world, capsys):
+    rc, out, err = go(world, capsys, "--online", "--security", "-y")
+    assert rc == 2 and "security reports go to the private form only" in err
+    assert world.fake_bin.calls("gh") == [] and world.opened == []
+
+
+def test_security_opens_the_advisory_url_with_no_query(world, capsys):
+    rc, out, err = go(world, capsys, "--security", "-y")
+    assert rc == 0 and world.opened == ["https://github.com/Yantrakar/gitpro/security/advisories/new"]
+    assert world.fake_bin.calls("gh") == []
+
+
+def test_json_without_yes_never_sends(world, capsys):
+    rc, out, err = go(world, capsys, "--online", "--json")
+    assert rc == 0 and json.loads(out)["sent"] is None
+    assert world.fake_bin.calls("gh") == [] and world.opened == []
+
+
+def test_online_yes_json_reports_the_issue(world, capsys):
+    rc, out, err = go(world, capsys, "--online", "-y", "--json")
+    assert rc == 0, out + err
+    data = json.loads(out)
+    assert data["ok"] is True and data["sent"] == {"issue": ISSUE_URL}
+    assert len(gh_issue_calls(world)) == 1 and world.opened == []
+    assert out.lstrip().startswith("{") and "online: asking" in err      # the online line went to stderr
+
+
+def test_online_with_no_github_gh_account(world, capsys):
+    write_config(world.home, CONFIG.replace('gh_account = "canarylogin"\n', ""))
+    rc, out, err = go(world, capsys, "--online", "-y")
+    assert rc == 2
+    assert err.strip() == "✗ report --online: no identity has a github.com gh_account; drop --online to use the browser"
+    assert gh_issue_calls(world) == []
+
+
+def test_online_with_two_logins_needs_as(world, capsys):
+    write_config(world.home, CONFIG.replace('[default]\n', '[default]\ngh_account = "otherlogin"\n', 1))
+    rc, out, err = go(world, capsys, "--online", "-y")
+    assert rc == 2 and "default" in err and "canaryidbeta" in err and "--as" in err
+    assert gh_issue_calls(world) == []
+    rc, out, err = go(world, capsys, "--online", "-y", "--as", "canaryidbeta")
+    assert rc == 0, out + err
+    (call,) = gh_issue_calls(world)
+    assert call["argv"][:2] == ["issue", "create"]
+
+
+def test_as_needs_online_and_a_known_identity(world, capsys):
+    assert go(world, capsys, "--as", "canaryidbeta")[0] == 2
+    rc, out, err = go(world, capsys, "--online", "--as", "nobody", "-y")
+    assert rc == 2 and "unknown identity" in err and gh_issue_calls(world) == []
+
+
+def test_gh_failure_is_reported_without_the_token(world, capsys):
+    world.fake_bin.add("gh", """
+if argv[:2] == ["auth", "token"]:
+    print("stubtoken"); sys.exit(0)
+print("boom stubtoken ghp_ABCDEFGHIJKLMNOP1234", file=sys.stderr)
+sys.exit(1)
+""")
+    rc, out, err = go(world, capsys, "--online", "-y")
+    assert rc == 2 and "gh issue create failed (1): boom" in err
+    assert "stubtoken" not in err + out and "ghp_" not in err + out
+
+
+@pytest.mark.parametrize("printed", ["https://evil.example/Yantrakar/gitpro/issues/7", "ok done",
+                                     "https://github.com/Yantrakar/gitpro/issues/7/../x",
+                                     "https://github.com/Yantrakar/gitpro/issues/7\nhttps://github.com/a/b/issues/1"])
+def test_a_bad_gh_url_fails_the_run(world, capsys, printed):
+    world.fake_bin.add("gh", f"""
+if argv[:2] == ["auth", "token"]:
+    print("stubtoken"); sys.exit(0)
+print({printed!r})
+""")
+    rc, out, err = go(world, capsys, "--online", "-y")
+    assert rc == 2 and "not an issue url" in err
+    assert "evil" not in out + err and "ok done" not in out + err
+
+
+def test_no_browser_without_a_display_on_linux(world, monkeypatch, capsys):
+    monkeypatch.setattr(sys, "platform", "linux")
+    monkeypatch.delenv("DISPLAY", raising=False)
+    monkeypatch.delenv("WAYLAND_DISPLAY", raising=False)
+    rc, out, err = go(world, capsys, "-y")
+    assert rc == 0 and world.opened == []
+    assert "→ open this URL in your browser" in out and "issues/new?" in out
+
+
+def test_a_long_body_is_cut_at_a_section_boundary(world, capsys):
+    from gitpro import report
+    msg = "é " * 1000                   # 9 url characters each: well over MAX_URL
+    rc, out, err = go(world, capsys, "--json", "-m", msg, "--repo", str(world.repo))
+    assert rc == 0, err
+    data = json.loads(out)
+    assert data["truncated"] is True and len(data["url"]) <= report.MAX_URL
+    assert data["body"] and not data["body"].endswith("\n")
+    assert "### Versions" in data["body"] or "versions" in data["body"].lower()
+    rc, out, err = go(world, capsys, "--print", "-m", msg, "--repo", str(world.repo))
+    assert msg.strip() in out and "the rest was printed above" in out      # the terminal shows the whole draft
+
+
+def test_client_and_message_limits(world, capsys):
+    for bad in ("Bad/1", "vscode", "vscode/", "a/" + "1" * 40, "vscode/1 2"):
+        rc, out, err = go(world, capsys, "--print", "--client", bad)
+        assert rc == 2 and "--client" in err, bad
+    assert go(world, capsys, "--print", "--client", "vscode-gitpro/0.3.3")[0] == 0
+    rc, out, err = go(world, capsys, "--print", "-m", "ab " * 700)
+    assert rc == 2 and "2000" in err
+    assert go(world, capsys, "--print", "-m", "ab " * 666)[0] == 0
