@@ -19,6 +19,11 @@ def test_minimal_config(home):
     assert ids[0].file == "~/.gitconfig-w" and ids[0].owners == []
 
 
+def test_sourcehut_owner_is_allowed(home):
+    _, ids = load(home, GOOD_DEFAULT + IDENTITY.replace("git.corp.test", "git.sr.ht") + 'owners = ["~me", "~me/sub"]\n')
+    assert ids[0].owners == ("~me", "~me/sub")
+
+
 def test_default_without_person_is_allowed(home):
     d, _ = load(home, "[default]\n")
     assert d.name is None and d.email is None
@@ -26,6 +31,11 @@ def test_default_without_person_is_allowed(home):
 
 @pytest.mark.parametrize("extra, message", [
     ('owners = ["-oProxyCommand=x"]', "bad owner"),
+    ('owners = ["~"]', "bad owner"),
+    ('owners = ["~-x"]', "bad owner"),
+    ('owners = ["~~me"]', "bad owner"),
+    ('owners = ["grp/~me"]', "bad owner"),
+    ('owners = ["me~"]', "bad owner"),
     ('ssh_key = "~/.ssh/key with space"', "must start with"),
     ('ssh_key = "~/../etc/key"', "no '..'"),
     ('file = "relative/path"', "must start with"),
