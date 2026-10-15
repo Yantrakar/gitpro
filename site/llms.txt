@@ -1,0 +1,37 @@
+# gitpro
+
+> gitpro sets the right git name, email and SSH key in every repository, chosen by the repository's remote URL, and stops AI coding agents committing as the wrong person. Linux and macOS, Git 2.36 or newer, Python 3.9 or newer, OpenSSH. MIT licence, made by Yantrakar AS.
+
+An identity is a host and, optionally, the owners under it, with a name, an email, an SSH key and optional signing. The config is `~/.config/gitpro.toml`. `gitpro apply` writes plain git config (`includeIf hasconfig:remote.*.url`) and SSH config, so git picks the identity itself and nothing runs in the background. It works with any git host over SSH or HTTPS; the URL forms of GitHub, GitLab, Bitbucket, Azure DevOps, Codeberg, SourceHut, Gitea, Gitee, Hugging Face, AWS CodeCommit and Launchpad are tested against real git.
+
+Install and set up:
+
+```sh
+pipx install gitpro
+gitpro setup --write     # guided, offline; saves the config and applies nothing
+gitpro plan              # what apply would change
+gitpro apply -y          # writes the git and SSH config
+gitpro why               # inside a repository: expected identity, actual identity, why, and the fix
+```
+
+## For AI agents
+
+- Before a commit, push or pull request for the user, run `gitpro why --json` in the repository. It returns the expected and the actual identity and a list of problems, each with a `fix` command. Show the fix to the user; do not run it unasked.
+- MCP server: `gitpro mcp` (stdio), or `uvx gitpro mcp` without installing. Read-only by default. Tools: `which_identity`, `why`, `check_commit`, `scan`, `identities`, `audit`, `lost`, `env_for`, `preflight`, `operation_status`, `reconcile_operation`, `propose_change`, `change_status`. Register it with `gitpro mcp install --agent claude|cursor|gemini|opencode`.
+- Claude Code plugin (hook, MCP server and skill): `/plugin marketplace add Yantrakar/gitpro`, then `/plugin install gitpro@gitpro`.
+- Claude Code hook alone: `gitpro agent install`. It denies `git commit`, `git push` and `gh pr create` calls that would use the wrong identity, with a reason.
+- Every command that reads has `--json`.
+
+## Docs
+
+- [README](https://raw.githubusercontent.com/Yantrakar/gitpro/main/README.md): what gitpro does and the quickstart
+- [User guide](https://raw.githubusercontent.com/Yantrakar/gitpro/main/docs/guide.md): configuration, matching, SSH keys, signing, teams and CI, AI assistants, commands, undo, troubleshooting
+- [Agent workflows](https://raw.githubusercontent.com/Yantrakar/gitpro/main/docs/agent-workflows.md): preflight, execution and approved changes for agents (contract version 1)
+- [Agent skill](https://raw.githubusercontent.com/Yantrakar/gitpro/main/skills/gitpro/SKILL.md): how an assistant sets up and manages identities with the CLI
+
+## Optional
+
+- [Source on GitHub](https://github.com/Yantrakar/gitpro)
+- [PyPI package](https://pypi.org/project/gitpro/)
+- [VS Code extension](https://marketplace.visualstudio.com/items?itemName=yantrakar.gitpro)
+- [Issues](https://github.com/Yantrakar/gitpro/issues)

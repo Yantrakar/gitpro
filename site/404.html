@@ -10,9 +10,8 @@
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600&amp;family=IBM+Plex+Mono:wght@400;500&amp;display=swap">
+<link rel="preload" href="/fonts/schibsted-grotesk-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/fonts/ibm-plex-mono-400-latin.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/styles.css">
 <script src="/site.js" defer></script>
 </head>
@@ -41,10 +40,11 @@
 <section class="hero" aria-labelledby="hero-h" style="padding-block:clamp(48px,12vh,140px)">
 <div class="wrap">
 <p class="eyebrow">404 · NOT FOUND</p>
-<h1 id="hero-h">There is no page here. <span class="h1-quiet">The site is a single page.</span></h1>
+<h1 id="hero-h">There is no page here.</h1>
 <p class="lead">The link may be old, or the address mistyped.</p>
 <div class="actions">
 <a class="btn btn-primary" href="/">gitpro.dev →</a>
+<a class="btn btn-secondary" href="https://github.com/Yantrakar/gitpro/blob/main/docs/guide.md" rel="noopener">Guide</a>
 <a class="btn btn-secondary" href="https://github.com/Yantrakar/gitpro" rel="noopener">GitHub</a>
 </div>
 </div>

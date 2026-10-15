@@ -3,11 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>gitpro · The right git identity in every repository</title>
-<meta name="description" content="gitpro sets the right git name, email and SSH key for every repository by its remote URL, and stops AI coding agents from committing as the wrong person. Open source, MIT.">
+<title>gitpro: the right git name, email and SSH key per repo</title>
+<meta name="description" content="One git name, email and SSH key per remote, set once for every GitHub and GitLab account. It also stops AI agents committing as the wrong person.">
+<meta name="robots" content="index, follow, max-image-preview:large">
+<meta name="author" content="Yantrakar AS">
 <meta name="color-scheme" content="light dark">
 <link rel="canonical" href="https://gitpro.dev/">
-<meta property="og:title" content="gitpro · The right git identity in every repository">
+<meta property="og:title" content="gitpro: the right git name, email and SSH key per repo">
 <meta property="og:description" content="The right git name, email and SSH key in every repository, for you and for the AI agents that commit for you.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://gitpro.dev/">
@@ -17,16 +19,75 @@
 <meta property="og:site_name" content="gitpro">
 <meta property="og:image:alt" content="The gitpro icon, an orange g, with the line: the right git identity in every repository, for you and your AI agents.">
 <meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="gitpro: the right git name, email and SSH key per repo">
+<meta name="twitter:description" content="The right git name, email and SSH key in every repository, for you and for the AI agents that commit for you.">
 <meta name="twitter:image" content="https://gitpro.dev/og-image.png">
+<meta name="twitter:image:alt" content="The gitpro icon, an orange g, with the line: the right git identity in every repository, for you and your AI agents.">
 <script>try{var t=localStorage.getItem("yk-theme");if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="icon" href="/favicon.ico" sizes="32x32">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="icon" href="favicon-32.png" sizes="32x32" type="image/png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600&amp;family=IBM+Plex+Mono:wght@400;500&amp;display=swap">
+<link rel="alternate" type="text/markdown" href="/llms.txt" title="gitpro for language models (llms.txt)">
+<link rel="preload" href="/fonts/schibsted-grotesk-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/fonts/ibm-plex-mono-400-latin.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="styles.css">
 <script src="site.js" defer></script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "WebSite",
+      "@id": "https://gitpro.dev/#website",
+      "url": "https://gitpro.dev/",
+      "name": "gitpro",
+      "inLanguage": "en",
+      "publisher": {"@id": "https://yantrakar.com/#organization"}
+    },
+    {
+      "@type": "Organization",
+      "@id": "https://yantrakar.com/#organization",
+      "name": "Yantrakar AS",
+      "url": "https://yantrakar.com"
+    },
+    {
+      "@type": "SoftwareApplication",
+      "@id": "https://gitpro.dev/#software",
+      "name": "gitpro",
+      "description": "One git name, email and SSH key per remote, set once for every GitHub and GitLab account. It also stops AI agents committing as the wrong person.",
+      "url": "https://gitpro.dev/",
+      "image": "https://gitpro.dev/icon.png",
+      "applicationCategory": "DeveloperApplication",
+      "operatingSystem": "Linux, macOS",
+      "softwareVersion": "0.3.3",
+      "softwareRequirements": "Git 2.36 or newer, Python 3.9 or newer, OpenSSH",
+      "license": "https://opensource.org/licenses/MIT",
+      "isAccessibleForFree": true,
+      "offers": {"@type": "Offer", "price": "0", "priceCurrency": "NOK"},
+      "downloadUrl": "https://pypi.org/project/gitpro/",
+      "installUrl": "https://pypi.org/project/gitpro/",
+      "sameAs": [
+        "https://github.com/Yantrakar/gitpro",
+        "https://pypi.org/project/gitpro/",
+        "https://marketplace.visualstudio.com/items?itemName=yantrakar.gitpro"
+      ],
+      "author": {"@id": "https://yantrakar.com/#organization"},
+      "publisher": {"@id": "https://yantrakar.com/#organization"}
+    },
+    {
+      "@type": "SoftwareSourceCode",
+      "@id": "https://gitpro.dev/#source",
+      "name": "gitpro",
+      "codeRepository": "https://github.com/Yantrakar/gitpro",
+      "programmingLanguage": "Python",
+      "license": "https://opensource.org/licenses/MIT",
+      "targetProduct": {"@id": "https://gitpro.dev/#software"},
+      "author": {"@id": "https://yantrakar.com/#organization"}
+    }
+  ]
+}
+</script>
 </head>
 <body id="top">
 <a class="skip" href="#main">Skip to content</a>
@@ -259,6 +320,33 @@
 </div>
 </section>
 
+<section class="sec" id="hosts" aria-labelledby="hosts-h">
+<div class="wrap">
+<div class="sec-head">
+<h2 id="hosts-h">Works with your git host</h2>
+<p class="prose">An identity is a host and, if you like, the owners under it, so any git host works, over SSH or HTTPS. The remote URL forms of these hosts are tested against real git on every change:</p>
+</div>
+<ul class="chips" aria-label="Git hosts whose URL forms are tested">
+<li class="chip">GitHub</li>
+<li class="chip">GitHub Enterprise Server</li>
+<li class="chip">GitLab.com</li>
+<li class="chip">GitLab self-managed</li>
+<li class="chip">Bitbucket Cloud</li>
+<li class="chip">Bitbucket Data Center</li>
+<li class="chip">Azure DevOps</li>
+<li class="chip">visualstudio.com</li>
+<li class="chip">Codeberg</li>
+<li class="chip">SourceHut</li>
+<li class="chip">Gitea</li>
+<li class="chip">Gitee</li>
+<li class="chip">Hugging Face</li>
+<li class="chip">AWS CodeCommit</li>
+<li class="chip">Launchpad</li>
+</ul>
+<p class="prose hosts-note">When a remote URL has a form the patterns miss, such as a user name in an HTTPS URL, a port, different letter case or <code>git+ssh://</code>, <code>gitpro why</code> says so and gives the fix.</p>
+</div>
+</section>
+
 <section class="sec" id="agents" aria-labelledby="agents-h">
 <div class="wrap split">
 <div class="split-text">
@@ -266,9 +354,10 @@
 <p class="prose">Coding agents run <code>git commit</code>, <code>git push</code> and <code>gh pr create</code> on their own. gitpro checks each of those calls before it runs. When the identity is wrong, the call is denied with a reason, and the agent has to ask you.</p>
 <ul class="proof">
 <li><span class="tag tag-accent">HOOK</span><p>A Claude Code PreToolUse hook, from <code>gitpro agent install</code> or the plugin. It only denies; it never grants anything.</p></li>
-<li><span class="tag">MCP</span><p>A read-only MCP server, <code>gitpro mcp</code>, so an agent can ask which identity a repository uses and why.</p></li>
+<li><span class="tag">MCP</span><p>A read-only MCP server, <code>gitpro mcp</code> or <code>uvx gitpro mcp</code>, so an agent can ask which identity a repository uses and why, and whether a commit would be blocked. Tools include <code>which_identity</code>, <code>why</code>, <code>check_commit</code> and <code>audit</code>.</p></li>
 <li><span class="tag">APPROVAL</span><p>Changes an agent proposes wait for your approval, and an interrupted apply can be recovered.</p></li>
 <li><span class="tag">AUDIT</span><p><code>gitpro audit</code> finds commits made as the wrong identity or by an agent; <code>--rewrite</code> fixes the unpushed ones.</p></li>
+<li><span class="tag">LLMS.TXT</span><p>Agents can read <a href="/llms.txt">gitpro.dev/llms.txt</a> for the commands, the MCP tools and the docs in plain text.</p></li>
 </ul>
 </div>
 <div class="split-fig">
@@ -513,7 +602,7 @@
 <div>
 <p class="label-h">Shipped</p>
 <ol class="log">
-<li><span class="tag">0.3.3 · 2026-10-14</span><p>The gitpro icon and gitpro.dev links on PyPI and the Marketplace, and metadata for the official MCP registry.</p></li>
+<li><span class="tag">0.3.3 · 2026-10-14</span><p>The gitpro icon and gitpro.dev links on PyPI and the Marketplace, and metadata for the official MCP registry. SourceHut <code>~user</code> owners, and fixes from <code>gitpro why</code> for more remote URL forms.</p></li>
 <li><span class="tag">0.3.2 · 2026-10-11</span><p>VS Code Marketplace extension, with the identity in Source Control.</p></li>
 <li><span class="tag">0.3 · 2026-10-09</span><p>Guided setup. Agent operations: preflight, approved changes and recoverable apply.</p></li>
 <li><span class="tag">0.2</span><p>Guard hooks, audit, the MCP server, the Claude Code hook, team policy in CI, dev containers, the VS Code identity bar and <code>lost</code>.</p></li>
@@ -524,9 +613,7 @@
 <p class="label-h">Next</p>
 <ol class="log">
 <li><span class="tag">PLANNED</span><p>Agent identities: commits that record both the agent and the person it acted for.</p></li>
-<li><span class="tag">PLANNED</span><p>Scoped grants that expire, so an agent can be allowed one kind of change for a limited time.</p></li>
 <li><span class="tag">PLANNED</span><p>A guard for instruction files: changes to AGENTS.md, CLAUDE.md, .cursorrules, MCP configs and hooks, and hidden Unicode in them.</p></li>
-<li><span class="tag">PLANNED</span><p>Handoff and review of risky agent steps, with the agent's stated intent attached.</p></li>
 </ol>
 </div>
 </div>
@@ -576,6 +663,10 @@
 <div class="sec-head"><h2 id="faq-h">Questions</h2></div>
 <div class="faq">
 <details>
+<summary>Can I use more than one GitHub account on one computer?</summary>
+<p>Yes. Each account is an identity with its own name, email and SSH key. gitpro writes one <code>includeIf hasconfig:remote.*.url</code> block per identity, so git picks the identity from the repository's remote URL, and SSH offers only that identity's key. The same works for GitLab and other hosts.</p>
+</details>
+<details>
 <summary>Where does the configuration live?</summary>
 <p>In <code>~/.config/gitpro.toml</code>, or wherever <code>$GITPRO_CONFIG</code> points. <code>gitpro setup</code> writes it for you; the <a href="https://github.com/Yantrakar/gitpro/blob/main/docs/guide.md#configuration" rel="noopener">guide</a> covers the format if you prefer to edit it.</p>
 </details>
@@ -612,6 +703,7 @@
 <li><a href="https://pypi.org/project/gitpro/" rel="noopener">PyPI</a></li>
 <li><a href="https://marketplace.visualstudio.com/items?itemName=yantrakar.gitpro" rel="noopener">VS Code</a></li>
 <li><a href="https://github.com/Yantrakar/gitpro/issues" rel="noopener">Report an issue</a></li>
+<li><a href="/llms.txt">llms.txt</a></li>
 <li><a href="https://yantrakar.com" rel="noopener">Made by Yantrakar AS ↗</a></li>
 <li><a href="https://verako.no" rel="noopener">Verako ↗</a></li>
 <li><a href="#top">Back to top ↑</a></li>
