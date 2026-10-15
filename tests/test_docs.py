@@ -462,3 +462,61 @@ def test_documentation_relative_links_and_anchors(name):
             headings = re.findall(r"^#{1,6} (.+)$", target.read_text(encoding="utf-8"), re.M)
             anchors = {re.sub(r"[^\w -]", "", h.lower()).replace(" ", "-") for h in headings}
             assert anchor in anchors, f"{name}: missing anchor {link}"
+
+
+# ---------------------------------------------------------------- gitpro.dev for search engines and agents
+
+SITE = (ROOT / "site/index.html").read_text(encoding="utf-8")
+LLMS = (ROOT / "site/llms.txt").read_text(encoding="utf-8")
+
+
+def test_site_title_and_description_fit_search_results():
+    title = re.search(r"<title>(.+?)</title>", SITE)[1]
+    description = re.search(r'<meta name="description" content="([^"]+)">', SITE)[1]
+    assert title.startswith("gitpro") and len(title) <= 60, title
+    assert 140 <= len(description) <= 155, len(description)
+    assert f'<meta name="twitter:title" content="{title}">' in SITE
+
+
+def test_site_structured_data_is_the_release():
+    data = json.loads(re.search(r'<script type="application/ld\+json">(.+?)</script>', SITE, re.S)[1])
+    app = next(n for n in data["@graph"] if n["@type"] == "SoftwareApplication")
+    assert app["softwareVersion"] == VERSION and f"v{VERSION}" in SITE
+    assert not {"aggregateRating", "review"} & set(app), "gitpro has no ratings or reviews"
+    assert "FAQPage" not in {n["@type"] for n in data["@graph"]}
+
+
+def test_llms_txt_lists_the_default_mcp_tools_and_real_docs():
+    from gitpro import mcp
+    assert LLMS.startswith("# gitpro\n\n> ")
+    listed = set(re.search(r"Tools: (.+?)\. Register", LLMS)[1].replace("`", "").split(", "))
+    assert listed == {name for name, tool in mcp.TOOLS.items() if not tool.execution}
+    for rel in re.findall(r"raw\.githubusercontent\.com/Yantrakar/gitpro/main/([^)]+)\)", LLMS):
+        assert (ROOT / rel).exists(), rel
+    assert INSTALL in LLMS and 'href="/llms.txt"' in SITE
+
+
+
+def test_site_loads_nothing_from_other_hosts():
+    pages = SITE + (ROOT / "site/404.html").read_text(encoding="utf-8")
+    css = (ROOT / "site/styles.css").read_text(encoding="utf-8")
+    fetched = [re.search(r'href="([^"]+)"', link)[1] for link in re.findall(r"<link\b[^>]*>", pages)
+               if re.search(r'rel="(?:stylesheet|preload|preconnect|icon|apple-touch-icon)"', link)]
+    fetched += re.findall(r'<(?:script|img)\b[^>]*\bsrc="([^"]+)"', pages) + re.findall(r'url\("?([^")]+)', css)
+    assert fetched and not [u for u in fetched if "//" in u], fetched
+    for url in fetched:
+        assert (ROOT / "site" / url.lstrip("/")).is_file(), url
+
+
+def test_site_meta_writes_version_and_git_dates():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("site_meta", ROOT / "design/site_meta.py")
+    meta = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(meta)
+    assert meta.release() == VERSION and meta.with_version(SITE, VERSION) == SITE
+    bumped = meta.with_version(SITE, "9.8.7")
+    assert '"softwareVersion": "9.8.7"' in bumped and "· v9.8.7</p>" in bumped
+    sitemap = (ROOT / "site/sitemap.xml").read_text(encoding="utf-8")
+    dated = meta.with_dates(sitemap, lambda path: f"date of {path.relative_to(ROOT).as_posix()}")
+    assert dated.count("<lastmod>") == sitemap.count("<lastmod>") == 1
+    assert "<lastmod>date of site/index.html</lastmod>" in dated
