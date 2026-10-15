@@ -3,17 +3,22 @@
 	const d = document, root = d.documentElement;
 	const tb = d.querySelector('.theme-toggle');
 	if (tb) {
+		/* system = no data-theme (the device decides; dark when it says nothing). Each click: system, then the opposite of the device, then the device, then system again. */
 		const mq = matchMedia('(prefers-color-scheme: light)');
-		const next = () => (root.getAttribute('data-theme') || (mq.matches ? 'light' : 'dark')) === 'dark' ? 'light' : 'dark';
-		const paint = () => { const n = next(); tb.querySelector('span').textContent = n === 'light' ? 'Switch to light' : 'Switch to dark'; tb.setAttribute('aria-label', 'Switch to ' + n + ' theme'); };
-		tb.hidden = false; paint();
+		const cur = () => root.getAttribute('data-theme') || 'system';
+		const dev = () => mq.matches ? 'light' : 'dark';
+		const next = v => v === 'system' ? (dev() === 'dark' ? 'light' : 'dark') : v === dev() ? 'system' : dev();
+		const label = v => tb.querySelector('[data-icon="' + v + '"] .sr-only').textContent;
+		const mark = v => { tb.dataset.current = v; tb.title = label(v); };
+		const st = d.createElement('span');
+		st.className = 'sr-only'; st.setAttribute('role', 'status'); tb.after(st);
+		mark(cur()); tb.hidden = false;
 		tb.onclick = () => {
-			const n = next();
-			root.setAttribute('data-theme', n);
-			try { localStorage.setItem('yk-theme', n); } catch (e) { }
-			paint();
+			const v = next(cur());
+			if (v === 'system') root.removeAttribute('data-theme'); else root.setAttribute('data-theme', v);
+			try { if (v === 'system') localStorage.removeItem('yk-theme'); else localStorage.setItem('yk-theme', v); } catch (e) { }
+			mark(v); st.textContent = label(v);
 		};
-		mq.addEventListener('change', paint);
 	}
 	/* copy buttons: hidden without JS, since they need it */
 	d.querySelectorAll('button[data-copy]').forEach(b => {
