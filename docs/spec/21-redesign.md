@@ -1,6 +1,6 @@
 # 21 · Redesign: two steps, one judgement, no silent winners
 
-Status: **implemented in 0.4.0 (unreleased)**, 2026-10-16: PR #19 (pins
+Status: **released in 0.4.0 (2026-10-16)**, 2026-10-16: PR #19 (pins
 name a remote, scan's `ambiguous` and hook checks) and PR #20 (one-step
 setup, spec 22's surface). §7 is replaced by spec 22. User-facing behavior is
 in the README, `docs/guide.md` and `CHANGELOG.md`; decisions are in

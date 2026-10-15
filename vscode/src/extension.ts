@@ -68,6 +68,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<Api> {
     scanMessage: overrides.scanMessage, setConfirm: overrides.setConfirm, ui, caps, reloadCapabilities };
 }
 
+function configFile(): string {
+  return process.env.GITPRO_CONFIG || path.join(os.homedir(), ".config", "gitpro.toml");
+}
+
 /** setup, pin, unpin, openConfig: the commands that predate the feature packages. */
 function registerCore(context: vscode.ExtensionContext, cli: Cli): void {
   const refresh = () => vscode.commands.executeCommand("gitpro.refresh");
@@ -76,9 +80,11 @@ function registerCore(context: vscode.ExtensionContext, cli: Cli): void {
     if (!cli.require("setup")) {
       return;
     }
-    // `gitpro setup` asks questions (scan, review, confirm), so it runs in a terminal.
-    cli.log.info(`$ ${cli.executable()} setup    (in a terminal)`);
-    vscode.window.createTerminal({ name: "gitpro setup", shellPath: cli.executable(), shellArgs: ["setup"],
+    // `gitpro setup` asks questions (scan, review, confirm), so it runs in a terminal, on the config
+    // this window uses.
+    const file = configFile();
+    cli.log.info(`$ ${cli.executable()} setup -c ${file}    (in a terminal)`);
+    vscode.window.createTerminal({ name: "gitpro setup", shellPath: cli.executable(), shellArgs: ["setup", "-c", file],
       cwd: cli.dir() || os.homedir() }).show();
   }
 
@@ -111,7 +117,7 @@ function registerCore(context: vscode.ExtensionContext, cli: Cli): void {
       }
     },
     "gitpro.openConfig": async () => {
-      const file = process.env.GITPRO_CONFIG || path.join(os.homedir(), ".config", "gitpro.toml");
+      const file = configFile();
       if (!fs.existsSync(file)) {
         const wizard = cli.caps.has("setup") ? ["Set Up"] : [];
         const discover = cli.caps.has("init.discover") ? ["Create with Discovery"] : [];

@@ -74,7 +74,7 @@ def test_rejects_writable_config(home):
 
 
 def test_find_order(home, tmp_path, monkeypatch):
-    with pytest.raises(config.ConfigError, match="gitpro init"):
+    with pytest.raises(config.ConfigError, match="gitpro setup"):
         config.find(None, home)
     user = write_config(home, GOOD_DEFAULT)
     assert config.find(None, home) == (user, "user config")

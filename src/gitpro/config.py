@@ -197,7 +197,7 @@ def find(explicit: Path | None, home: Path) -> tuple[Path, str]:
     if (home / USER_CONFIG).is_file():
         return home / USER_CONFIG, "user config"
     raise ConfigError(f"no config found (looked at -c, ${ENV_VAR}, ~/{USER_CONFIG}); "
-                      "create one with: gitpro init")
+                      "create one with: gitpro setup")
 
 
 # ---------------------------------------------------------------- validation

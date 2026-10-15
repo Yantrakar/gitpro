@@ -1,6 +1,6 @@
 # 22. One command surface (0.4.0)
 
-Status: **implemented in 0.4.0 (unreleased)**, 2026-10-16, PR #20. Builds on
+Status: **released in 0.4.0 (2026-10-16)**, 2026-10-16, PR #20. Builds on
 spec 21 (setup, the `ambiguous` problem, scan's checks), whose §7 this spec
 details and replaces. What users need is in the README, `docs/guide.md` and
 `CHANGELOG.md`; the choices made while building it, and what is still open,

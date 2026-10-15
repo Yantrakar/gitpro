@@ -60,7 +60,7 @@
       "image": "https://gitpro.dev/icon.png",
       "applicationCategory": "DeveloperApplication",
       "operatingSystem": "Linux, macOS",
-      "softwareVersion": "0.3.4",
+      "softwareVersion": "0.4.0",
       "softwareRequirements": "Git 2.36 or newer, Python 3.9 or newer, OpenSSH",
       "license": "https://opensource.org/licenses/MIT",
       "isAccessibleForFree": true,
@@ -115,7 +115,7 @@
 <section class="hero hero-home" aria-labelledby="hero-h">
 <div class="wrap hero-grid">
 <div class="hero-text">
-<p class="eyebrow">OPEN SOURCE · MIT · v0.3.4</p>
+<p class="eyebrow">OPEN SOURCE · MIT · v0.4.0</p>
 <h1 id="hero-h">The right git name, email and SSH key in every repository. <span class="h1-quiet">For you, and for the AI agents that commit for you.</span></h1>
 <p class="lead">gitpro picks the identity by the repository's remote URL, not by the folder you cloned it into. It writes plain git and SSH config, so nothing runs in the background.</p>
 <div class="cmd">
@@ -557,7 +557,7 @@
 <h3>MCP server</h3>
 <p>Registers the read-only server with Cursor, Gemini or opencode. The Cursor and Gemini commit hooks are experimental.</p>
 <div class="tile-foot">
-<p class="term"><code>gitpro mcp install --agent cursor -y</code></p>
+<p class="term"><code>gitpro setup --agent cursor</code></p>
 </div>
 </div>
 </div>
@@ -599,6 +599,7 @@
 <div>
 <p class="label-h">Shipped</p>
 <ol class="log">
+<li><span class="tag">0.4.0 · 2026-10-16</span><p><code>gitpro setup</code> finds your identities in the repositories you already have and sets up everything in one step. One short list of commands, the same in the terminal, VS Code and MCP: <code>why</code> also checks a commit, <code>scan --lost</code> finds unpushed work, <code>pin --remove</code> and <code>audit --fix</code>. The commands they replace still work and are removed in 0.5.0.</p></li>
 <li><span class="tag">0.3.4 · 2026-10-15</span><p><code>gitpro report</code>: a redacted bug, crash or blocked-commit report, opened as a GitHub issue only when you say yes, and <code>--security</code> for the private form. The <code>draft_report</code> MCP tool, a Report an Issue command in VS Code, and a listing in the official MCP Registry.</p></li>
 <li><span class="tag">0.3.3 · 2026-10-15</span><p>The gitpro icon and gitpro.dev links on PyPI and the Marketplace, and metadata for the official MCP registry. SourceHut <code>~user</code> owners, and fixes from <code>gitpro why</code> for more remote URL forms.</p></li>
 <li><span class="tag">0.3.2 · 2026-10-11</span><p>VS Code Marketplace extension, with the identity in Source Control.</p></li>

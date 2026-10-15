@@ -1442,7 +1442,7 @@ $ gitpro --version --json
 {
   "ok": true,
   "command": "version",
-  "version": "0.3.4",
+  "version": "0.4.0",
   "python": "3.12.3",
   "capabilities": [
     "agent-check",
@@ -1629,7 +1629,7 @@ and exits 2; set `GITPRO_DEBUG=1` to also see the traceback.
   the fix, and runs `setup`, `scan`, `pin`, `clone` and more. It has views for
   repo-level overrides and lost work. Install it from the Marketplace with
   `code --install-extension yantrakar.gitpro`, or build it from source with
-  `cd vscode && npm ci && npx vsce package && code --install-extension gitpro-0.3.4.vsix`.
+  `cd vscode && npm ci && npx vsce package && code --install-extension gitpro-0.4.0.vsix`.
   See [`vscode/README.md`](../vscode/README.md).
 - **Claude Code**: a [skill](../skills/gitpro/SKILL.md) teaches Claude to
   edit the config from plain requests, show `setup -n`, and run `setup -y` only after you
@@ -1652,7 +1652,7 @@ and exits 2; set `GITPRO_DEBUG=1` to also see the traceback.
 ```sh
 python -m venv .venv && .venv/bin/pip install -e . pytest pytest-xdist && .venv/bin/pytest -n auto
 .venv/bin/python -m pip wheel --no-deps --wheel-dir dist .
-.venv/bin/python tests/smoke_wheel.py dist/gitpro-0.3.4-py3-none-any.whl
+.venv/bin/python tests/smoke_wheel.py dist/gitpro-0.4.0-py3-none-any.whl
 .venv/bin/python tests/smoke_providers.py      # remote URL forms of common git hosts (-v: every case)
 cd vscode && npm ci && npm test                  # extension unit tests
 xvfb-run -a npm run test:integration             # starts VS Code; drop xvfb-run with a display

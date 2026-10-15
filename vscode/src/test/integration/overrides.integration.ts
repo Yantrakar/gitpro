@@ -44,7 +44,7 @@ async function setupLauncher(api: Api): Promise<void> {
       const options = terminal.creationOptions;
       assert.ok("shellPath" in options);
       assert.equal(options.shellPath, env("GI_GITPRO"));
-      assert.deepEqual(options.shellArgs, ["setup", "--write", "-c", file]);
+      assert.deepEqual(options.shellArgs, ["setup", "-c", file]);
       assert.equal(typeof await terminal.processId, "number");
       assert.equal(fs.existsSync(file), false, "launching setup must not write a config");
     } finally {
@@ -60,8 +60,8 @@ async function setupLauncher(api: Api): Promise<void> {
       assert.ok(api.caps.has("setup"));
       await launch("gitpro.setup");
       api.ui.info = async (_msg, ...choices) => {
-        assert.deepEqual(choices, ["Guided Setup", "Create with Discovery", "Create from Example"]);
-        return "Guided Setup";
+        assert.deepEqual(choices, ["Set Up", "Create with Discovery", "Create from Example"]);
+        return "Set Up";
       };
       await launch("gitpro.openConfig");
       api.ui.info = info;

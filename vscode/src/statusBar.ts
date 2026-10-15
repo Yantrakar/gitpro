@@ -156,7 +156,7 @@ export function registerIdentityBar(context: vscode.ExtensionContext, cli: Cli, 
     if (mine !== generation) {
       return latest;
     }
-    if (!r || (r.code !== 0 && r.code !== 1)) {
+    if (!r || typeof r.code !== "number" || !call.accept.includes(r.code)) {
       if (r && /not a git repository/.test(failure(r))) {
         hide();
       } else {
@@ -164,13 +164,23 @@ export function registerIdentityBar(context: vscode.ExtensionContext, cli: Cli, 
       }
       return;
     }
-    type W = { remotes: Record<string, string>; settings: Record<string, { value: string | null; origin: string | null }> };
+    type W = { error?: string; repo?: string; remotes: Record<string, string>;
+      settings?: Record<string, { value: string | null; origin: string | null }> };
     let w: W;
     try {
       w = JSON.parse(r.stdout) as W;
     } catch {
       log.error(`✗ gitpro ${call.argv.slice(0, 2).join(" ")} printed no JSON for ${dir}`);
       gitproMissing();
+      return;
+    }
+    if (!w.settings) {
+      // `why --json` without a config has `repo` and `settings` only for a git repository
+      if (!w.repo || /not a git repository/.test(w.error ?? failure(r))) {
+        hide();
+      } else {
+        gitproMissing();
+      }
       return;
     }
     const set = (k: string) => {

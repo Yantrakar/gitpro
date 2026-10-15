@@ -2,7 +2,7 @@
   "name": "gitpro",
   "displayName": "gitpro",
   "description": "Shows the git name and email this repo commits with, finds repos that override gitpro, and runs gitpro setup, scan and pin.",
-  "version": "0.3.4",
+  "version": "0.4.0",
   "icon": "media/icon.png",
   "publisher": "yantrakar",
   "license": "MIT",

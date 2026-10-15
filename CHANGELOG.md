@@ -4,7 +4,7 @@ All notable changes to gitpro. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Release notes for
 earlier versions are on [GitHub releases](https://github.com/Yantrakar/gitpro/releases).
 
-## 0.4.0 (unreleased)
+## 0.4.0 (2026-10-16)
 
 ### Added
 
@@ -42,6 +42,8 @@ earlier versions are on [GitHub releases](https://github.com/Yantrakar/gitpro/re
   names both. In 0.3 it printed a preview and exited 0.
 - `gitpro why --json` without a config still exits 2 with the error, and now
   also has the repo's `settings` and `remotes`.
+- "No config found" errors (and `doctor`'s fix for them) now name
+  `gitpro setup` instead of `gitpro init`.
 - `check` without `--policy`, `--repo` or `--range` is deprecated; the team
   policy check (`check --policy FILE --range A..B`, `check --repo DIR`) stays
   and is listed under "more".

@@ -257,7 +257,7 @@ def _learned(out, home: Path, path: Path, roots: List[Path], cfg: Optional[confi
     if not found.identities:
         out.print("No identities found in those repos" + (": " + "; ".join(found.notes) if found.notes else "."))
         return []
-    out.print(Text(f"\nFound {view.plural(len(found.identities), 'identity')} in "
+    out.print(Text(f"\nFound {view.plural(len(found.identities), 'identity', 'identities')} in "
                    f"{view.plural(found.committed, 'repo')} with commits under {shown}:", style="bold"))
     table = Table(box=None, show_header=False, pad_edge=False, padding=(0, 2, 0, 0))
     for _ in range(6):
