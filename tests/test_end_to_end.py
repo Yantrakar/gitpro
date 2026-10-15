@@ -446,9 +446,9 @@ def test_scan_reports_and_removes_repo_overrides(home, tmp_path, capsys):
     assert "    1  Work Me <me@corp.test>          ~/.gitconfig-work-github" in lines
     assert "    1  see below                       set in the repo" in lines  # counted by where the email comes from
     assert "Personal Me <me@personal.test>  (1 repo)" in lines
-    flat = " ".join(out.split())  # a long temp path wraps onto its own line
-    assert f"└── from Personal Me <old@personal.test>: {stale.resolve()} " in flat
-    assert f"└── unchanged: {same.resolve()} " in flat
+    flat = "".join(out.split())  # a long temp path wraps, mid-word on macOS
+    assert "".join(f"└── from Personal Me <old@personal.test>: {stale.resolve()} Work Me <me@corp.test>".split()) in flat
+    assert "".join(f"└── unchanged: {same.resolve()} to keep some".split()) in flat
     assert "dry run, nothing changed. Remove 2 settings from 2 repos: gitpro scan --fix " + str(root) in lines
     assert git(stale, "config", "user.email") == "old@personal.test"  # scan alone writes nothing
 
