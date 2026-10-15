@@ -62,7 +62,7 @@ def test_parser_has_every_package():
     # a sanity check that the walk works and every package registered its commands
     for path in ("why", "guard install", "agent status", "forge similar", "mcp install", "policy lint",
                  "devcontainer", "prompt", "completion", "doctor", "lost", "audit", "clone", "env", "discover",
-                 "auth", "team", "scan", "agent-check", "guard check", "setup"):
+                 "auth", "team", "scan", "agent-check", "guard check", "setup", "report"):
         assert path in PATHS, path
 
 
@@ -375,6 +375,18 @@ def test_example_toml_placeholders_are_refused(home):
 
 def _json(rel: str):
     return json.loads((ROOT / rel).read_text(encoding="utf-8"))
+
+
+ISSUES = "https://github.com/Yantrakar/gitpro/issues"
+
+
+def test_users_are_told_where_to_report_problems():
+    top, _ = cli.build_parser()
+    assert ISSUES in top.format_help()
+    assert ISSUES in (ROOT / "README.md").read_text(encoding="utf-8") and ISSUES in GUIDE
+    assert f'Issues = "{ISSUES}"' in (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    vsc = _json("vscode/package.json")
+    assert vsc["bugs"]["url"] == ISSUES and vsc["qna"] == ISSUES
 
 
 def test_manifests_parse():

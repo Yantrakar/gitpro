@@ -409,6 +409,23 @@ def tool_identities(args: dict, ctx: Ctx) -> dict:
                             "clone_dir": i.clone_dir, "sign": config.signs(i, d)} for i in cfg.identities]}
 
 
+def tool_draft_report(args: dict, ctx: Ctx) -> dict:
+    """A redacted bug report and its prefilled issue url; nothing is sent, opened or recorded."""
+    from . import report
+    kind = args.get("kind", "bug")
+    repo = _repo(args["path"]) if "path" in args else None
+    try:
+        d = report.build_draft(kind, message=args.get("message"), repo=repo, config=ctx.cfg_path)
+    except report.ReportError as e:
+        raise ToolError(str(e)) from None
+    if d.hits:
+        kinds = ", ".join(dict.fromkeys(h["kind"] for h in d.hits))
+        where = ", ".join(dict.fromkeys(h["section"] for h in d.hits))
+        raise ToolError(f"no draft: it would contain {kinds} in {where}; nothing was shown or sent")
+    return {"ok": True, "command": "report", "title": d.title, "body": d.body, "url": d.url,
+            "security_url": report.ADVISORY_URL, "truncated": d.truncated}
+
+
 # ---------------------------------------------------------------- the registry
 
 def _schema(props: dict, required: Tuple[str, ...] = ()) -> dict:
@@ -487,6 +504,14 @@ TOOLS: Dict[str, Tool] = {t.name: t for t in (
          tool_audit, "gitpro.audit"),
     Tool("identities", "The configured identities (name, email, host, owners, forge accounts, signing); no key "
          "contents, no extra git settings.", _schema({}), tool_identities),
+    Tool("draft_report", "Draft a redacted gitpro bug report (versions, a redacted why, the last crash or "
+         "denial) and the prefilled GitHub issue URL. It never sends or opens anything. Show the user the draft "
+         "and the URL and let them decide; for a security problem, give them security_url instead of an issue.",
+         _schema({"path": PATH, "kind": {"type": "string", "enum": ["bug", "crash", "denial"],
+                                         "description": "what to report (default: bug)"},
+                  "message": {"type": "string", "minLength": 1, "maxLength": 2000,
+                              "description": "what happened (redacted before it is used)"}}),
+         tool_draft_report),
     Tool("preflight", "Versioned operation decision and state token for commit, push or GitHub PR creation. "
          "Read-only; online=true explicitly permits account/destination reads. Ready is not authorization.",
          _schema({"request": REQUEST_SCHEMA, "online": {"type": "boolean"}}, ("request",)), tool_preflight),
@@ -695,6 +720,11 @@ class Server:
             tb = traceback.format_exc()
             sys.stderr.write(tb)
             self.note("!", tb)
+            try:
+                from . import incident
+                incident.record_crash(f"mcp {tool.name}", e)
+            except Exception:  # noqa: BLE001 - recording never changes the answer
+                pass
             return self.failed(f"internal error: {type(e).__name__}")
 
     def result(self, obj: dict) -> dict:

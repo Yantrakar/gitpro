@@ -7,6 +7,7 @@ import { Cli, failure, ui } from "./cli";
 import { registerClone } from "./clone";
 import { registerDevcontainer } from "./devcontainer";
 import { registerLost } from "./lost";
+import { reportIssue } from "./report";
 import { registerRoots, RootsSeam } from "./roots";
 import { tilde } from "./scan";
 
@@ -19,6 +20,8 @@ export function registerFeatures(context: vscode.ExtensionContext, cli: Cli, cap
   context.subscriptions.push(
     vscode.commands.registerCommand("gitpro.copyEnv", () => copyEnv(cli)), // 12
     vscode.commands.registerCommand("gitpro.doctor", () => runDoctor(cli)), // 16
+    vscode.commands.registerCommand("gitpro.reportIssue", (opts?: { crash?: boolean }) =>
+      runReport(context, cli, opts?.crash === true)), // 19
   );
   return roots;
 }
@@ -57,4 +60,24 @@ export async function runDoctor(cli: Cli): Promise<void> {
   }
   const dir = cli.dir();
   await cli.show(dir ? ["doctor", dir] : ["doctor"], { cwd: dir ?? os.homedir(), accept: [0, 1] });
+}
+
+/** 19: draft a redacted issue with `gitpro report --json --print`, show it, and offer the prefilled form. */
+export async function runReport(context: vscode.ExtensionContext, cli: Cli, crash: boolean): Promise<void> {
+  const dir = cli.dir() ?? vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+  await reportIssue({
+    version: String((context.extension.packageJSON as { version?: string }).version ?? "0"),
+    dir: () => dir,
+    // exit 2 is a blocked draft: its JSON says which kinds and sections
+    run: (args, cwd) => cli.run(args, { cwd, accept: [0, 2], quiet: true }),
+    preview: async (body) => {
+      const doc = await vscode.workspace.openTextDocument({ language: "markdown", content: body });
+      await vscode.window.showTextDocument(doc, { preview: true });
+    },
+    modal: (msg, ...items) => Promise.resolve(ui.modal(msg, ...items)),
+    error: (msg) => void ui.error(msg),
+    info: (msg) => void ui.info(msg),
+    openExternal: (url) => Promise.resolve(vscode.env.openExternal(vscode.Uri.parse(url, true))),
+    copy: (text) => Promise.resolve(vscode.env.clipboard.writeText(text)),
+  }, { crash });
 }

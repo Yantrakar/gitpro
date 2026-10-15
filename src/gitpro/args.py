@@ -11,6 +11,8 @@ so both routes accept the same arguments without importing cli.
 from __future__ import annotations
 
 import argparse
+import os
+import re
 import shlex
 import subprocess
 import sys
@@ -64,6 +66,40 @@ def fail(msg: str, args: object) -> int:
     return 2
 
 
+_CMD_RE = re.compile(r"^[a-z][a-z0-9-]{0,30}$")
+
+
+def _command_path(args: object) -> str:
+    """The command words of parsed args ("forge similar"), or "gitpro"."""
+    words = [getattr(args, "command", None)]
+    for key, val in sorted(vars(args).items()) if hasattr(args, "__dict__") else []:
+        if key != "command" and key.endswith(("_command", "_action")):
+            words.append(val)
+    return " ".join(w for w in words if isinstance(w, str) and _CMD_RE.match(w)) or "gitpro"
+
+
+def _internal_error(args: object, exc: Exception) -> int:
+    """An unexpected exception: write the crash record, print two lines (the traceback only with
+    GITPRO_DEBUG=1), exit 2."""
+    from . import incident
+    command = _command_path(args)
+    incident.record_crash(command, exc)
+    name = type(exc).__qualname__
+    if not re.match(r"^[A-Za-z_][A-Za-z0-9_.]{0,80}$", name):
+        name = "Exception"
+    if os.environ.get("GITPRO_DEBUG") == "1":
+        import traceback
+        traceback.print_exception(type(exc), exc, exc.__traceback__)
+    if getattr(args, "json", False):
+        from . import jsonout
+        jsonout.error(getattr(args, "command", None) or "gitpro", f"internal error ({name})")
+    else:
+        print(f"✗ internal error ({name}): this is a gitpro bug", file=sys.stderr)
+        print("→ draft a report with: gitpro report --crash", file=sys.stderr)
+    return 2
+
+
+
 def guarded(func: Callable[[argparse.Namespace], int], args: argparse.Namespace) -> int:
     """func(args) with gitpro's error handling: ConfigError, CalledProcessError, OSError and UnicodeError
     become exit 2 through fail(); Ctrl-C / EOF exit 130."""
@@ -80,3 +116,5 @@ def guarded(func: Callable[[argparse.Namespace], int], args: argparse.Namespace)
     except (KeyboardInterrupt, EOFError):
         print(file=sys.stderr)
         return 130
+    except Exception as e:   # noqa: BLE001 - a bug in gitpro: record it, say so, exit 2
+        return _internal_error(args, e)

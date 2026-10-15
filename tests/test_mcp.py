@@ -1046,3 +1046,33 @@ def test_uninstall_project_drops_empty_servers(home, tmp_path, monkeypatch, caps
     (repo / ".mcp.json").write_text(json.dumps({"mcpServers": {"gitpro": ENTRY}, "other": 1}))
     assert run("mcp", "uninstall", "--scope", "project", "--write", "-y") == 0
     assert json.loads((repo / ".mcp.json").read_text()) == {"other": 1}
+
+
+# ---------------------------------------------------------------- draft_report (19 report)
+
+def test_draft_report_is_a_read_only_default_tool():
+    tools = {t["name"]: t for t in rpc({"jsonrpc": "2.0", "id": 1, "method": "tools/list"})[0]["result"]["tools"]}
+    tool = tools["draft_report"]
+    assert tool["annotations"]["readOnlyHint"] is True and tool["annotations"]["openWorldHint"] is False
+    props = tool["inputSchema"]["properties"]
+    assert tool["inputSchema"]["required"] == [] and props["message"]["maxLength"] == 2000
+    assert props["kind"]["enum"] == ["bug", "crash", "denial"]
+    assert not mcp.TOOLS["draft_report"].execution
+
+
+def test_draft_report_returns_a_draft_and_two_urls(work_repo):
+    got = payload(call("draft_report", {"path": str(work_repo), "message": "it broke"}))
+    assert set(got) == {"ok", "command", "title", "body", "url", "security_url", "truncated"}
+    assert got["url"].startswith("https://github.com/Yantrakar/gitpro/issues/new?") and "it broke" in got["body"]
+    assert got["security_url"] == "https://github.com/Yantrakar/gitpro/security/advisories/new"
+    assert got["truncated"] is False and str(work_repo) not in json.dumps(got)
+
+
+def test_draft_report_rejects_a_long_message_and_a_bad_kind():
+    assert rpc(init(), call_msg("draft_report", {"message": "a " * 1001}))[1]["error"]["code"] == -32602
+    assert rpc(init(), call_msg("draft_report", {"kind": "security"}))[1]["error"]["code"] == -32602
+
+
+def test_draft_report_without_a_record_is_an_error_result():
+    r = call("draft_report", {"kind": "crash"})
+    assert r["isError"] is True and "no crash recorded" in text_of(r)
