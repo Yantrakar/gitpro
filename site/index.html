@@ -354,7 +354,7 @@
 <p class="prose">Coding agents run <code>git commit</code>, <code>git push</code> and <code>gh pr create</code> on their own. gitpro checks each of those calls before it runs. When the identity is wrong, the call is denied with a reason, and the agent has to ask you.</p>
 <ul class="proof">
 <li><span class="tag tag-accent">HOOK</span><p>A Claude Code PreToolUse hook, from <code>gitpro agent install</code> or the plugin. It only denies; it never grants anything.</p></li>
-<li><span class="tag">MCP</span><p>A read-only MCP server, <code>gitpro mcp</code> or <code>uvx gitpro mcp</code>, so an agent can ask which identity a repository uses and why, and whether a commit would be blocked. Tools include <code>which_identity</code>, <code>why</code>, <code>check_commit</code> and <code>audit</code>.</p></li>
+<li><span class="tag">MCP</span><p>A read-only MCP server, <code>gitpro mcp</code> or <code>uvx gitpro mcp</code>, so an agent can ask which identity a repository uses and why, and whether a commit would be blocked. Tools include <code>which_identity</code>, <code>why</code>, <code>check_commit</code>, <code>audit</code> and <code>draft_report</code>.</p></li>
 <li><span class="tag">APPROVAL</span><p>Changes an agent proposes wait for your approval, and an interrupted apply can be recovered.</p></li>
 <li><span class="tag">AUDIT</span><p><code>gitpro audit</code> finds commits made as the wrong identity or by an agent; <code>--rewrite</code> fixes the unpushed ones.</p></li>
 <li><span class="tag">LLMS.TXT</span><p>Agents can read <a href="/llms.txt">gitpro.dev/llms.txt</a> for the commands, the MCP tools and the docs in plain text.</p></li>

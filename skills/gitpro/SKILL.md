@@ -271,7 +271,7 @@ Notes:
 The gitpro plugin (or `gitpro mcp install`) gives you an MCP server with
 these tools: `which_identity`, `why`, `check_commit`, `scan`,
 `identities`, `env_for`, `lost`, `audit`, `preflight`, `operation_status`, `reconcile_operation`,
-`propose_change`, `change_status`.
+`propose_change`, `change_status`, `draft_report`.
 The explicitly enabled execution server additionally exposes `run_operation`,
 `apply_change` and `recover_change`. There is no approval tool or client-selectable
 policy. The operator can configure `gitpro mcp --allow-execution --approval-policy PATH`.

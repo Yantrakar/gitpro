@@ -619,3 +619,17 @@ def test_client_and_message_limits(world, capsys):
     rc, out, err = go(world, capsys, "--print", "-m", "ab " * 700)
     assert rc == 2 and "2000" in err
     assert go(world, capsys, "--print", "-m", "ab " * 666)[0] == 0
+
+
+# ================================================================ the MCP tool
+
+def test_draft_report_tool_is_clean_and_sends_nothing(world, monkeypatch, capsys):
+    from test_mcp import call_msg, init, rpc
+    record_world(world, monkeypatch, capsys)
+    for args in ({"path": str(world.repo), "message": "it broke"}, {"kind": "crash"}, {"kind": "denial"}):
+        out = rpc(init(), call_msg("draft_report", args))[1]["result"]
+        assert out["isError"] is False, out
+        assert_clean(out["content"][0]["text"], world, "mcp result")
+    out = rpc(init(), call_msg("draft_report", {"message": f"mail {CANARY_EMAIL} from {world.home}"}))[1]["result"]
+    assert_clean(out["content"][0]["text"], world, "mcp message")      # redacted, or refused: never echoed
+    assert world.fake_bin.calls("gh") == [] and world.opened == []

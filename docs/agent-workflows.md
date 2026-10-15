@@ -420,7 +420,7 @@ optional MCP logs as private; the backup database necessarily contains old bytes
 ## MCP
 
 The default `gitpro mcp` adds read-only `preflight`, `operation_status`, `reconcile_operation`,
-`propose_change` and `change_status` tools. `run_operation`, `apply_change` and
+`propose_change`, `change_status` and `draft_report` tools. `run_operation`, `apply_change` and
 `recover_change` are neither listed nor callable unless the operator starts:
 
 ```sh

@@ -900,7 +900,7 @@ does nothing.
 `gitpro mcp` is a stdio MCP server with read-only tools by default:
 `which_identity`, `why`, `check_commit`, `scan`, `identities`, plus
 `lost`, `audit`, `env_for` when installed, and the structured `preflight`,
-`operation_status`, `reconcile_operation`, `propose_change` and `change_status` tools. Register it with `gitpro mcp
+`operation_status`, `reconcile_operation`, `propose_change`, `change_status` and `draft_report` tools. Register it with `gitpro mcp
 install --agent claude|cursor|gemini|opencode` or by installing the
 gitpro plugin. The default tools do not write target files. An operator can
 explicitly enable `run_operation`, `apply_change` and `recover_change` with
