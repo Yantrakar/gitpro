@@ -146,6 +146,11 @@
         "command": "gitpro.doctor",
         "title": "Doctor",
         "category": "gitpro"
+      },
+      {
+        "command": "gitpro.reportIssue",
+        "title": "Report an Issue",
+        "category": "gitpro"
       }
     ],
     "viewsContainers": {

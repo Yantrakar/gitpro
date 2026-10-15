@@ -7,6 +7,7 @@ import * as vscode from "vscode";
 import type { Capabilities } from "./capabilities";
 import { missing } from "./capabilities";
 import { exec, redactUrl, Result, RunOptions } from "./exec";
+import { isCrash } from "./report";
 import { tilde } from "./scan";
 
 export const INSTALL = "pipx install gitpro";
@@ -82,7 +83,14 @@ export function makeCli(context: vscode.ExtensionContext, log: vscode.LogOutputC
   }
 
   function failed(r: Result): void {
-    void ui.error(failure(r), "Show Log").then((pick) => pick && log.show());
+    const items = isCrash(r.stderr) ? ["Show Log", "Report an Issue"] : ["Show Log"]; // 19
+    void ui.error(failure(r), ...items).then((pick) => {
+      if (pick === "Report an Issue") {
+        void vscode.commands.executeCommand("gitpro.reportIssue", { crash: true });
+      } else if (pick) {
+        log.show();
+      }
+    });
   }
 
   async function run(args: string[], opts: RunOptions = {}): Promise<Result | undefined> {
