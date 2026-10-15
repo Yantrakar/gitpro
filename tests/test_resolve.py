@@ -623,6 +623,46 @@ def test_url_form_git_plus_ssh_port(cfg, tmp_path):
     assert p.fix_argv[-1] == "ssh://me@git.launchpad.net/~me/r"
 
 
+CC_HOST = "git-codecommit.us-east-2.amazonaws.com"
+CC = f"""
+[default]
+name = "Default Me"
+email = "me@default.test"
+
+[[identity]]
+id = "cc"
+name = "Cc"
+email = "cc@corp.test"
+host = "{CC_HOST}"
+owners = ["v1/repos"]
+"""
+
+
+def test_url_form_codecommit_user_git(cfg, tmp_path):
+    repo = repo_with_remote(tmp_path, "app", f"ssh://{CC_HOST}/v1/repos/r")
+    p = [p for p in resolve.compare(repo, load(cfg(CC))).problems if p.code == "url_form"][0]
+    assert p.fix_argv is None
+    assert p.message == (f"origin is ssh://{CC_HOST}/v1/repos/r; "
+                         "it looks like cc, but CodeCommit's SSH user is the SSH key ID, not git")
+    assert p.fix == 'set ssh_user = "<your SSH key ID>" on identity cc in the gitpro config, then run: gitpro apply'
+
+
+def test_url_form_codecommit_key_id_keeps_argv(cfg, tmp_path):
+    repo = repo_with_remote(tmp_path, "app", f"ssh://{CC_HOST}/v1/repos/r")
+    p = [p for p in resolve.compare(repo, load(cfg(CC + 'ssh_user = "APKAEIBAERJR2EXAMPLE"\n'))).problems
+         if p.code == "url_form"][0]
+    assert p.fix_argv[-1] == f"ssh://APKAEIBAERJR2EXAMPLE@{CC_HOST}/v1/repos/r"
+
+
+def test_codecommit_https_and_other_hosts(cfg, tmp_path):
+    c = load(cfg(CC))
+    repo = repo_with_remote(tmp_path, "app", f"https://{CC_HOST}/v1/repos/r")
+    assert resolve.compare(repo, c).problems == ()
+    repo = repo_with_remote(tmp_path, "gh", "ssh://github.com/corp-org/app.git")
+    p = [p for p in resolve.compare(repo, load(cfg())).problems if p.code == "url_form"][0]
+    assert p.fix_argv[-1] == "ssh://git@github.com/corp-org/app.git"
+
+
 def test_home_argument_decides_block_check(cfg, tmp_path):  # QA01-7: --home
     c = load(cfg())
     repo = repo_with_remote(tmp_path, "app", "git@github.com:corp-org/app.git")

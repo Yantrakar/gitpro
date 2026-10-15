@@ -608,7 +608,12 @@ def _p(code: str, message: str, argv: Optional[Sequence[str]], fix: Optional[str
 
 
 _DEFAULT_PORT = {"ssh": 22, "https": 443, "http": 80}
+_CODECOMMIT = re.compile(r"^git-codecommit\.[a-z0-9-]+\.amazonaws\.com$", re.I)
 _Fix = Tuple[Optional[str], str, Identity, str, Optional[Tuple[str, str]]]
+
+
+def is_codecommit(host: str) -> bool:
+    return bool(_CODECOMMIT.match(host))
 
 
 def _repairs(url: str, users: List[str]) -> List[Tuple[str, str, Optional[Tuple[str, int]]]]:
@@ -633,7 +638,7 @@ def _url_fixes(url: str, cfg: Config, label: str = "the remote") -> List[_Fix]:
     """[(fixed url, reason, identity, pattern, note)] for the repairs, in order: git+ssh:// or ssh+git://
     written as ssh://, then (on that url) userinfo removed, missing user added, port removed. First
     repair that makes some identity match wins. When the fixed url would point at the wrong place (a
-    non-default port removed), fixed is None and note is (message tail, fix text) instead."""
+    non-default port removed, user git on CodeCommit), fixed is None and note is (message tail, fix text) instead."""
     users = list(dict.fromkeys(i.ssh_user for i in cfg.identities)) or ["git"]
     tries: List[Tuple[str, str, Optional[Tuple[str, int]]]] = []
     m = re.match(r"^(git\+ssh|ssh\+git)://(.*)$", url)
@@ -656,6 +661,10 @@ def _url_fixes(url: str, cfg: Config, label: str = "the remote") -> List[_Fix]:
                 tail = f"it looks like {i.id}, but gitpro's https patterns never carry a port"
                 fix = f"switch {label} to an ssh URL for {i.id}"
             return [(None, reason, i, pat, (tail, fix))]
+        if reason.endswith("user git@ in the URL") and is_codecommit(i.host):
+            return [(None, reason, i, pat, (
+                f"it looks like {i.id}, but CodeCommit's SSH user is the SSH key ID, not git",
+                f'set ssh_user = "<your SSH key ID>" on identity {i.id} in the gitpro config, then run: gitpro apply'))]
         return [(fixed, reason, i, pat, None)]
     return []
 

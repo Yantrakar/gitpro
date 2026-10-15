@@ -262,7 +262,7 @@ files = []                         # policy files for every repo (an identity's 
 | `ssh_alias` | ssh `Host` that offers only `ssh_key`. Without it, if `host` is in `[default].ssh_hosts`, ssh falls back to `[default].ssh_key`, so an unregistered `ssh_key` signs you in as the default account. |
 | `rewrite` | With `ssh_alias`, `git@<host>:<owner>/…` URLs go through the alias. Default `true`. |
 | `rewrite_https` | Also send `https://<host>/<owner>/…` over SSH through the alias. Default `false`. |
-| `ssh_user`, `ssh_port` | For a non-standard SSH user or port. Default `git`, 22. |
+| `ssh_user`, `ssh_port` | For a non-standard SSH user or port. Default `git`, 22. AWS CodeCommit's SSH user is the SSH key ID. |
 | `sign` | Overrides `[default].sign`. Explicit `false` also disables signing inherited from an earlier matching identity. |
 | `file` | Where this identity's generated settings go. Must be inside your home directory and must not overlap another identity file, gitpro's config, or its managed output files (including through symlinks). Agent change workflows also refuse Git metadata directories and `.git` entries. |
 | `gh_account`, `glab_account`, `clone_dir` | As in `[default]`, for this identity. |
