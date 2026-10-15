@@ -597,7 +597,7 @@ repos  identity                      from
 1 repo set their own user.name/user.email, which beats gitpro. Without it they use:
 
 Jane Doe <jane.doe@employer.com>  (1 repo)
-└── from Jane Doe <jane@personal.dev>:  app
+└── from Jane Doe <jane@personal.dev>:  ~/work/app
 
 to keep some of these identities instead: gitpro scan --suggest
 
@@ -620,8 +620,8 @@ owners, so each block says how many other repos it would change. gitpro never
 edits your config itself.
 
 Name directories to scan only the repos under them (`gitpro scan ~/work`),
-or `gitpro scan --repo PATH` for exactly one repo. `-v` adds full paths and
-the remote owners behind each identity. `--json` is for scripts and the
+or `gitpro scan --repo PATH` for exactly one repo. `-v` adds the remote
+owners behind each identity. `--json` is for scripts and the
 VS Code extension.
 
 ## Dev containers

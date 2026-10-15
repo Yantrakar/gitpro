@@ -111,7 +111,7 @@ def scan(rep: dict, show: Callable[[str], str], *, verbose: bool, suggest: bool,
         title = Text(after, style="bold green") if after else Text("their own: nothing else sets one, so fix keeps it")
         tree = Tree(title + Text(f"  ({n} repo{'s' * (n != 1)})", style="dim"), guide_style="dim")
         for before, rs in sorted(befores.items(), key=lambda kv: (kv[0] == after, kv[0])):
-            names = ", ".join(show(r["path"]) if verbose else r["short"] for r in rs)
+            names = ", ".join(show(r["path"]) for r in rs)
             if before == after:
                 tree.add(Text("unchanged: ", style="dim") + Text(names))
             else:

@@ -232,7 +232,7 @@ printed raw (`file:/abs/path`, `command line:`, etc.), not tilde'd.
   <error>` per skipped repo; a table `repos / identity / from [/ remote
   owners]`, with repo-sourced identities collapsed into `see below  set in the
   repo` unless `-v`; then the overrides tree grouped by identity-after-fix →
-  identity-now → repos (`from X <x>:  a, b` or `unchanged: c`), the group
+  identity-now → repos by tilde path (`from X <x>:  ~/a, ~/b` or `unchanged: ~/c`), the group
   `their own: nothing else sets one, so fix keeps it` for unfixable ones; then
   either the `--suggest` blocks (TOML, syntax highlighted on a TTY, and `#
   <path> (<owner>): no identity can match it; after fixing it uses <who>` for
