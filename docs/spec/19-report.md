@@ -628,7 +628,8 @@ The tests each step runs are given in brackets.
   - A "Reporting a problem" section in Troubleshooting: the four kinds, what goes in, what
     never does, and the two record files.
   - The "Something else" bullet points to `gitpro report`.
-- **Privacy text.** In the guide's privacy section (guide.md:738 area) and the site FAQ:
+- **Privacy text.** In the guide's "Reporting a problem" section (the guide has no
+  privacy section) and the site FAQ "Does it send anything anywhere?":
   - gitpro writes `last-crash.json` and `denials.jsonl` in the state dir, and what they
     hold;
   - `report` sends nothing by itself.
@@ -638,9 +639,11 @@ The tests each step runs are given in brackets.
   `gitpro report --security`.
 - **SECURITY.md.** Names `gitpro report --security`.
 - **SKILL.md.**
-  - The command-table row: `| report | no | to open or send | --online (gh) |`.
+  - The command-table row: `| report | no | **yes**, to open the form or send; `-y`
+    answers it | with `--online` (`gh`): say so |`.
   - The MCP tool list.
   - A rule: "when gitpro crashes or blocks wrongly, offer `gitpro report`; never file
     for the user without their yes".
-- **site/llms.txt and site/index.html.** The tool count and the tool list.
+- **site/llms.txt and site/index.html.** The tool list; llms.txt also gets the offer
+  rule in "For AI agents".
 - **`gitpro --help`.** The `problems and questions:` line adds `gitpro report`.

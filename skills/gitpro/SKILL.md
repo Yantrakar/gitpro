@@ -45,6 +45,11 @@ Docs: https://github.com/Yantrakar/gitpro/blob/main/docs/guide.md
 - Never pass `--online`, `--history` or `--send-repo-names` unless the user
   asks. Before an online command, tell the user what its first `online:` line
   (or its "needs the network" message) says will be sent.
+- When gitpro crashes (`✗ internal error (…): this is a gitpro bug`) or blocks
+  a commit or push the user thinks it should not, offer `gitpro report`
+  (`--crash`, `--denial`; `--security` for a vulnerability). Show the user
+  `gitpro report --print` and never open or file it without their yes in
+  this conversation.
 - `gitpro env` prints the commands that fetch tokens, never the tokens. Do
   not try to obtain token values, and never read `gh`/`glab` config files,
   `.netrc` or `.git-credentials`.
@@ -307,3 +312,5 @@ policy. The operator can configure `gitpro mcp --allow-execution --approval-poli
   commit went through. Run `gitpro doctor`.
 - The agent hook does nothing: it runs `gitpro` from a plain `sh`, so gitpro
   must be on that `PATH` (`command -v gitpro`).
+- Something else, or a gitpro bug: `gitpro report --print` drafts a redacted
+  issue (versions and `why`); the user decides whether to open it.

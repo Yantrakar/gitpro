@@ -20,6 +20,7 @@ gitpro why               # inside a repository: expected identity, actual identi
 - MCP server: `gitpro mcp` (stdio), or `uvx gitpro mcp` without installing. Read-only by default. Tools: `which_identity`, `why`, `check_commit`, `scan`, `identities`, `audit`, `lost`, `env_for`, `preflight`, `operation_status`, `reconcile_operation`, `propose_change`, `change_status`, `draft_report`. Register it with `gitpro mcp install --agent claude|cursor|gemini|opencode`.
 - Claude Code plugin (hook, MCP server and skill): `/plugin marketplace add Yantrakar/gitpro`, then `/plugin install gitpro@gitpro`.
 - Claude Code hook alone: `gitpro agent install`. It denies `git commit`, `git push` and `gh pr create` calls that would use the wrong identity, with a reason.
+- When gitpro crashes or blocks a commit wrongly, offer `gitpro report --print` (`--crash`, `--denial`; `--security` for a vulnerability). It prints a redacted draft and opens or files nothing without the user's yes.
 - Every command that reads has `--json`.
 
 ## Docs

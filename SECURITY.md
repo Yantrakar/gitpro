@@ -2,7 +2,8 @@
 
 Report a vulnerability privately through
 [GitHub security advisories](https://github.com/Yantrakar/gitpro/security/advisories/new).
-Please do not open a public issue for it.
+`gitpro report --security` opens the same form. Please do not open a public
+issue for it.
 
 Fixes go into the latest release only.
 
