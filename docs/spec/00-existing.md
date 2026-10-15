@@ -72,7 +72,7 @@ against a scratch `HOME`.
 |---|---|---|
 | `id` | str, required | `ID_RE` `^[A-Za-z0-9][A-Za-z0-9._-]*$`; unique |
 | `name`, `email`, `host` | str, required | as default; `host` `HOST_RE`, not placeholder |
-| `owners` | list[str] | each `OWNER_RE` (`*` allowed, `/` for subgroups) |
+| `owners` | list[str] | each `OWNER_RE` (`*` allowed, `/` for subgroups, a leading `~` for SourceHut users) |
 | `ssh_key` | str | `PATH_RE` |
 | `ssh_alias` | str | `HOST_RE`, != host, needs `ssh_key` |
 | `ssh_user` | str | default `git`, `ID_RE` |
