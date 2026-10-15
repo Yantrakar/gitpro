@@ -1454,7 +1454,7 @@ comparing version numbers.
 ## Development
 
 ```sh
-python -m venv .venv && .venv/bin/pip install -e . pytest && .venv/bin/pytest
+python -m venv .venv && .venv/bin/pip install -e . pytest pytest-xdist && .venv/bin/pytest -n auto
 .venv/bin/python -m pip wheel --no-deps --wheel-dir dist .
 .venv/bin/python tests/smoke_wheel.py dist/gitpro-0.3.3-py3-none-any.whl
 .venv/bin/python tests/smoke_providers.py      # remote URL forms of common git hosts (-v: every case)
@@ -1463,7 +1463,8 @@ xvfb-run -a npm run test:integration             # starts VS Code; drop xvfb-run
 ```
 
 `.venv/bin/pytest -q -rs` lists skipped tests; with every module present,
-only platform-specific tests may skip.
+only platform-specific tests may skip. `-n auto` (pytest-xdist) runs the
+tests in parallel, one worker per CPU; CI does the same.
 The shared `home` fixture also starts in its isolated home and sets a Git
 discovery ceiling, so scratch directories inside a checkout cannot accidentally
 install project settings into that checkout.

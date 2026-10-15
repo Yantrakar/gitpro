@@ -27,8 +27,8 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
       - run: git --version
-      - run: pip install -e . pytest
-      - run: pytest -v
+      - run: pip install -e . pytest pytest-xdist
+      - run: pytest -v -n auto
       - run: python tests/smoke_providers.py
       - run: python -m pip wheel --no-deps --wheel-dir dist .
       - run: python tests/smoke_wheel.py dist/*.whl
