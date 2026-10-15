@@ -124,6 +124,13 @@ name = "Team"
 email = "team@corp.test"
 host = "github.com"
 owners = ["team-*"]
+
+[[identity]]
+id = "srht"
+name = "Srht"
+email = "srht@corp.test"
+host = "git.sr.ht"
+owners = ["~me"]
 """
 
 DIFF_URLS = [
@@ -149,6 +156,12 @@ DIFF_URLS = [
     "git@whole-alias:any/thing.git",
     "ssh://git@git.whole.test/any/thing.git",
     "ssh://git@whole-alias/thing.git",
+    # SourceHut ~user owners
+    "git@git.sr.ht:~me/app",
+    "https://git.sr.ht/~me/app",
+    "ssh://git@git.sr.ht/~me/app",
+    "git@git.sr.ht:~mex/app",
+    "git@git.sr.ht:me/app",
 ]
 
 
