@@ -29,6 +29,7 @@ jobs:
       - run: git --version
       - run: pip install -e . pytest
       - run: pytest -v
+      - run: python tests/smoke_providers.py
       - run: python -m pip wheel --no-deps --wheel-dir dist .
       - run: python tests/smoke_wheel.py dist/*.whl
       - uses: actions/upload-artifact@v4

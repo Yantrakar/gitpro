@@ -1457,6 +1457,7 @@ comparing version numbers.
 python -m venv .venv && .venv/bin/pip install -e . pytest && .venv/bin/pytest
 .venv/bin/python -m pip wheel --no-deps --wheel-dir dist .
 .venv/bin/python tests/smoke_wheel.py dist/gitpro-0.3.3-py3-none-any.whl
+.venv/bin/python tests/smoke_providers.py      # remote URL forms of common git hosts (-v: every case)
 cd vscode && npm ci && npm test                  # extension unit tests
 xvfb-run -a npm run test:integration             # starts VS Code; drop xvfb-run with a display
 ```
@@ -1471,6 +1472,11 @@ disposable home. It exercises default approval refusal, operator-scoped apply,
 idempotent replay, undo and MCP execution gates without network access or live
 configuration changes. CI runs it on the Python/Linux/macOS matrix and retains
 wheel/VSIX artifacts; uploading an artifact does not publish a release.
+The provider smoke sets up identities for GitHub, GitLab, Bitbucket, Azure DevOps,
+Codeberg, SourceHut, Gitea, Gitee, Hugging Face, AWS CodeCommit and Launchpad
+in a disposable home, runs `gitpro apply`, and checks 45 remote URLs offline:
+git and gitpro must pick the same, expected identity, and a URL no pattern
+covers must get `gitpro why`'s `url_form` fix. CI runs it after the tests.
 
 To release, bump the version in `src/gitpro/__init__.py`, `vscode/package.json`
 and the plugin manifests, merge, then push a tag `vX.Y.Z`. The release workflow
