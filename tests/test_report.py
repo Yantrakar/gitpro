@@ -25,7 +25,6 @@ from conftest import TIMEOUT, git, run, write_config
 from gitpro import cli
 
 # step 4 lands `gitpro report`, step 3 the redactor and the scan, step 5 --security/--online
-NOT_YET = pytest.mark.xfail(strict=True, reason="gitpro report lands in step 4")
 NO_ONLINE_YET = pytest.mark.xfail(strict=True, reason="--online lands in step 5")
 
 CANARY_EMAIL = "canary.person@canary-corp.test"
@@ -203,7 +202,6 @@ MODES = [
 ]
 
 
-@NOT_YET
 @pytest.mark.parametrize("json_mode", [False, True], ids=["print", "json"])
 @pytest.mark.parametrize("name,argv", MODES, ids=[m[0] for m in MODES])
 def test_planted_values_never_appear(world, monkeypatch, capsys, name, argv, json_mode):
@@ -222,7 +220,6 @@ def test_planted_values_never_appear(world, monkeypatch, capsys, name, argv, jso
     assert world.opened == []
 
 
-@NOT_YET
 def test_planted_values_not_in_the_browser_url(world, monkeypatch, capsys):
     record_world(world, monkeypatch, capsys)
     for argv in (["--repo", str(world.repo), "-m", f"{CANARY_EMAIL} broke"], ["--crash"], ["--denial"],
@@ -238,7 +235,6 @@ def test_planted_values_not_in_the_browser_url(world, monkeypatch, capsys):
     assert world.fake_bin.calls("gh") == []
 
 
-@NOT_YET
 def test_the_draft_still_helps(world, monkeypatch, capsys):
     record_world(world, monkeypatch, capsys)
     rc, out, err = go(world, capsys, "--print", "--repo", str(world.repo))
@@ -248,7 +244,6 @@ def test_the_draft_still_helps(world, monkeypatch, capsys):
     assert "gitpro" in out.lower()
 
 
-@NOT_YET
 @NO_ONLINE_YET
 def test_planted_values_not_in_the_gh_call(world, monkeypatch, capsys):
     record_world(world, monkeypatch, capsys)
@@ -283,7 +278,6 @@ def _blocked(world, capsys, argv, json_mode=True):
         assert all(set(b) == {"kind", "section"} for b in data["blocked"])
 
 
-@NOT_YET
 def test_layer_three_alone_blocks_when_the_allowlist_is_bypassed(world, monkeypatch, capsys):
     """Layer 1 off: the why section is the raw report. Layers 2 and 3 on."""
     record_world(world, monkeypatch, capsys)
@@ -293,7 +287,6 @@ def test_layer_three_alone_blocks_when_the_allowlist_is_bypassed(world, monkeypa
     _blocked(world, capsys, ["--repo", "{repo}"], json_mode=False)
 
 
-@NOT_YET
 def test_layer_three_alone_blocks_when_the_redactor_does_nothing(world, monkeypatch, capsys):
     """Layer 2 off: P returns the value itself, the -m text is not rewritten. Layers 1 and 3 on."""
     record_world(world, monkeypatch, capsys)
@@ -304,7 +297,6 @@ def test_layer_three_alone_blocks_when_the_redactor_does_nothing(world, monkeypa
     _blocked(world, capsys, ["--repo", "{repo}", "-m", f"hello from {CANARY_EMAIL}"])
 
 
-@NOT_YET
 def test_layer_three_alone_blocks_with_layers_one_and_two_off(world, monkeypatch, capsys):
     record_world(world, monkeypatch, capsys)
     from gitpro import report
@@ -315,7 +307,6 @@ def test_layer_three_alone_blocks_with_layers_one_and_two_off(world, monkeypatch
         _blocked(world, capsys, argv)
 
 
-@NOT_YET
 @pytest.mark.parametrize("argv", KINDS + [["--security", "--repo", "{repo}"], ["--security"]],
                          ids=["bug", "message", "crash", "denial", "security-repo", "security"])
 def test_layers_one_and_two_alone_are_clean_when_the_scan_is_off(world, monkeypatch, capsys, argv):

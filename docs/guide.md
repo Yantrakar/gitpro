@@ -333,6 +333,7 @@ be owned by you and not group/world-writable. Unknown keys are errors.
 | `devcontainer [status] [DIR]` | Print (or `--write`) the `devcontainer.json` entry that runs `gitpro pin` on the host. |
 | `team` | Does this machine meet each identity's team policy? |
 | `policy show [DIR]`, `policy lint FILE` | Show the policy rules for a repo; validate a policy file. |
+| `report [--crash\|--denial\|--security]` | A redacted draft of a bug report, opened as a prefilled GitHub issue form only when you say yes. |
 
 Every command has `--help`. Commands that read have `--json` for scripts
 (see [Exit codes and JSON](#exit-codes-and-json)).

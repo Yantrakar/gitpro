@@ -62,7 +62,7 @@ def test_parser_has_every_package():
     # a sanity check that the walk works and every package registered its commands
     for path in ("why", "guard install", "agent status", "forge similar", "mcp install", "policy lint",
                  "devcontainer", "prompt", "completion", "doctor", "lost", "audit", "clone", "env", "discover",
-                 "auth", "team", "scan", "agent-check", "guard check", "setup"):
+                 "auth", "team", "scan", "agent-check", "guard check", "setup", "report"):
         assert path in PATHS, path
 
 

@@ -236,6 +236,7 @@ grants approval. `run` without execution consent returns preflight, while
 | `change approve` | only with `--write`: immutable approval and backup journal | **yes**, human reviews in their own terminal; no `-y` | no |
 | `change apply`, `change recover` | yes: authorized exact files or conflict-safe restoration | **yes**, then `-y`, plus human approval or an operator-scoped grant; recovery retains original rollback permission | no |
 | `which`, `why`, `doctor`, `prompt`, `completion`, `check`, `plan`, `scan`, `scan --roots`, `scan --suggest`, `lost`, `audit`, `keys`, `keys --health`, `guard status`, `guard test`, `agent status`, `devcontainer`, `devcontainer status`, `policy show`, `policy lint`, `team`, `env`, `discover`, `clone --dry-run` | no | no | no (`--online` is opt-in where present: ask first) |
+| `report` | no | **yes**, to open the form or send; `-y` answers it | with `--online` (`gh`): say so |
 | `guard check`, `agent-check`, `mcp` | no; git hooks, the agent hook and the MCP client call these | do not run them yourself | no |
 | `auth`, `forge repos`, `forge forks`, `forge email` | no | no, but say it goes online | **yes**, say so |
 | `discover --history`, `init --discover --history` | reads shell history (`init` also writes the config) | **yes** | no |
