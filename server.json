@@ -15,12 +15,12 @@
       "sizes": ["256x256"]
     }
   ],
-  "version": "0.3.3",
+  "version": "0.3.4",
   "packages": [
     {
       "registryType": "pypi",
       "identifier": "gitpro",
-      "version": "0.3.3",
+      "version": "0.3.4",
       "runtimeHint": "uvx",
       "transport": {
         "type": "stdio"
