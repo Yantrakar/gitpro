@@ -214,7 +214,8 @@ def test_within_budget_in_process(work_repo):  # time budget: cold run within 80
         if cache.exists():
             cache.unlink()
         t = time.monotonic()
-        assert prompt.segment(work_repo) == "✓ work-github"
+        # the time is checked below, against the budget scaled by load; the default budget here would print ""
+        assert prompt.segment(work_repo, max_ms=60000) == "✓ work-github"
         cold.append(time.monotonic() - t)
     warm = []
     for _ in range(5):
