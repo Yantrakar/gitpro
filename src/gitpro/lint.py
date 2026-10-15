@@ -7,11 +7,14 @@ import subprocess
 from . import keys, render
 from .config import Default, Identity
 from .plan import Env
+from .resolve import is_codecommit
 
 
 def warnings(d: Default, ids: list[Identity], env: Env) -> list[str]:
     out = []
     for i in ids:
+        if is_codecommit(i.host) and i.ssh_user == "git" and (i.ssh_key or i.ssh_alias):
+            out.append(f"identity {i.id!r}: CodeCommit's SSH user is the SSH key ID, not git; set ssh_user to it")
         if i.ssh_alias and i.rewrite:
             out += [f"identity {i.id!r}: owner {o!r} is a glob; insteadOf needs a literal prefix, so "
                     f"its URLs aren't rewritten to {i.ssh_alias}" for o in i.owners if "*" in o]

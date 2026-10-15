@@ -131,6 +131,14 @@ name = "Srht"
 email = "srht@corp.test"
 host = "git.sr.ht"
 owners = ["~me"]
+
+[[identity]]
+id = "lp"
+name = "Lp"
+email = "lp@corp.test"
+host = "git.launchpad.net"
+owners = ["~me"]
+ssh_user = "me"
 """
 
 DIFF_URLS = [
@@ -149,6 +157,8 @@ DIFF_URLS = [
     "git@github.com:team-x/sub/app.git",
     "https://git.whole.test/any/thing.git",
     "ssh://git@github.com:22/corp-org/app.git",
+    "https://github.com:8443/corp-org/app.git",        # https port
+    "https://github.com/Corp-Org/app.git",             # uppercase owner, https
     # owner-less identity (V-001): scp, alias, ssh://, single segment
     "git@git.whole.test:any/thing.git",
     "git@git.whole.test:any/deep/thing.git",
@@ -162,6 +172,10 @@ DIFF_URLS = [
     "ssh://git@git.sr.ht/~me/app",
     "git@git.sr.ht:~mex/app",
     "git@git.sr.ht:me/app",
+    # Launchpad: git+ssh:// is not matched by git
+    "git+ssh://me@git.launchpad.net/~me/r",
+    "ssh://me@git.launchpad.net/~me/r",
+    "https://git.launchpad.net/~me/r",
 ]
 
 
@@ -294,7 +308,8 @@ def test_url_form_missing_user_and_port(cfg, tmp_path):
     assert p1.fix.endswith("remote set-url origin ssh://git@github.com/corp-org/app.git")
     r2 = repo_with_remote(tmp_path, "b", "ssh://git@github.com:2200/corp-org/app.git")
     p2 = [p for p in resolve.compare(r2, c).problems if p.code == "url_form"][0]
-    assert p2.fix.endswith("remote set-url origin ssh://git@github.com/corp-org/app.git")
+    assert p2.fix_argv is None
+    assert p2.fix == "set ssh_port = 2200 on identity work-github in the gitpro config, then run: gitpro apply"
 
 
 def test_explicit_env(cfg, tmp_path, monkeypatch):  # V-004: hooks pass their own env
@@ -523,7 +538,174 @@ def test_url_form_https_port(cfg, tmp_path):  # QA01-7
     c = load(cfg())
     repo = repo_with_remote(tmp_path, "app", "https://github.com:8443/corp-org/app.git")
     p = [p for p in resolve.compare(repo, c).problems if p.code == "url_form"][0]
-    assert p.fix_argv[-1] == "https://github.com/corp-org/app.git" and "(no port in the URL)" in p.message
+    assert p.fix_argv is None and p.fix == "switch origin to an ssh URL for work-github"
+    assert p.message == ("origin is https://github.com:8443/corp-org/app.git; it looks like work-github, "
+                         "but gitpro's https patterns never carry a port")
+
+
+@pytest.mark.parametrize("url, fixed", [
+    ("ssh://git@github.com:22/corp-org/app.git", "ssh://git@github.com/corp-org/app.git"),
+    ("https://github.com:443/corp-org/app.git", "https://github.com/corp-org/app.git"),
+])
+def test_url_form_default_port_keeps_argv(cfg, tmp_path, url, fixed):
+    repo = repo_with_remote(tmp_path, "app", url)
+    p = [p for p in resolve.compare(repo, load(cfg())).problems if p.code == "url_form"][0]
+    assert p.fix_argv[-1] == fixed and "(no port in the URL)" in p.message
+
+
+def test_url_form_ssh_port_already_set(cfg, tmp_path):
+    c = load(cfg(DEFAULT_CONFIG.replace('owners = ["corp-org"]', 'owners = ["corp-org"]\nssh_port = 2222')))
+    repo = repo_with_remote(tmp_path, "app", "ssh://git@github.com:2200/corp-org/app.git")
+    p = [p for p in resolve.compare(repo, c).problems if p.code == "url_form"][0]
+    assert p.fix_argv is None
+    assert p.message == ("origin is ssh://git@github.com:2200/corp-org/app.git; "
+                         "it looks like work-github, whose patterns have no port 2200")
+    assert p.fix == ("set ssh_port = 2200 on identity work-github in the gitpro config, then run: gitpro apply"
+                     " (it is 2222 now; an identity has one ssh_port)")
+
+
+def test_ssh_port_identity_matches_its_port(cfg, tmp_path):
+    c = load(cfg(DEFAULT_CONFIG.replace('owners = ["corp-org"]', 'owners = ["grp/sub"]\nssh_port = 2222')
+                 .replace('host = "github.com"\nowners', 'host = "gitlab.corp.test"\nowners', 1)))
+    repo = repo_with_remote(tmp_path, "app", "ssh://git@gitlab.corp.test:2222/grp/sub/app.git")
+    rep = resolve.compare(repo, c)
+    assert rep.expected.id == "work-github" and rep.problems == ()
+
+
+def test_url_form_no_argv_text_output(cfg, tmp_path):
+    c = load(cfg())
+    repo = repo_with_remote(tmp_path, "app", "https://github.com:8443/corp-org/app.git")
+    out = resolve.render_text(resolve.compare(repo, c), c)
+    assert "✗ origin is https://github.com:8443/corp-org/app.git; it looks like work-github" in out
+    assert "→ switch origin to an ssh URL for work-github" in out
+
+
+LP = DEFAULT_CONFIG + """
+[[identity]]
+id = "lp"
+name = "Lp"
+email = "lp@corp.test"
+host = "git.launchpad.net"
+owners = ["~me"]
+ssh_user = "me"
+"""
+
+
+@pytest.mark.parametrize("url, fixed, reason", [
+    ("git+ssh://me@git.launchpad.net/~me/r", "ssh://me@git.launchpad.net/~me/r",
+     "ssh:// instead of git+ssh://"),
+    ("ssh+git://me@git.launchpad.net/~me/r", "ssh://me@git.launchpad.net/~me/r",
+     "ssh:// instead of ssh+git://"),
+    ("git+ssh://git.launchpad.net/~me/r", "ssh://me@git.launchpad.net/~me/r",
+     "ssh:// instead of git+ssh://, user me@ in the URL"),
+])
+def test_url_form_git_plus_ssh(cfg, tmp_path, url, fixed, reason):
+    repo = repo_with_remote(tmp_path, "app", url)
+    p = [p for p in resolve.compare(repo, load(cfg(LP))).problems if p.code == "url_form"][0]
+    assert p.fix_argv[-1] == fixed and f"({reason})" in p.message
+
+
+@pytest.mark.parametrize("url", [
+    "ssh://me@git.launchpad.net/~me/r",
+    "https://git.launchpad.net/~me/r",
+    "git+ssh://me@git.launchpad.net/~other/r",
+])
+def test_url_form_git_plus_ssh_no_repair(cfg, tmp_path, url):
+    repo = repo_with_remote(tmp_path, "app", url)
+    assert [p for p in resolve.compare(repo, load(cfg(LP))).problems if p.code == "url_form"] == []
+
+
+def test_url_form_git_plus_ssh_port(cfg, tmp_path):
+    repo = repo_with_remote(tmp_path, "app", "git+ssh://me@git.launchpad.net:2200/~me/r")
+    p = [p for p in resolve.compare(repo, load(cfg(LP))).problems if p.code == "url_form"][0]
+    assert p.fix_argv is None and "whose patterns have no port 2200" in p.message
+    repo = repo_with_remote(tmp_path, "app22", "git+ssh://me@git.launchpad.net:22/~me/r")
+    p = [p for p in resolve.compare(repo, load(cfg(LP))).problems if p.code == "url_form"][0]
+    assert p.fix_argv[-1] == "ssh://me@git.launchpad.net/~me/r"
+
+
+CC_HOST = "git-codecommit.us-east-2.amazonaws.com"
+CC = f"""
+[default]
+name = "Default Me"
+email = "me@default.test"
+
+[[identity]]
+id = "cc"
+name = "Cc"
+email = "cc@corp.test"
+host = "{CC_HOST}"
+owners = ["v1/repos"]
+"""
+
+
+def test_url_form_codecommit_user_git(cfg, tmp_path):
+    repo = repo_with_remote(tmp_path, "app", f"ssh://{CC_HOST}/v1/repos/r")
+    p = [p for p in resolve.compare(repo, load(cfg(CC))).problems if p.code == "url_form"][0]
+    assert p.fix_argv is None
+    assert p.message == (f"origin is ssh://{CC_HOST}/v1/repos/r; "
+                         "it looks like cc, but CodeCommit's SSH user is the SSH key ID, not git")
+    assert p.fix == 'set ssh_user = "<your SSH key ID>" on identity cc in the gitpro config, then run: gitpro apply'
+
+
+def test_url_form_codecommit_key_id_keeps_argv(cfg, tmp_path):
+    repo = repo_with_remote(tmp_path, "app", f"ssh://{CC_HOST}/v1/repos/r")
+    p = [p for p in resolve.compare(repo, load(cfg(CC + 'ssh_user = "APKAEIBAERJR2EXAMPLE"\n'))).problems
+         if p.code == "url_form"][0]
+    assert p.fix_argv[-1] == f"ssh://APKAEIBAERJR2EXAMPLE@{CC_HOST}/v1/repos/r"
+
+
+def test_codecommit_https_and_other_hosts(cfg, tmp_path):
+    c = load(cfg(CC))
+    repo = repo_with_remote(tmp_path, "app", f"https://{CC_HOST}/v1/repos/r")
+    assert resolve.compare(repo, c).problems == ()
+    repo = repo_with_remote(tmp_path, "gh", "ssh://github.com/corp-org/app.git")
+    p = [p for p in resolve.compare(repo, load(cfg())).problems if p.code == "url_form"][0]
+    assert p.fix_argv[-1] == "ssh://git@github.com/corp-org/app.git"
+
+
+CASE = DEFAULT_CONFIG + """
+[[identity]]
+id = "gh-corp"
+name = "Corp"
+email = "gc@corp.test"
+host = "github.com"
+owners = ["corp-org"]
+
+[[identity]]
+id = "teamx"
+name = "Team"
+email = "tx@corp.test"
+host = "github.com"
+owners = ["team-*"]
+"""
+
+
+@pytest.mark.parametrize("url, fixed", [
+    ("git@github.com:CORP-ORG/app.git", "git@github.com:corp-org/app.git"),
+    ("https://github.com/Corp-Org/app.git", "https://github.com/corp-org/app.git"),
+    ("git@GitHub.com:corp-org/app.git", "git@github.com:corp-org/app.git"),
+    ("git@github.com:TEAM-x/r.git", "git@github.com:team-x/r.git"),
+])
+def test_url_form_letter_case(cfg, tmp_path, url, fixed):
+    repo = repo_with_remote(tmp_path, "app", url)
+    ps = [p for p in resolve.compare(repo, load(cfg(CASE))).problems if p.code == "url_form"]
+    assert len(ps) == 1
+    assert ps[0].fix_argv[-1] == fixed and "(letter case differs; git matches case-sensitively)" in ps[0].message
+
+
+@pytest.mark.parametrize("url", [
+    "git@github.com:other/app.git",
+    "https://me@github.com/CORP-ORG/app.git",       # two repairs: out of scope
+])
+def test_url_form_letter_case_none(cfg, tmp_path, url):
+    repo = repo_with_remote(tmp_path, "app", url)
+    assert [p for p in resolve.compare(repo, load(cfg(CASE))).problems if p.code == "url_form"] == []
+
+
+def test_url_form_letter_case_matching_url_no_problem(cfg, tmp_path):
+    repo = repo_with_remote(tmp_path, "app", "git@github.com:corp-org/app.git")
+    assert resolve.compare(repo, load(cfg(CASE))).problems == ()
 
 
 def test_home_argument_decides_block_check(cfg, tmp_path):  # QA01-7: --home
