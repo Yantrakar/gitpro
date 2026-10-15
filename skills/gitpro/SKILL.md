@@ -24,8 +24,10 @@ Docs: https://github.com/Yantrakar/gitpro/blob/main/docs/guide.md
 - Never read, print or copy private SSH keys. Public keys (`.pub`) are fine.
 - Don't run `keys --generate` yourself: it prompts for a passphrase. Ask the
   user to run it in their terminal. `--no-passphrase` only if they ask for it.
-- `gitpro setup` is a preview-only terminal wizard. To save, the user runs
-  `gitpro setup --write` and confirms Save; there is no noninteractive `-y`.
+- `gitpro setup` sets up the whole machine (config, SSH keys, Git and SSH
+  files, the guard, the Claude Code hook and MCP server) after one yes. The
+  user runs it in their terminal: the first run asks questions, and new keys
+  ask for a passphrase. Don't run it yourself without their explicit yes.
 - Don't invent owners, hosts or emails. Ask the user, or read them from the
   remote URLs of their repos (`git remote -v`).
 - Before any `git commit`, `git push` or `gh pr create` for the user, run
@@ -33,7 +35,7 @@ Docs: https://github.com/Yantrakar/gitpro/blob/main/docs/guide.md
   problem (a `✗` line), show the user the `→` fix line and ask before running
   it. Never use `--no-verify` or set `GITPRO_SKIP=1` unless the user says so
   in this conversation.
-- Never run `gitpro guard install`, `agent install`, `mcp install`,
+- Never run `gitpro setup`, `guard install`, `agent install`, `mcp install`,
   `devcontainer --write`, `keys --upload`, `audit --rewrite` or `clone`
   without an explicit yes. Always show the dry run first: `guard status`,
   `agent status`, `devcontainer`, `audit`, `clone --dry-run`. These commands
@@ -164,9 +166,9 @@ For older installations, with explicit permission to edit configuration:
   the list → on the user's yes, `gitpro audit --rewrite -y` (it rewrites only
   unpushed commits, needs a clean working tree and prints an `↩ undo:` line;
   tell the user to fetch first, since "pushed" means as of the last fetch).
-- **"Set up a new machine"**: the user runs `gitpro setup --write` in their terminal →
-  `gitpro plan` → yes → `gitpro apply -y` → `gitpro keys` →
-  `gitpro auth` (online: say so first) → `gitpro doctor`.
+- **"Set up a new machine"**: the user runs `pipx install gitpro` and
+  `gitpro setup` in their terminal → `gitpro scan` (repos that need a fix) →
+  `gitpro auth` (online: say so first) if they want the forge checks.
   For broader discovery, `gitpro init --discover` remains available (add
   `--history` only if the user wants shell history read); then review the template.
 - **"Lost work before wiping or moving a machine"**: `gitpro lost` (offline,

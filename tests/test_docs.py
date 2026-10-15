@@ -466,7 +466,8 @@ def test_readme_is_a_short_onboarding_page():
     assert len(README.splitlines()) <= 100
     assert len(README.split()) <= 650
     assert "gitpro setup" in README and "docs/guide.md" in README
-    assert "gitpro plan" in README and "gitpro apply" in README
+    assert "pipx install gitpro" in README and "gitpro scan" in README and "gitpro why" in README
+    assert "setup --write" not in README
     assert "```toml" not in README and "```yaml" not in README
 
 

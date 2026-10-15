@@ -159,7 +159,7 @@ def tool_why(args: dict, ctx: Ctx) -> dict:
             "config": {"path": str(cfg.path), "how": cfg.how}, **data}
 
 
-GUARD_CODES = ("override", "pin_stale", "no_identity", "env_override")   # 10 §2 step 5
+GUARD_CODES = ("ambiguous", "override", "pin_stale", "no_identity", "env_override")   # 10 §2 step 5; agents.TRIGGERS
 CAUSE_CODES = ("url_form", "override", "pin_stale", "global_override", "not_applied", "env_override")
 
 
@@ -1006,6 +1006,22 @@ def _edit(args: argparse.Namespace, removing: bool) -> int:
     if outcome is None:
         outcome = _file_edit(args, path, key, entry, removing, confirm, snippet)
     return _report(args, path, removing, outcome)
+
+
+def install_change(agent: str, home: Path) -> Optional[str]:
+    """For gitpro setup: what `mcp install --agent AGENT` would do at user scope, or None when gitpro is
+    registered. ConfigError for a file gitpro must not edit or a 'gitpro' entry that is not ours."""
+    path, key, entry = _user_target(agent, home)
+    obj = _precheck(path, key, json.dumps({key: {"gitpro": entry}}))
+    current = (obj or {}).get(key, {}).get("gitpro")
+    if _ours(current, entry):
+        return None
+    if current is not None:
+        raise ConfigError(f"{_foreign(path, current)}; left alone (gitpro mcp install --agent {agent} --force "
+                          "replaces it)")
+    if agent == "claude" and shutil.which("claude"):
+        return f"run {shlex.join(CLAUDE_ADD)}"
+    return f"{'update' if obj is not None else 'create'} {_tilde_path(path)}"
 
 
 def cmd_install(args: argparse.Namespace) -> int:

@@ -648,6 +648,7 @@ Checked in this order; all applicable ones are reported.
 
 | code | when | fix |
 |---|---|---|
+| `ambiguous` | no remote named (no `--remote`/`remote_url`), the repo has no pin choosing one, and its remotes match two or more different identities; each remote counts with the last identity in config order that matches it (spec 21 §3) | `gitpro pin -y --remote <push remote> <repo>`, the push remote found as `git push` finds it; text with no argv when there is none |
 | `no_identity` | expected email is None (nothing matched and `[default]` has no email) | `add an identity: gitpro scan --suggest --repo <repo>` |
 | `url_form` | no pattern matched, but one **would** match after a repair: the scheme `git+ssh://` or `ssh+git://` written as `ssh://`; userinfo removed; a missing user added; the port removed; letter case changed to the identity's (tried in that order, first repair that matches wins; see 18) | `git -C <repo> remote set-url <name> <fixed url>`, or fix text with no argv when that URL would be wrong: a non-default port (set `ssh_port`, or use ssh), or user `git` on AWS CodeCommit (set `ssh_user`) |
 | `override` | effective name/email scope is `repo` or `worktree` and the value differs from expected | `git -C <repo> config --unset user.<key>` + `(or: gitpro scan --fix --repo <repo>)` |

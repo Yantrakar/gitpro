@@ -8,11 +8,9 @@ config file (first match wins):
   -c PATH, $GITPRO_CONFIG, ~/.config/gitpro.toml
 
 first run on a new machine:
-  gitpro setup --write     # guided configuration; confirm before saving
-  gitpro plan              # review every change as a diff
-  gitpro apply -y          # explicitly write the reviewed changes
-  gitpro keys              # public keys to register with each account
-  gitpro scan              # every repo and the identity git uses there
+  pipx install gitpro
+  gitpro setup             # asks for your identities, shows everything, asks once, then sets it all up
+  gitpro scan              # every repo and the identity git uses there; it shows each fix
 
 problems and questions:
   gitpro report --print    # a redacted draft of a bug report; nothing is sent unless you say so
@@ -158,8 +156,11 @@ def build_parser() -> Tuple[argparse.ArgumentParser, Subs]:
     s.add_argument("--json", action="store_true", help="machine-readable output (with --fix: what was removed)")
     s.add_argument("--plain", action="store_true", help="with --fix: a y/N question instead of the interactive list")
     s.set_defaults(func=cmd_scan)
-    sp = sub.add_parser("pin", parents=[conf], help="preview pinning the repo identity (-y writes it)")
+    sp = sub.add_parser("pin", parents=[com, conf], help="preview pinning the repo identity (-y writes it)")
     sp.add_argument("dir", nargs="?", default=".", help="repo directory (default: .)")
+    sp.add_argument("--remote", metavar="NAME",
+                    help="pin the identity of this remote, with its SSH key and signing (for a repo whose "
+                         "remotes belong to different identities)")
     sp.set_defaults(func=cmd_pin)
     sp = sub.add_parser("unpin", parents=[conf], help="preview removing the pin (-y removes it)")
     sp.add_argument("dir", nargs="?", default=".", help="repo directory (default: .)")
@@ -377,6 +378,11 @@ def cmd_scan(args) -> int:
         paths = scan.find(roots, exclude=exclude, excluded=excluded)
     repos, failed = scan.inspect_all(paths)
     rep = scan.report(roots, repos, failed, label)
+    try:
+        cfg = config.load_all(*config.find(getattr(args, "config", None), home))
+    except config.ConfigError:
+        cfg = None                   # scan works without a config; the remote check needs one
+    rep.update(scan.checks(repos, cfg))
     rep.update(exclude=list(exclude), skipped_excluded=len(excluded),
                roots_source=getattr(args, "roots_source", "args" if args.repo or args.dirs else "default"))
     fixable = [r for r in repos if any(k in r.beneath for k in r.local)]
@@ -401,6 +407,8 @@ def cmd_scan(args) -> int:
             "".join(f" {_sh(show(d))}" for d in roots if args.dirs)
         view.scan(rep, show, verbose=args.verbose, suggest=args.suggest, fix=args.fix, prog=PROG,
                   again=f"{PROG} scan --fix{where}", exact=bool(args.repo))
+        if not args.fix:
+            view.attention(rep, show)
         if getattr(args, "roots_hint", None) and not args.fix:
             print()
             view.step(args.roots_hint)
@@ -442,7 +450,31 @@ def _fix(args, repos: list, home: Path) -> int:
 
 
 def cmd_pin(args) -> int:
-    from . import pin, view
+    from . import pin, resolve, view
+    remote, cfg = args.remote, None
+    if remote is None:
+        try:
+            cfg, _ = _load_all(args)
+        except config.ConfigError:
+            cfg = None                    # no usable config: a plain pin needs none
+        rows = resolve.conflicting(cfg, resolve._remote_urls(Path(args.dir))) if cfg else []
+        if rows:
+            remote = _choose_remote(rows, args)
+            if remote is None:
+                return 2
+    if remote is not None:
+        if cfg is None:
+            cfg, _ = _load_all(args)
+        i, path, warnings = pin.pin_remote(args.dir, cfg, remote, _env(args).expand, dry_run=preview_only(args))
+        for w in warnings:
+            view.warn(w)
+        if preview_only(args):
+            print(f"Would pin {i.id} ({i.name} <{i.email}>), the identity of {remote}, in {path}")
+            return preview_result(args, "pin", {})
+        view.ok(f"pinned {i.id} ({i.name} <{i.email}>), the identity of {remote}, with its SSH key and signing, "
+                f"in {path}")
+        view.step(f"re-run 'gitpro pin --remote {remote}' after changing the config")
+        return 0
     name, email, path = pin.pin(args.dir, dry_run=preview_only(args))
     if preview_only(args):
         print(f"Would pin {name} <{email}> in {path}")
@@ -454,6 +486,21 @@ def cmd_pin(args) -> int:
         view.warn(f"git resolves {got!r}; a repo-local setting overrides the pin")
     view.step("signing and SSH key selection are not pinned; re-run after changing the config")
     return 0
+
+
+def _choose_remote(rows, args):
+    """The remote to pin in a repo whose remotes belong to different identities: asked on a
+    terminal, else an error that names --remote."""
+    from . import view
+    names = list(dict.fromkeys(n for n, _, _ in rows))
+    shown = ", ".join(f"{n} → {i.id}" for n, i, _ in rows)
+    if not (sys.stdin.isatty() and sys.stdout.isatty()):
+        view.error(f"the remotes belong to different identities ({shown}); choose one: "
+                   f"gitpro pin --remote <{'|'.join(names)}>")
+        return None
+    from rich.prompt import Prompt
+    view.warn(f"the remotes belong to different identities ({shown})")
+    return Prompt.ask("Which remote does this repo's work go to", choices=names, default=names[0])
 
 
 def cmd_unpin(args) -> int:

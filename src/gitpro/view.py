@@ -143,6 +143,25 @@ def scan(rep: dict, show: Callable[[str], str], *, verbose: bool, suggest: bool,
                            f"{plural(sum(bool(r['fixable']) for r in over), 'repo')}: ") + Text(again, style="bold cyan"), soft_wrap=True)
 
 
+def attention(rep: dict, show: Callable[[str], str]) -> None:
+    """scan's sections for repos with remotes of different identities and repos the guard misses."""
+    out = console()
+    amb = rep.get("ambiguous", [])
+    if amb:
+        out.print(Text(f"\n⚠ {plural(len(amb), 'repo')} with remotes for different identities: commits there "
+                       "are blocked until you pin one", style="bold"), soft_wrap=True)
+        for a in amb:
+            out.print(Text(f"  {show(a['path'])}  ") + Text(a["message"], style="dim"), soft_wrap=True)
+            out.print(Text("    fix: ", style="dim") + Text(a["fix"], style="bold cyan"), soft_wrap=True)
+    own = [o for o in rep.get("own_hooks", []) if not o["guarded"]]
+    if own:
+        out.print(Text(f"\n⚠ {plural(len(own), 'repo')} with its own core.hooksPath: the commit guard does not "
+                       "run there", style="bold"), soft_wrap=True)
+        for o in own:
+            out.print(Text(f"  {show(o['path'])}  ") + Text(f"({o['hooks_path']})", style="dim"), soft_wrap=True)
+            out.print(Text("    fix: ", style="dim") + Text(o["fix"], style="bold cyan"), soft_wrap=True)
+
+
 def fixed(removed: list[tuple[str, str, str, str]], undo: str) -> None:
     """removed: (repo, key, value, what git uses now) for each setting."""
     out = console()

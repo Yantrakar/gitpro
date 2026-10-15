@@ -1076,3 +1076,15 @@ def test_draft_report_rejects_a_long_message_and_a_bad_kind():
 def test_draft_report_without_a_record_is_an_error_result():
     r = call("draft_report", {"kind": "crash"})
     assert r["isError"] is True and "no crash recorded" in text_of(r)
+
+
+def test_check_commit_blocks_two_identity_remotes(work_repo):  # spec 21 B1
+    git(work_repo, "remote", "add", "upstream", "git@github.com:me/app.git")
+    got = payload(call("check_commit", {"path": str(work_repo)}))
+    assert got["would_block"] is True and got["problems"][0]["code"] == "ambiguous"
+    assert got["fix"] == f"gitpro pin -y --remote origin {work_repo}"
+
+
+def test_guard_codes_follow_the_agent_hook():
+    from gitpro import agents
+    assert mcp.GUARD_CODES == agents.TRIGGERS

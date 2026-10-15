@@ -31,7 +31,7 @@ FORMAT = "%H%x00%an%x00%ae%x00%cn%x00%ce%x00%cI%x00%P%x00%s%x00%(trailers:only,u
 # Options --range may contain besides revisions; anything else (--output=..., say) is refused.
 RANGE_OPTIONS = ("--not", "--all", "--remotes", "--branches", "--tags", "--first-parent", "--no-merges",
                  "--merges", "--since", "--until", "--after", "--before", "--max-count")
-_CAUSES = ("url_form", "override", "pin_stale", "global_override", "not_applied", "env_override")
+_CAUSES = ("ambiguous", "url_form", "override", "pin_stale", "global_override", "not_applied", "env_override")
 
 
 @dataclass

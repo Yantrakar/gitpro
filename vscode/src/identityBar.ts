@@ -222,6 +222,10 @@ function labelFor(p: ProblemJson, home: string | undefined): Action | undefined 
   if (a[0] === "gitpro" && a[1] === "apply" && a.length === 2) {
     return { label: "Apply config", kind: "command", command: "gitpro.apply", detail: p.message };
   }
+  if (a[0] === "gitpro" && a[1] === "pin" && a.includes("--remote")) {
+    // the remotes belong to different identities: pin the one this repo's work goes to
+    return { label: `Pin ${a[a.indexOf("--remote") + 1]}'s identity`, kind: "argv", argv: a, detail: p.message };
+  }
   if (a[0] === "gitpro" && a[1] === "pin") {
     return { label: "Re-pin this repo", kind: "argv", argv: a, detail: p.message };
   }

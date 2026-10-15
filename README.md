@@ -22,26 +22,26 @@ Install from [PyPI](https://pypi.org/project/gitpro/) with pipx.
 
 ```sh
 pipx install gitpro
-gitpro setup --write
+gitpro setup
 ```
 
-The wizard helps you choose identities, Git hosts and owners, existing SSH keys,
-and optional signing. **No TOML editing is needed for basic setup.** Review the
-configuration before saving; nothing is applied to Git or SSH yet.
+The first run asks for your identities, their Git hosts and owners, and the SSH
+key for each one (an existing key, or a new path that setup creates). **No TOML
+editing is needed.** Setup then shows everything it will set up: the config, the
+missing SSH keys, the Git and SSH files, the commit guard and, when Claude Code
+is installed, its hook and MCP server. One yes applies all of it. Setup never
+changes your repos.
+
+Then:
 
 ```sh
-gitpro plan              # see exactly what would change
-gitpro apply -y          # explicitly apply the reviewed changes
+gitpro scan              # repos that need a fix, with the command for each
+gitpro why               # inside a repository: the expected identity and anything overriding it
 ```
 
-Then, inside a repository:
-
-```sh
-gitpro why               # see the expected identity and anything overriding it
-```
-
-Already have a config? Run `gitpro setup --write` to add another identity without losing
-your existing settings or comments. Prefer editing files? The
+Already have a config? `gitpro setup` brings this machine up to date with it,
+and `gitpro setup --add` adds another identity without losing your existing
+settings or comments. Prefer editing files? The
 [user guide](docs/guide.md#configuration) covers the full TOML format.
 
 ## What you get

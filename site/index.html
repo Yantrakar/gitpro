@@ -434,17 +434,16 @@
 <p class="prose">Linux or macOS, Git 2.36 or newer, Python 3.9 or newer and OpenSSH.</p>
 <ol class="steps">
 <li><div><strong>Install pipx if you don't have it.</strong> <code>brew install pipx</code> on macOS, <code>sudo apt install pipx</code> on Ubuntu.</div></li>
-<li><div><strong>Answer a few questions.</strong> The wizard asks for identities, hosts, owners and existing SSH keys. Nothing is applied yet.</div></li>
-<li><div><strong>Look, then apply.</strong> <code>gitpro plan</code> shows every change; <code>gitpro apply -y</code> writes it.</div></li>
+<li><div><strong>Answer a few questions, then say yes once.</strong> <code>gitpro setup</code> asks for identities, hosts, owners and SSH keys, shows everything it will set up, and applies it after one yes. It never changes your repos.</div></li>
+<li><div><strong>See what needs a fix.</strong> <code>gitpro scan</code> lists the repos that need attention and the command for each.</div></li>
 <li><div><strong>Ask a repository.</strong> <code>gitpro why</code> shows the identity it should use, the one it uses, and the fix if they differ.</div></li>
 </ol>
 <div class="cmd">
 <pre class="term"><code><span class="prompt">$</span> pipx install gitpro
-<span class="prompt">$</span> gitpro setup --write
-<span class="prompt">$</span> gitpro plan
-<span class="prompt">$</span> gitpro apply -y
+<span class="prompt">$</span> gitpro setup
+<span class="prompt">$</span> gitpro scan
 <span class="prompt">$</span> gitpro why</code></pre>
-<button class="copy" type="button" data-copy="pipx install gitpro&#10;gitpro setup --write&#10;gitpro plan&#10;gitpro apply -y&#10;gitpro why" hidden>Copy</button>
+<button class="copy" type="button" data-copy="pipx install gitpro&#10;gitpro setup&#10;gitpro scan&#10;gitpro why" hidden>Copy</button>
 </div>
 </div>
 <div class="split-fig">

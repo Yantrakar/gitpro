@@ -34,7 +34,7 @@ MAX_SCAN = 1024 * 1024                  # the regex scan reads at most this much
 MAX_FOR = 20                            # `for x in w1 .. wN` with more words: the body is judged once, x unknown
 MAX_VALUE = 4096                        # a longer expanded $VAR value counts as unknown
 ALIAS_TIMEOUT = 3                       # seconds for the `git config --get alias.X` lookup on the hook path
-TRIGGERS = ("override", "pin_stale", "no_identity", "env_override")
+TRIGGERS = ("ambiguous", "override", "pin_stale", "no_identity", "env_override")
 SKIP_ENV = "GITPRO_SKIP"
 BYPASS_HELP = (f"{SKIP_ENV}=1 in the environment the agent starts with turns the check off for that session; "
                "[agents] hook = \"warn\" or \"off\" in the config changes it for good. The deny message never "
@@ -1322,6 +1322,8 @@ def _judge_one(c: Call, rep, cfg, own: set, pushed_to: Optional[str] = None) -> 
         from .resolve import redact_url
         url = redact_url(next(iter(rep.effective.remotes.values()), None)) or top
         headline = f"no identity matches this repo ({url}) and [default] has no email"
+    elif any(p.code == "ambiguous" for p in triggers):
+        headline = f"this {what} runs in a repo whose remotes belong to different identities"
     elif c_bad or a_bad:
         email, verb = (committer, "committed") if c_bad else (author, "authored")
         email = email or "(no email)"
@@ -1815,6 +1817,26 @@ def _edit(args: argparse.Namespace, removing: bool) -> int:
     restores = f"restores from {undo.tilde(res.backup)}" if res.backup else f"removes {shown}"
     print(f"↩ undo: sh {undo.tilde(res.undo)}   ({restores})")
     return 0
+
+
+HOOK_AGENTS = ("claude", "cursor", "gemini")
+
+
+def plugin_enabled(home: Path) -> Optional[str]:
+    """The enabled gitpro plugin in ~/.claude/settings.json (it ships the hook and the MCP server), or None."""
+    t = target("claude", "user", home, None)
+    return _plugin(_read_lenient(t.path)) if t.path.is_file() else None
+
+
+def hook_change(agent: str, home: Path) -> Optional[str]:
+    """For gitpro setup: what `agent install --agent AGENT` would do at user scope ("create PATH" or
+    "update PATH"), or None when the hook is in place. ConfigError for a file gitpro must not edit."""
+    from . import undo
+    t = target(agent, "user", home, gitpro_path())
+    obj = _precheck(t.path, t, _snippet(t))
+    if obj is not None and add_hook(copy.deepcopy(obj), t) == obj:
+        return None
+    return f"{'update' if obj is not None else 'create'} {undo.tilde(t.path)}"
 
 
 def install(args: argparse.Namespace) -> int:

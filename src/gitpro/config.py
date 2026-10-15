@@ -131,7 +131,7 @@ class Scan:
 
 @dataclass(frozen=True)
 class Guard:
-    hooks: bool = False
+    hooks: Optional[bool] = None    # None: setup installs them, apply keeps what is installed; false: never
     on_mismatch: str = "block"  # "block" | "warn"
     chain_to: str = ""
 
@@ -356,7 +356,7 @@ def _scan(table: object) -> Scan:
 def _guard(table: object, home: Path) -> Guard:
     w = "[guard]"
     g = _build(Guard, table, w)
-    _check_bool(g.hooks, f"{w}.hooks")
+    _check_bool(g.hooks, f"{w}.hooks", optional=True)
     _check_enum(g.on_mismatch, ("block", "warn"), w, "on_mismatch")
     check(isinstance(g.chain_to, str), f"{w}: chain_to must start with ~/ or /")
     if g.chain_to:

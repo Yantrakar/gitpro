@@ -72,16 +72,12 @@ version.
 ## Quick start
 
 ```sh
-gitpro setup --write     # answer questions and confirm before saving
-gitpro keys --generate   # optional: create SSH keys that don't exist yet
-gitpro plan              # show every change as a diff
-gitpro apply -y          # explicitly write the reviewed changes
-gitpro keys              # public keys to add to each account
-gitpro scan              # every repo under ~ and the identity git uses there
+gitpro setup             # answer questions, review everything, say yes once
+gitpro scan              # every repo under ~, the identity git uses there, and what needs a fix
 ```
 
 If you start with `gitpro init` instead of the wizard, replace the example's
-placeholder emails and hosts before running `plan` or `apply`.
+placeholder emails and hosts, then run `gitpro setup`.
 
 On a machine that already has repos, `gitpro init --discover -y` writes the
 same example plus the identities it found on this machine, commented in, so
@@ -89,18 +85,34 @@ you only have to check them (see [discover](#discover-identities-already-on-this
 
 ### Guided setup
 
-`gitpro setup` asks for a fallback identity (optional), host-specific identities,
-their owners/groups, and optional existing SSH keys and commit signing. It suggests
-names/emails from local Git settings and the host/owner from the current repository.
-It only lists public-key filenames; it never reads private key contents, creates
-keys, contacts accounts, or reads shell history.
+`gitpro setup` is the one command for a machine. The first run asks for a
+fallback identity (optional), host-specific identities, their owners/groups, an
+SSH key per identity (an existing key, or a new path that setup creates) and
+commit signing. It suggests names/emails from local Git settings and the
+host/owner from the current repository. It only lists public-key filenames; it
+never reads private key contents, contacts accounts, or reads shell history.
 
-Review the generated TOML before confirming Save. Saving creates only the private
-config file; run `gitpro plan` and then `gitpro apply -y` separately to change Git/SSH.
-Ctrl-C before confirming Save, or declining Save, leaves the config unchanged.
-A terminal is required.
+Then it shows one preview of everything this machine still needs, grouped:
 
-Run it again to add identities without rewriting existing settings or comments.
+| group | what setup does | undo |
+|---|---|---|
+| config | saves the TOML (an existing file is backed up first) | the backup it names |
+| SSH key | creates each missing key with `ssh-keygen -t ed25519`; it asks for a passphrase (`--no-passphrase` skips it) | delete the new key |
+| Git, SSH | writes the files `gitpro apply` writes | the `setup-undo-*.sh` it prints |
+| guard | installs the commit guard (see [guard](#guard-stop-a-wrong-identity-commit)); `[guard] hooks = false` keeps it off | the same script, or `gitpro guard uninstall` |
+| Claude Code hook, MCP | when Claude Code is installed: the agent hook and the MCP server (skipped when the gitpro plugin is enabled) | the `agent-undo-*.sh` and `mcp-undo-*.sh` it prints |
+
+One yes applies all of it, in that order; `-y` answers yes. Ctrl-C, or no,
+writes nothing. Setup never changes a repo: it ends with the public keys to
+register with each account and `gitpro scan`, which lists the repos that need a
+fix. `--agent NAME` sets up another agent (repeatable), `--agent none` none.
+
+With a config already in place, setup asks no questions: it shows only what
+is missing and asks once, and says "nothing to change" when the machine is up
+to date. Without a terminal it previews; `gitpro setup -y` applies, for
+provisioning scripts. The first run needs a terminal for its questions.
+
+`gitpro setup --add` adds identities without rewriting existing settings or comments.
 Existing configs get a backup before saving. The untouched `gitpro init` example
 can be replaced with a real configuration; other invalid configs must be repaired
 first. Symlink config files are refused: explicitly choose their real path instead.
@@ -109,10 +121,10 @@ made while prompts were open and coordinates saves with other wizard sessions.
 Avoid editing the file during the save itself. If a crashed session leaves a
 `.setup.lock` file, check that no setup is still saving before removing that lock.
 
-Use `gitpro setup --write -c PATH` to save a custom file. Otherwise `$GITPRO_CONFIG`, then
+Use `gitpro setup -c PATH` to save a custom file. Otherwise `$GITPRO_CONFIG`, then
 `~/.config/gitpro.toml`, determines the path. Advanced options and edits to existing
 identities remain available in the [configuration reference](#configuration).
-Without `--write`, setup only previews and never asks to save. For a commented
+`--write` from 0.3 is still accepted and changes nothing. For a commented
 template instead of the wizard, `gitpro init` previews it; `gitpro init -y` creates it.
 When you are done, `gitpro doctor` checks everything in one go.
 
@@ -144,8 +156,8 @@ flowchart LR
   verify your own signatures.
 - Running `apply` again changes nothing. `uninstall` removes everything it wrote.
 
-The optional guard (`gitpro guard install`) is the one exception to "nothing
-runs when you use git": it adds git hooks that call gitpro before a commit or
+The guard, which `gitpro setup` installs (`[guard] hooks = false` opts out), is
+the one exception to "nothing runs when you use git": it adds git hooks that call gitpro before a commit or
 push. See [guard](#guard-stop-a-wrong-identity-commit).
 
 > **Upgrading from 0.1: identities without `owners` now match ssh remotes.**
@@ -282,7 +294,7 @@ The optional tables:
 | `[scan]` | `roots` | Where your repos live. Default `["~"]`. Used by `scan`, `lost`, `discover` and the VS Code views. |
 | | `exclude` | Globs to skip. A pattern without a leading `/` or `~/` matches at any depth. Hidden directories and `node_modules` are always skipped. |
 | | `stale_days` | `gitpro lost -v` calls a repo stale after this many days without a commit. Default 180. |
-| `[guard]` | `hooks` | `true`: `plan`/`apply` install the global guard hooks and keep them in sync. Default `false` (use `gitpro guard install`). |
+| `[guard]` | `hooks` | `true`: `plan`/`apply` install the global guard hooks and keep them in sync. `false`: `gitpro setup` leaves the guard off. Unset (default): `gitpro setup` installs it, and `apply` keeps an installed guard. |
 | | `on_mismatch` | `"block"` (default) refuses the commit or push; `"warn"` only prints the warning. |
 | | `chain_to` | A previous global `core.hooksPath` whose hooks run after gitpro's. |
 | `[clone]` | `dir` | Where `gitpro clone` puts a repo when the identity has no `clone_dir`. Default: the current directory. |
@@ -455,7 +467,7 @@ commands, options and your identity ids. Regenerate it after upgrading.
 
 ### guard: stop a wrong-identity commit
 
-`gitpro guard install` adds global `pre-commit`/`pre-push` hooks that
+`gitpro setup` (or `gitpro guard install`) adds global `pre-commit`/`pre-push` hooks that
 refuse a commit or push whose committer email is not the identity the
 remote belongs to, then run the repo's own hooks (every hook is
 forwarded, including husky-style `post-checkout`). If gitpro itself

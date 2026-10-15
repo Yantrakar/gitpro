@@ -146,6 +146,15 @@ test("actionsFor: one fix per problem using the CLI's argv, then the always-item
 
   assert.equal(actionsFor(noIdentity(), caps())[0].label, "Suggest an identity…");
 
+  // remotes of different identities: the pin names the remote it settles on
+  const two = match();
+  const pArgv = ["gitpro", "pin", "-y", "--remote", "origin", "/home/me/work/app"];
+  two.problems = [{ code: "ambiguous", message: "the remotes belong to different identities", fix: pArgv.join(" "),
+    fix_argv: pArgv }];
+  const t = actionsFor(two, caps());
+  assert.equal(t[0].label, "Pin origin's identity");
+  assert.deepEqual(t[0].argv, pArgv);
+
   // 01's fix for a global key/sign mismatch edits ~/.gitconfig, not the repo: the label names the file.
   const global = match();
   const gArgv = ["git", "config", "--file", "/home/me/.gitconfig", "--unset", "commit.gpgsign"];

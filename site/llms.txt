@@ -8,9 +8,8 @@ Install and set up:
 
 ```sh
 pipx install gitpro
-gitpro setup --write     # guided, offline; saves the config and applies nothing
-gitpro plan              # what apply would change
-gitpro apply -y          # writes the git and SSH config
+gitpro setup             # asks for your identities, shows everything, then sets it all up after one yes
+gitpro scan              # repos that need a fix, with the command for each
 gitpro why               # inside a repository: expected identity, actual identity, why, and the fix
 ```
 

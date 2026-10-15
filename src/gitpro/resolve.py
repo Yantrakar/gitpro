@@ -27,7 +27,7 @@ TIMEOUT = 30
 PIN_FILE = "git-identities"           # pin.FILE; in the repo's common git dir
 MANAGED_GITCONFIG = ".gitconfig-identities"   # plan.MANAGED_GITCONFIG, relative to home
 
-PROBLEM_CODES = ("no_identity", "url_form", "override", "pin_stale", "global_override", "not_applied",
+PROBLEM_CODES = ("ambiguous", "no_identity", "url_form", "override", "pin_stale", "global_override", "not_applied",
                  "key_mismatch", "sign_mismatch", "env_override", "policy")
 
 # Hook point for other packages (14: policy). Each entry is called as
@@ -477,19 +477,29 @@ def _rendered(cfg: Config, i: Optional[Identity]) -> Tuple[Optional[str], bool, 
             _expand(signingkey) if sign and signingkey else None)
 
 
-def _expected_for(cfg: Config, urls: List[Tuple[Optional[str], str]]) -> Expected:
+def _winner(cfg: Config, urls: Sequence[Tuple[Optional[str], str]]
+            ) -> Optional[Tuple[Identity, Tuple[Optional[str], str, str]]]:
     found = None
     for i in cfg.identities:          # every matching include applies; the later one wins
         m = _identity_match(i, urls)
         if m:
             found = (i, m)
+    return found
+
+
+def _expected_of(cfg: Config, i: Identity, m: Tuple[Optional[str], str, str], rule: str = "") -> Expected:
+    name, url, pattern = m
+    key, sign, signingkey = _rendered(cfg, i)
+    return Expected(i.id, i.name, i.email, key, sign, _expand(i.file),
+                    Match(i, name, url, pattern, rule or f"matched {name or redact_url(url)} by pattern {pattern}"),
+                    signingkey)
+
+
+def _expected_for(cfg: Config, urls: List[Tuple[Optional[str], str]]) -> Expected:
+    found = _winner(cfg, urls)
     d = cfg.default
     if found:
-        i, (name, url, pattern) = found
-        rule = f"matched {name or redact_url(url)} by pattern {pattern}"
-        key, sign, signingkey = _rendered(cfg, i)
-        return Expected(i.id, i.name, i.email, key, sign, _expand(i.file),
-                        Match(i, name, url, pattern, rule), signingkey)
+        return _expected_of(cfg, *found)
     shown = ", ".join(redact_url(u) or "" for _, u in urls)
     rule = f"no identity pattern matches {shown}" if urls else "no remote url, so no identity pattern can match"
     key, sign, signingkey = _rendered(cfg, None)
@@ -500,9 +510,96 @@ def _expected_for(cfg: Config, urls: List[Tuple[Optional[str], str]]) -> Expecte
 def expected(repo: Path, cfg: Config, *, remote: Optional[str] = None,
              remote_url: Optional[str] = None) -> Expected:
     """The identity git should apply in repo. remote= restricts matching to one remote name, or to a
-    url (pre-push with `git push <url>`). remote_url= judges that destination instead of the fetch URLs."""
-    _need_layout(Path(repo))
-    return _expected_for(cfg, _candidates(_remote_urls(Path(repo)), remote, remote_url))
+    url (pre-push with `git push <url>`). remote_url= judges that destination instead of the fetch URLs.
+    Without either, a repo whose remotes belong to different identities expects the one its pin chose."""
+    lay = _need_layout(Path(repo))
+    urls = _remote_urls(Path(repo))
+    if remote is None and remote_url is None:
+        chosen = _settled(cfg, conflicting(cfg, urls), lay, None)
+        if chosen:
+            return chosen[1]
+    return _expected_for(cfg, _candidates(urls, remote, remote_url))
+
+
+# ---------------------------------------------------------------- several remotes, several identities
+
+PIN_MARK = "# gitpro pin: identity "    # pin.py writes it when a remote was chosen; resolve reads it back
+
+Row = Tuple[str, Identity, Tuple[Optional[str], str, str]]     # remote, its identity, the match
+
+
+def by_remote(cfg: Config, urls: Sequence[Tuple[Optional[str], str]]) -> List[Row]:
+    """(remote, identity, match) for every remote some identity matches, in remote order: the
+    identity git would apply if that remote were the repo's only one."""
+    names = list(dict.fromkeys(n for n, _ in urls if n is not None))
+    out = []
+    for name in names:
+        found = _winner(cfg, [(n, u) for n, u in urls if n == name])
+        if found:
+            out.append((name, found[0], found[1]))
+    return out
+
+
+def conflicting(cfg: Config, urls: Sequence[Tuple[Optional[str], str]]) -> List[Row]:
+    """by_remote() when its remotes belong to two or more identities, else []. git then applies all of
+    their includes and the later one wins, whichever remote the work goes to."""
+    rows = by_remote(cfg, urls)
+    return rows if len({i.id for _, i, _ in rows}) > 1 else []
+
+
+def push_remote(repo: Path, names: Sequence[str], env: Optional[Mapping[str, str]] = None) -> Optional[str]:
+    """The remote a bare `git push` uses from the current branch: branch.<b>.pushRemote,
+    remote.pushDefault, branch.<b>.remote, then origin. None when that is not one of names."""
+    branch = _git(repo, "symbolic-ref", "--quiet", "--short", "HEAD", env=env).stdout.strip()
+    keys = ([f"branch.{branch}.pushRemote"] if branch else []) + ["remote.pushDefault"] \
+        + ([f"branch.{branch}.remote"] if branch else [])
+    for key in keys:
+        value = _git(repo, "config", "--get", key, env=env).stdout.strip()
+        if value:
+            return value if value in names else None
+    return "origin" if "origin" in names else None
+
+
+def pinned_identity(lay: _Layout) -> Optional[str]:
+    """The identity id `gitpro pin --remote` wrote into the repo's pin file, or None."""
+    try:
+        with open(lay.common_dir / PIN_FILE, encoding="utf-8", errors="replace") as f:
+            for line in f:
+                if line.startswith(PIN_MARK):
+                    return line[len(PIN_MARK):].strip() or None
+    except OSError:
+        pass
+    return None
+
+
+def _settled(cfg: Config, rows: List[Row], lay: _Layout, eff: Optional["Effective"]
+             ) -> Optional[Tuple[str, Expected]]:
+    """(remote, expected) when the repo's pin settles conflicting rows: the identity its marker names,
+    or, for a pin written before the marker existed (eff given), the one whose email it pins."""
+    if not rows:
+        return None
+    chosen = pinned_identity(lay)
+    if chosen:
+        hits = [r for r in rows if r[1].id == chosen]
+    elif eff is not None and eff.pinned and eff.email.scope == "pin" and eff.email.value:
+        hits = [r for r in rows if r[1].email.casefold() == eff.email.value.casefold()]
+    else:
+        return None
+    if not hits or len({r[1].id for r in hits}) > 1:
+        return None
+    name, i, m = hits[0]
+    return name, _expected_of(cfg, i, m, f"pinned to {i.id}, the identity of {name}")
+
+
+def _ambiguous(rows: List[Row], applied: Expected, top: Path, push: Optional[str]) -> Problem:
+    shown = ", ".join(f"{name} → {i.id}" for name, i, _ in rows)
+    msg = (f"the remotes belong to different identities ({shown}); git applies {applied.id} to all of them "
+           "because its include comes later")
+    if push is not None:
+        return _p("ambiguous", msg, ["gitpro", "pin", "-y", "--remote", push, str(top)])
+    names = "|".join(dict.fromkeys(name for name, _, _ in rows))
+    return _p("ambiguous", msg, None, f"pin the remote this repo's work goes to: gitpro pin --remote "
+                                      f"<{names}> {shlex.quote(str(top))}")
 
 
 # ---------------------------------------------------------------- effective
@@ -722,9 +819,19 @@ def compare(repo: Path, cfg: Config, *, remote: Optional[str] = None,
     candidates = _candidates(urls, remote, remote_url)
     exp = _expected_for(cfg, candidates)
     env = os.environ if env is None else env
-    who = _who(exp)
     out: List[Problem] = []
     first_url = candidates[0][1] if candidates else None
+    repin: Optional[List[str]] = None       # pin's command, when the remotes belong to different identities
+
+    if remote is None and remote_url is None:   # pre-push judges its destination instead
+        rows = conflicting(cfg, urls)
+        settled = _settled(cfg, rows, lay, eff)
+        if settled:
+            exp = settled[1]
+            repin = ["gitpro", "pin", "-y", "--remote", settled[0], str(top)]
+        elif rows:
+            out.append(_ambiguous(rows, exp, top, push_remote(top, [n for n, _, _ in rows], git_env)))
+    who = _who(exp)
 
     if exp.email is None:
         out.append(_p("no_identity", f"no identity for {redact_url(first_url) or top}",
@@ -758,7 +865,7 @@ def compare(repo: Path, cfg: Config, *, remote: Optional[str] = None,
     if stale:
         what = ", ".join(f"user.{k} {s.value}" for k, s in stale)
         out.append(_p("pin_stale", f"the repo's pin ({PIN_FILE}) still says {what}; {who} is "
-                                   f"{exp.name} <{exp.email}>", ["gitpro", "pin", "-y", str(top)]))
+                                   f"{exp.name} <{exp.email}>", repin or ["gitpro", "pin", "-y", str(top)]))
 
     beats = [(k, s) for k, s, want in (("name", eff.name, exp.name), ("email", eff.email, exp.email))
              if s.scope in ("global", "system", "other") and want is not None and s.value != want]
@@ -787,6 +894,8 @@ def compare(repo: Path, cfg: Config, *, remote: Optional[str] = None,
                 + ["--unset", key]
         if s.scope == "global" and (s.origin or "").startswith("file:"):
             return ["git", "config", "--file", s.origin[5:], "--unset", key]
+        if repin and s.scope in ("generated", "pin", None):
+            return repin                    # the other identity's include decides it; a pin by remote overrides it
         return ["gitpro", "apply"]
 
     def own(s: Setting) -> str:

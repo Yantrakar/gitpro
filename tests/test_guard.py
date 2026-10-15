@@ -1220,3 +1220,15 @@ def test_where_redacts_url_credentials():
     assert guard._where(types.SimpleNamespace(match=m)) == "https://user:***@github.com/o/r.git"
     m.url = None
     assert guard._where(types.SimpleNamespace(match=m)) == "this repo"
+
+
+def test_two_identity_remotes_blocked_until_pinned(work):
+    """spec 21 B1: origin is work, upstream personal; git applies personal, so the commit is blocked."""
+    git(work, "remote", "add", "upstream", "git@github.com:me/app.git")
+    r = gcommit(work)
+    assert r.returncode == 1
+    assert "✗ gitpro: the remotes belong to different identities" in r.stderr
+    assert f"fix:   gitpro pin -y --remote origin {work}" in r.stderr
+    assert run("pin", "-y", "--remote", "origin", str(work)) == 0
+    assert gcommit(work).returncode == 0
+    assert git(work, "log", "-1", "--format=%ce") == "me@corp.test"

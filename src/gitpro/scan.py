@@ -13,7 +13,7 @@ import os
 import re
 import shlex
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
@@ -36,6 +36,8 @@ class Repo:
     now: dict[str, tuple[str, str]]        # key -> (value, origin) that git resolves
     local: dict[str, str]                  # key -> value set in the repo's own config file
     beneath: dict[str, str]                # key -> value git would resolve without those
+    urls: dict[str, str] = field(default_factory=dict)   # remote.<name>.url -> URL
+    hooks_path: str = ""                   # the repo's own core.hooksPath ("" when it has none)
 
     def source(self, key: str = "user.email") -> str:
         """Where the value git uses comes from: 'repo', 'pin', a file path, or '' when unset."""
@@ -154,8 +156,15 @@ def _entries(repo: str, *scope: str) -> list[tuple[str, str, str]]:
 
 def inspect(path: Path) -> Repo:
     r = str(path)
-    urls = dict(line.split(" ", 1) for line in
-                git(r, "config", "--get-regexp", r"^remote\..*\.url$", ok=(0, 1)).splitlines())
+    urls, hooks_path = {}, ""
+    for line in git(r, "config", "--show-scope", "--get-regexp", r"^(remote\..*\.url|core\.hookspath)$",
+                    ok=(0, 1)).splitlines():
+        scope, _, entry = line.partition("\t")
+        key, _, value = entry.partition(" ")
+        if key != "core.hookspath":
+            urls[key] = value
+        elif scope in ("local", "worktree"):
+            hooks_path = value
     own = _entries(r, "--local")
     own_origins = {origin for origin, _, _ in own}
     now, beneath = {}, {}
@@ -164,7 +173,32 @@ def inspect(path: Path) -> Repo:
         if origin not in own_origins:
             beneath[key] = value
     return Repo(path, urls.get("remote.origin.url") or next(iter(urls.values()), ""), now,
-                {key: value for _, key, value in own}, beneath)
+                {key: value for _, key, value in own}, beneath, urls, hooks_path)
+
+
+def checks(repos: list[Repo], cfg) -> dict:
+    """What scan adds to the report (spec 21 §6). ambiguous: repos whose remotes belong to different
+    identities, with the pin fix (needs the config; [] without one). own_hooks: repos with their own
+    core.hooksPath, where the global guard does not run unless the repo's hooks carry its block."""
+    from .guard import REPO_HOOKS, _has_block
+    from .resolve import compare
+    amb, own = [], []
+    for r in repos:
+        if cfg is not None and len(r.urls) > 1:
+            try:
+                p = next((p for p in compare(r.path, cfg).problems if p.code == "ambiguous"), None)
+            except (ConfigError, OSError):
+                p = None
+            if p is not None:
+                amb.append({"path": str(r.path), "message": p.message, "fix": p.fix,
+                            "fix_argv": list(p.fix_argv) if p.fix_argv else None})
+        if r.hooks_path:
+            hooks = Path(os.path.expanduser(r.hooks_path))
+            hooks = hooks if hooks.is_absolute() else r.path / hooks
+            guarded = any(_has_block(hooks / n) for n in REPO_HOOKS)
+            own.append({"path": str(r.path), "hooks_path": r.hooks_path, "guarded": guarded,
+                        "fix": None if guarded else f"gitpro guard install --repo {shlex.quote(str(r.path))}"})
+    return {"ambiguous": amb, "own_hooks": own}
 
 
 def _owner_name(uid: int) -> str:
