@@ -199,7 +199,7 @@ export function updateTooltip(version: string): string {
   return `${what}\n\n→ ${esc(UPDATE)}\n\nSet **gitpro.path** if it is installed somewhere else.`;
 }
 
-export type ActionKind = "argv" | "command" | "suggest" | "explain" | "log";
+export type ActionKind = "argv" | "command" | "explain" | "log";
 
 export interface Action {
   label: string;
@@ -214,13 +214,14 @@ export interface Action {
 function labelFor(p: ProblemJson, home: string | undefined): Action | undefined {
   const a = p.fix_argv;
   if (p.code === "no_identity") {
-    return { label: "Suggest an identity…", kind: "suggest", detail: p.message };
+    return { label: "Set up…", kind: "command", command: "gitpro.setup", detail: p.message };
   }
   if (!a || !a.length) {
     return undefined;
   }
-  if (a[0] === "gitpro" && a[1] === "apply" && a.length === 2) {
-    return { label: "Apply config", kind: "command", command: "gitpro.apply", detail: p.message };
+  if (a[0] === "gitpro" && (a[1] === "apply" || a[1] === "plan" || a[1] === "doctor") && a.length === 2) {
+    // 0.3 CLIs propose these; they are deprecated, and Set Up does the same job
+    return { label: "Set up…", kind: "command", command: "gitpro.setup", detail: p.message };
   }
   if (a[0] === "gitpro" && a[1] === "pin" && a.includes("--remote")) {
     // the remotes belong to different identities: pin the one this repo's work goes to
@@ -254,9 +255,6 @@ export function actionsFor(json: WhyJson | undefined, caps: Capabilities, home?:
   out.push({ label: "Explain (gitpro why)", kind: "explain" });
   if (caps.has("env")) {
     out.push({ label: "Copy env for terminal", kind: "command", command: "gitpro.copyEnv" });
-  }
-  if (caps.has("doctor")) {
-    out.push({ label: "Run doctor", kind: "command", command: "gitpro.doctor" });
   }
   out.push({ label: "Open config", kind: "command", command: "gitpro.openConfig" },
     { label: "Show Log", kind: "log" });

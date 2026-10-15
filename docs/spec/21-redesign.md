@@ -1,7 +1,10 @@
 # 21 · Redesign: two steps, one judgement, no silent winners
 
-Status: **draft for the product owner's review**. Nothing here is built.
-Written 2026-10-15 against `main` at 021adb6 (0.3.4) plus PR #19.
+Status: **implemented in 0.4.0 (unreleased)**, 2026-10-16: PR #19 (pins
+name a remote, scan's `ambiguous` and hook checks) and PR #20 (one-step
+setup, spec 22's surface). §7 is replaced by spec 22. User-facing behavior is
+in the README, `docs/guide.md` and `CHANGELOG.md`; decisions are in
+`DECISIONS.md`. Written 2026-10-15 against `main` at 021adb6 (0.3.4).
 
 The owner asked for this rethink after a review of the blind spots:
 
@@ -249,20 +252,95 @@ output and tests do not change (§9).
 with undo). It does not pin: an ambiguous repo needs the user to choose a
 remote, so scan prints the command per repo.
 
-## 7. Command surface
+## 7. Command surface (owner, 2026-10-16)
 
-The goal is that `gitpro --help` shows the commands a person uses, and the
-rest stay available without being in the way. Nothing is removed in 0.4.
+The owner: "terminal, vscode, mcp everywhere it should be same. also commands be
+deduped and reduced to bare minimum of what we do", in "modern unix style".
 
-| group | commands | 0.4 change |
-|---|---|---|
-| **shown first** | `setup`, `scan`, `why`, `clone`, `pin`, `unpin`, `audit`, `lost`, `doctor`, `uninstall` | `setup` absorbs the first-run steps |
-| **folded into setup** | `init`, `plan`, `apply`, `check`, `guard install` (global), `agent install`, `mcp install`, `keys --generate` | still work; print one line naming the `setup` form |
-| **kept, listed under "more"** | `keys`, `auth`, `forge`, `env`, `discover`, `devcontainer`, `team`, `policy`, `report`, `completion`, `guard install --repo`, `guard status`, `guard test` | no change |
-| **plumbing, hidden from `--help`** | `agent-check`, `guard check`, `prompt`, `mcp` (the server), `preflight`, `run`, `operation-status`, `operation-reconcile`, `change`, `which` | still work; the VS Code extension, hooks, MCP hosts and agents call them; documented in `docs/agent-workflows.md` and the guide's reference section |
+### 7.1 Rules
 
-`which` is hidden rather than folded because the VS Code extension depends
-on `which --json` (capability `which.json`).
+1. One command per job. The terminal runs it; VS Code runs the same command
+   and asks its yes in a dialog; an MCP tool of the same name runs the
+   read-only form (`-n`) and returns the fix command for the user. Names,
+   options and `--json` are the same in all three.
+2. The same flags everywhere: `-n, --dry-run` shows what would change;
+   `-y, --yes` does not ask; `--json`; `-q`, `-v`; a positional `PATH` names
+   the repo or folder.
+3. A command that changes something shows the change and asks once on a
+   terminal. `-y` skips the question. Without a terminal and without `-y` it
+   refuses with exit 2 and names `-y` and `-n`.
+4. Results on stdout, messages on stderr. Exit 0 ok, 1 problems found, 2
+   error, 130 interrupted. No color when piped or with `NO_COLOR`.
+5. A command that finds problems fixes them with `--fix`; there is no separate
+   fix command.
+
+### 7.2 Commands
+
+| command | job | VS Code | MCP tool |
+|---|---|---|---|
+| `setup [PATH...]` | set up or update this machine; learns identities from the repos under PATH. `-n` shows the machine's state (identities, keys, guard, agents) and exits 1 when something is missing | Set Up | `setup` (state) |
+| `why [PATH]` | this repo: expected identity, the one in use, why, whether a commit is blocked, the fix | Why (status bar) | `why` |
+| `scan [PATH...] [--fix] [--lost]` | every repo: what is wrong; `--fix` fixes what needs no choice; `--lost` adds unpushed branches, stashes, dirty trees and repos without a remote | Scan, Fix | `scan` |
+| `pin [PATH] [--remote R] [--remove]` | choose one repo's identity, or remove the pin | Pin, Unpin | |
+| `clone URL [DIR]` | git clone as the right identity | Clone | |
+| `audit [PATH] [--fix]` | commits made as the wrong identity; `--fix` rewrites unpushed ones | Audit | `audit` |
+| `env [PATH]` | shell lines with the forge token of the repo's identity | Copy env | `env` |
+| `uninstall` | remove what gitpro wrote | | |
+
+Also: `completion`, `prompt` (shell), `report` (support), `team` (team
+policy). Hidden, called by hooks: `guard-check`, `agent-check`.
+
+### 7.3 What is deprecated in 0.4.0 and dropped in 0.5.0
+
+| today | becomes |
+|---|---|
+| `init`, `discover`, `plan`, `apply`, `check`, `doctor`, `keys`, `auth`, `forge`, `guard install`, `agent install`, `mcp install`, `scan --suggest` | `setup`; `setup -n` is the check |
+| `which`, MCP `which_identity`, `check_commit`, `identities` | `why`; `setup -n` lists identities |
+| `lost`, MCP `lost` | `scan --lost`, MCP `scan` |
+| `unpin` | `pin --remove` |
+| `audit --rewrite` | `audit --fix` |
+| `devcontainer` | VS Code's devcontainer action writes the `pin` line itself |
+| `preflight`, `run`, `operation-status`, `operation-reconcile`, `change` and their 7 MCP tools | nothing (below) |
+| VS Code Plan, Apply, Doctor, Suggest Identities, Review One by One | Set Up, Scan |
+
+The operation protocol has no replacement because nothing uses it (measured
+2026-10-16): its 7 modules (2,587 lines) are imported only by their CLI and
+MCP registration and their tests; the VS Code extension and the hooks do not
+call it; in the agent sessions recorded in `~/.agents/history` the only
+gitpro MCP tool ever called is `why`.
+
+### 7.4 Deprecation (owner, 2026-10-16: "deprecate those. and declare in version 0.5.0 we will drop it")
+
+In 0.4.x every command and MCP tool in §7.3:
+
+- keeps its 0.3 behavior and output, so scripts and old extensions keep working;
+- is hidden from `--help`; a deprecated MCP tool stays in the tool list with
+  "Deprecated, removed in 0.5.0; use <tool>." at the start of its description;
+- prints one line on stderr: `gitpro apply is deprecated and goes in 0.5.0; use: gitpro setup`
+  (never on stdout, so `--json` output stays parseable), and with `--json`
+  the object gains `"deprecated": {"removed_in": "0.5.0", "use": "gitpro setup"}`;
+  `GITPRO_NO_DEPRECATION=1` silences the stderr line;
+- is listed in the 0.4.0 changelog and in the guide under "Deprecated".
+
+The 0.4.0 VS Code extension calls only §7.2 commands (`why --json` instead
+of `which --json`), checked through the capabilities in `--version --json`.
+An 0.3 extension keeps working against gitpro 0.4.x.
+
+In 0.5.0 they are removed, with their code and tests.
+
+### 7.5 Backward compatibility after 0.5.0 (proposed, not decided)
+
+Two cheap layers can outlive 0.5.0 without keeping the old code:
+
+1. **Aliases** for the ones whose mapping is exact: `unpin` → `pin --remove`,
+   `lost` → `scan --lost`, `audit --rewrite` → `audit --fix`, `check` →
+   `setup -n`. A table in the parser; same stderr notice; no second code path.
+2. **Tombstones** for the rest: the name stays known to the parser and exits
+   2 with the replacement (`gitpro plan was removed in 0.5.0; use: gitpro setup -n`),
+   instead of argparse's "invalid choice". Costs one line per name.
+
+Recommendation: both, with no end date for tombstones and aliases reviewed
+at 1.0.
 
 ## 8. Decisions
 
@@ -291,9 +369,10 @@ on `which --json` (capability `which.json`).
 - **Generated files**: for an unchanged config, `setup` writes byte-identical
   files to 0.3's `apply`. A test renders every fixture config through both
   paths and compares.
-- **Old commands and flags**: every 0.3 command and flag still runs with the
-  same result through 0.4.x. Tests in 0.3 that call them stay unchanged and
-  must keep passing.
+- **Old commands and flags**: the commands §7.3 lists keep their 0.3
+  behavior through 0.4.x with a deprecation notice (§7.4); their 0.3 tests
+  stay and pass, plus a test per command for the notice. Commands §7.2 keeps
+  keep their flags and results. They go in 0.5.0.
 - **JSON**: existing `--json` fields keep their names and meaning. The
   verdict adds `state` and `candidates`; nothing is renamed.
 - **Hot path**: the hooks still dispatch through `hot.py` without importing

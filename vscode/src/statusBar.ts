@@ -5,12 +5,12 @@ import * as os from "node:os";
 import * as path from "node:path";
 import * as vscode from "vscode";
 import type { Capabilities } from "./capabilities";
-import { UPDATE } from "./capabilities";
+import { settingsCall, UPDATE } from "./capabilities";
 import { Cli, exec, failure, Result, shq, ui } from "./cli";
 import { parseOrigin, status as whichStatus } from "./identity";
 import { Action, actionsFor, BarState, inContainer, OtherFolder, pickFolder, scmRoot, stateFrom, tooltipFrom,
   undoPath, updateTooltip, WhyJson } from "./identityBar";
-import { Report, suggestions, tilde } from "./scan";
+import { tilde } from "./scan";
 
 const WHY_TIMEOUT = 5_000;
 const OTHERS_TTL = 30_000;
@@ -148,13 +148,15 @@ export function registerIdentityBar(context: vscode.ExtensionContext, cli: Cli, 
     }));
   }
 
-  /** Effective email only (`which --json`), for a repo `why` cannot judge (no config). */
+  /** Effective email only (`why --json`'s `settings` with `why.commit`, else `which --json`), for a repo `why`
+   * cannot judge (no config). */
   async function fallback(dir: string, mine: number, signal: AbortSignal): Promise<void> {
-    const r = await cli.run(["which", "--json", dir], { cwd: dir, quiet: true, timeout: WHY_TIMEOUT, signal });
+    const call = settingsCall(caps, dir);
+    const r = await cli.run(call.argv, { cwd: dir, quiet: true, timeout: WHY_TIMEOUT, signal, accept: call.accept });
     if (mine !== generation) {
       return latest;
     }
-    if (!r || r.code !== 0) {
+    if (!r || (r.code !== 0 && r.code !== 1)) {
       if (r && /not a git repository/.test(failure(r))) {
         hide();
       } else {
@@ -167,14 +169,17 @@ export function registerIdentityBar(context: vscode.ExtensionContext, cli: Cli, 
     try {
       w = JSON.parse(r.stdout) as W;
     } catch {
-      log.error(`✗ which --json printed no JSON for ${dir}`);
+      log.error(`✗ gitpro ${call.argv.slice(0, 2).join(" ")} printed no JSON for ${dir}`);
       gitproMissing();
       return;
     }
-    const set = (k: string) => parseOrigin(w.settings[k]?.value ? `${w.settings[k].origin ?? ""}\t${w.settings[k].value}` : "");
+    const set = (k: string) => {
+      const v = w.settings?.[k];
+      return parseOrigin(v?.value ? `${v.origin ?? ""}\t${v.value}` : "");
+    };
     const remotes = Object.entries(w.remotes ?? {}).map(([n, u]) => `remote.${n}.url ${u}`);
     const s = whichStatus(set("user.name"), set("user.email"), remotes, containerHere());
-    const tip = s.warning && !containerHere() ? `${s.tooltip}\n\n→ gitpro scan --suggest --repo ${dir}` : s.tooltip;
+    const tip = s.warning && !containerHere() ? `${s.tooltip}\n\n→ gitpro setup ${dir}` : s.tooltip;
     why = undefined;
     show(s.text, tip, s.warning ? "warning" : undefined, "which", dir);
   }
@@ -294,22 +299,6 @@ export function registerIdentityBar(context: vscode.ExtensionContext, cli: Cli, 
     await refresh();
   }
 
-  async function suggest(dir: string): Promise<void> {
-    const rep = await cli.json<Report>(["scan", "--suggest", "--json", "--repo", dir], { cwd: dir });
-    if (!rep) {
-      return;
-    }
-    if (!rep.suggestions.length) {
-      log.info(`scan --suggest: nothing to suggest for ${tilde(dir, home)}`);
-      void ui.info("Nothing to suggest: this repo sets no identity of its own. Add an [[identity]] for its remote to " +
-        "the gitpro config.", "Open Config").then((p) => p && vscode.commands.executeCommand("gitpro.openConfig"));
-      return;
-    }
-    const language = (await vscode.languages.getLanguages()).includes("toml") ? "toml" : "plaintext";
-    const doc = await vscode.workspace.openTextDocument({ language, content: suggestions(rep, home) });
-    await vscode.window.showTextDocument(doc);
-  }
-
   async function perform(a: Action, dir: string): Promise<void> {
     log.info(`status bar: ${a.label}`);
     switch (a.kind) {
@@ -318,8 +307,6 @@ export function registerIdentityBar(context: vscode.ExtensionContext, cli: Cli, 
       case "command":
         await vscode.commands.executeCommand(a.command!);
         return;
-      case "suggest":
-        return suggest(dir);
       case "explain":
         await cli.show(["why", dir], { cwd: dir, accept: [0, 1] });
         return;

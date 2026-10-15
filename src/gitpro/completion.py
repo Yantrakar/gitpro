@@ -107,8 +107,8 @@ def tree(parser: argparse.ArgumentParser, path: Optional[List[str]] = None, help
     for a in parser._actions:
         if isinstance(a, argparse._SubParsersAction):
             helps = {c.dest: c.help or "" for c in a._choices_actions}
-            for name, sp in a.choices.items():
-                if _WORD_RE.match(name):
+            for name, sp in a.choices.items():   # hidden and deprecated commands are marked (cli._hide)
+                if _WORD_RE.match(name) and not getattr(sp, "gitpro_hidden", False):
                     node.subs[name] = tree(sp, node.path + [name], helps.get(name, ""))
             continue
         if a.help == argparse.SUPPRESS:

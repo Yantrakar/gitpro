@@ -7,6 +7,7 @@ keeping every date; it never runs `rebase`, never touches pushed commits, the in
 """
 from __future__ import annotations
 
+import argparse
 import os
 import re
 import shlex
@@ -715,6 +716,7 @@ def _preview(data: dict, exp) -> List[str]:
 
 def cmd_audit(args) -> int:
     as_json = jsonout.wants_json(args)
+    args.rewrite = args.rewrite or getattr(args, "rewrite_flag", False)
     if args.rewrite and getattr(args, "agents", False):
         raise ConfigError("--rewrite needs the author audit; drop --agents")
     if args.rewrite and as_json and not args.yes:
@@ -773,7 +775,7 @@ def cmd_audit(args) -> int:
 def register(sub, common, confirm) -> None:
     sp = sub.add_parser(
         "audit", parents=[common, confirm],
-        help="find commits made as the wrong identity or with an AI agent; fix unpushed ones with --rewrite",
+        help="find commits made as the wrong identity or with an AI agent; fix unpushed ones with --fix",
         description="Audit the history of a repo: commits whose committer (or your own other email as author) is "
                     "not the repo's identity, commits made with an AI agent (Co-Authored-By trailers, bot "
                     "emails) and the [*.trailers] policy. Default: the unpushed commits (as of the last fetch) "
@@ -792,9 +794,10 @@ def register(sub, common, confirm) -> None:
     w = sp.add_mutually_exclusive_group()
     w.add_argument("--agents", action="store_true", help="only the agent / trailer audit")
     w.add_argument("--authors", action="store_true", help="only the wrong-author audit")
-    sp.add_argument("--rewrite", action="store_true",
+    sp.add_argument("--fix", dest="rewrite", action="store_true",
                     help="fix the unpushed wrong-author commits (asks first; writes an undo script)")
+    sp.add_argument("--rewrite", dest="rewrite_flag", action="store_true", help=argparse.SUPPRESS)  # 0.4: --fix
     sp.add_argument("--json", action="store_true", help="machine-readable output")
     sp.add_argument("-v", "--verbose", action="store_true", help="list every commit, not the first ten")
     sp.set_defaults(func=cmd_audit)
-    capability("audit", "audit.rewrite", "trailers")
+    capability("audit", "audit.rewrite", "audit.fix", "trailers")

@@ -15,7 +15,7 @@ import shlex
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Optional
 
 from . import undo
 from .config import HOST_RE, OWNER_RE, ConfigError, Scan
@@ -56,6 +56,54 @@ class Repo:
 
     def using(self) -> dict[str, str]:
         return {k: self.now[k][0] for k in KEYS if k in self.now}
+
+
+REFLOG_TAIL = 1 << 20      # bytes of logs/HEAD read for the commit identity
+_REFLOG_COMMIT = re.compile(rb"^[0-9a-f]+ [0-9a-f]+ (.*?) <([^<>]*)> \d+ [+-]\d{4}\tcommit(?: \([a-z]+\))?:")
+
+
+def git_dir(repo: Path) -> Optional[Path]:
+    """repo/.git, or where a worktree's .git file points; None when neither is there."""
+    dot = repo / ".git"
+    try:
+        if dot.is_dir():
+            return dot
+        line = dot.read_text(errors="replace").splitlines()[0] if dot.is_file() else ""
+    except (OSError, IndexError):
+        return None
+    if not line.startswith("gitdir: "):
+        return None
+    p = Path(line[8:].strip())
+    return p if p.is_absolute() else repo / p
+
+
+def commit_identity(repo: Path) -> Optional[tuple]:
+    """(name, email) of most of the commits made in repo on this machine: Git records the committer of
+    each commit, amend and merge in the HEAD reflog. Only the last REFLOG_TAIL bytes are read."""
+    gd = git_dir(repo)
+    if gd is None:
+        return None
+    try:
+        with open(gd / "logs" / "HEAD", "rb") as f:
+            f.seek(0, os.SEEK_END)
+            size = f.tell()
+            f.seek(max(0, size - REFLOG_TAIL))
+            data = f.read()
+    except OSError:
+        return None
+    lines = data.split(b"\n")
+    if size > REFLOG_TAIL:
+        lines = lines[1:]                  # the first one is cut
+    seen: Counter = Counter()
+    for ln in lines:
+        m = _REFLOG_COMMIT.match(ln)
+        if m:
+            try:
+                seen[(m[1].decode().strip(), m[2].decode().strip())] += 1
+            except UnicodeDecodeError:
+                continue
+    best = [(n, e) for (n, e), _ in seen.most_common() if n and e]
+    return best[0] if best else None
 
 
 def find(roots, *, exclude=(), max_depth: int | None = None, excluded: set | None = None) -> list[Path]:

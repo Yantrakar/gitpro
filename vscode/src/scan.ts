@@ -158,48 +158,6 @@ export function question(p: Plan): string {
     `They'll use ${use}.`;
 }
 
-/** The fixable repos in the order the tree lists them: what Review One by One steps through. */
-export function steps(groups: Group[]): Repo[] {
-  return groups.flatMap((g) => g.children.flatMap((b) => b.repos)).filter((r) => r.fixable);
-}
-
-/** A step's answer; undefined (Escape) cancels the review. */
-export type Choice = "fix" | "skip" | "back" | "fixRest" | "skipRest";
-
-/**
- * Asks about each repo in turn, recording fix (true) or skip (false) by path in `fix`.
- * true once every repo is decided; false if cancelled, leaving `fix` as far as it got.
- */
-export async function walk(rs: Repo[], fix: Map<string, boolean>, choose: (i: number) => Promise<Choice | undefined>):
-  Promise<boolean> {
-  for (let i = 0; i < rs.length;) {
-    const c = await choose(i);
-    if (!c) {
-      return false;
-    }
-    if (c === "back") {
-      i = Math.max(0, i - 1);
-    } else if (c === "fixRest" || c === "skipRest") {
-      rs.slice(i).forEach((r) => fix.set(r.path, c === "fixRest"));
-      return true;
-    } else {
-      fix.set(rs[i].path, c === "fix");
-      i++;
-    }
-  }
-  return true;
-}
-
-/** What a step says about fixing or skipping its repo. */
-export function stepText(r: Repo, home: string): { where: string; fix: string; removes: string; skip: string } {
-  return {
-    where: `${tilde(r.path, home)} · ${r.description}`,
-    fix: r.now === r.after ? `already uses ${r.after}` : `${r.now} → ${r.after}`,
-    removes: `removes ${r.keys.join(" and ")} from its .git/config${r.now === r.after ? ": a duplicate, nothing changes" : ""}`,
-    skip: `keeps ${r.now}`,
-  };
-}
-
 export function scanArgs(dirs: string[]): string[] {
   return ["scan", "--json", ...dirs];
 }
@@ -228,17 +186,4 @@ export function skipped(bad: Report["unreadable"]): string {
 export function summary(r: Report, home: string): string {
   const bad = r.unreadable.length ? ` · ${skipped(r.unreadable)}` : "";
   return `${repos(r.repos)} under ${r.roots.map((p) => tilde(p, home)).join(", ")}${bad}`;
-}
-
-/** The untitled TOML document gitpro.scanSuggest opens. */
-export function suggestions(r: Report, home: string): string {
-  const head = "# paste the blocks you want into ~/.config/gitpro.toml, run gitpro apply, then Fix\n" +
-    "# an identity applies to every repo of its owners\n";
-  const unmatched = r.unmatched.map((p) => {
-    const o = r.overrides.find((x) => x.path === p);
-    const tail = o ? ` (${o.owner}): no identity can match it; after fixing it uses ${who(o.after)}` : "";
-    return `# unmatched: ${tilde(p, home)}${tail}\n`;
-  });
-  return [head, ...r.suggestions.map((s) => s.toml + "\n"), ...(unmatched.length ? [unmatched.join("")] : [])]
-    .join("\n");
 }

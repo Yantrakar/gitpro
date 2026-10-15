@@ -1,7 +1,7 @@
 {
   "name": "gitpro",
   "displayName": "gitpro",
-  "description": "Shows the git name and email this repo commits with, finds repos that override gitpro, and runs gitpro plan, apply and pin.",
+  "description": "Shows the git name and email this repo commits with, finds repos that override gitpro, and runs gitpro setup, scan and pin.",
   "version": "0.3.4",
   "icon": "media/icon.png",
   "publisher": "yantrakar",
@@ -40,16 +40,6 @@
         "icon": "$(account)"
       },
       {
-        "command": "gitpro.plan",
-        "title": "Plan",
-        "category": "gitpro"
-      },
-      {
-        "command": "gitpro.apply",
-        "title": "Apply",
-        "category": "gitpro"
-      },
-      {
         "command": "gitpro.pin",
         "title": "Pin Identity to This Repo (for Dev Containers)",
         "category": "gitpro"
@@ -61,7 +51,7 @@
       },
       {
         "command": "gitpro.setup",
-        "title": "Set Up Identities",
+        "title": "Set Up",
         "category": "gitpro"
       },
       {
@@ -85,18 +75,6 @@
         "title": "Fix Checked",
         "category": "gitpro",
         "icon": "$(check-all)"
-      },
-      {
-        "command": "gitpro.scanReview",
-        "title": "Review One by One",
-        "category": "gitpro",
-        "icon": "$(list-ordered)"
-      },
-      {
-        "command": "gitpro.scanSuggest",
-        "title": "Suggest Identities",
-        "category": "gitpro",
-        "icon": "$(lightbulb)"
       },
       {
         "command": "gitpro.openRepoConfig",
@@ -140,11 +118,6 @@
       {
         "command": "gitpro.devcontainerSetup",
         "title": "Set up devcontainer pin",
-        "category": "gitpro"
-      },
-      {
-        "command": "gitpro.doctor",
-        "title": "Doctor",
         "category": "gitpro"
       },
       {
@@ -224,19 +197,9 @@
           "group": "navigation@1"
         },
         {
-          "command": "gitpro.scanReview",
-          "when": "view == gitpro.overrides",
-          "group": "navigation@2"
-        },
-        {
           "command": "gitpro.scanFix",
           "when": "view == gitpro.overrides",
           "group": "navigation@3"
-        },
-        {
-          "command": "gitpro.scanSuggest",
-          "when": "view == gitpro.overrides",
-          "group": "navigation@4"
         },
         {
           "command": "gitpro.scanRoots",

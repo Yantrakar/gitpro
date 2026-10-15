@@ -1036,21 +1036,43 @@ def register(sub, common, confirm) -> None:
     sp = sub.add_parser("why", parents=[common],
                         help="explain which identity a repo uses, where each value comes from, and how to fix it")
     sp.add_argument("dir", nargs="?", default=".", help="repo directory (default: .)")
-    sp.add_argument("--json", action="store_true", help="machine-readable output")
+    sp.add_argument("--remote", metavar="NAME", help="judge the identity of this remote only")
+    sp.add_argument("--committer", metavar="EMAIL",
+                    help="with --json: would the guard let this committer commit (default: the email git uses)")
+    sp.add_argument("--author", metavar="EMAIL", help="with --json: the commit's author (default: the committer)")
+    sp.add_argument("--message", metavar="TEXT", help="with --json: check this commit message's trailers too")
+    sp.add_argument("--json", action="store_true",
+                    help="machine-readable output, with the repo's git settings and the guard's judgement of a commit")
     sp.set_defaults(func=cmd_why)
-    capability("why", "why.config")
+    capability("why", "why.config", "why.commit")
 
 
 def cmd_why(args) -> int:
     require_git()
+    from . import cli, commitcheck
     home = Path(args.home).expanduser().resolve()
-    path, how = config.find(args.config, home)
-    cfg = config.load_all(path, how)
-    rep = compare(Path(args.dir), cfg, home=home)
-    if getattr(args, "json", False):
+    as_json = getattr(args, "json", False)
+    try:
+        path, how = config.find(args.config, home)
+        cfg = config.load_all(path, how)
+    except config.ConfigError as e:
+        if not as_json or args.config:
+            raise
+        # No usable config: still an error, but say what git does here (the extension's status bar needs it).
+        try:
+            data = cli.which_data(Path(args.dir))
+        except config.ConfigError:
+            data = {}                         # not a repo: the config error is the one to report
+        jsonout.emit("why", {"error": str(e), "config": None, **data}, ok=False)
+        return 2
+    rep = compare(Path(args.dir), cfg, remote=args.remote, home=home)
+    if as_json:
         data = rep.to_json()
         data.pop("ok")
-        jsonout.emit("why", {"repo": data.pop("repo"), "config": {"path": str(cfg.path), "how": cfg.how}, **data},
+        commit = commitcheck.judge(rep, cfg, committer_email=args.committer, author_email=args.author,
+                                   message=args.message)
+        jsonout.emit("why", {"repo": data.pop("repo"), "config": {"path": str(cfg.path), "how": cfg.how}, **data,
+                             "settings": cli.which_data(rep.repo)["settings"], "commit": commit},
                      ok=rep.ok())
     else:
         print(render_text(rep, cfg), end="")

@@ -2,7 +2,7 @@
 
 Each identity is bound to a host and owners (GitHub users/orgs, GitLab groups);
 git picks it from the repo's remote URL via includeIf hasconfig (git >= 2.36).
-Every command is idempotent: a second 'apply' changes nothing.
+Every command is idempotent: a second 'setup' changes nothing.
 
 config file (first match wins):
   -c PATH, $GITPRO_CONFIG, ~/.config/gitpro.toml
@@ -34,7 +34,7 @@ import sys
 from pathlib import Path
 from typing import Dict, Iterator, Optional, Tuple
 
-from . import __version__, config, jsonout
+from . import __version__, config, deprecation, jsonout
 from .args import CAPABILITIES, capability, common, confirm, fail, guarded, preview_only, preview_result
 
 PROG = "gitpro"
@@ -135,7 +135,7 @@ def build_parser() -> Tuple[argparse.ArgumentParser, Subs]:
     sub.add_parser("plan", parents=[com], help="show what apply would change, with diffs").set_defaults(func=cmd_plan)
     sub.add_parser("apply", parents=[com, conf], help="write the changes (backs up hand-written files)") \
         .set_defaults(func=cmd_apply)
-    sp = sub.add_parser("check", parents=[com], help="exit 1 if apply would change anything (for CI/ansible)")
+    sp = sub.add_parser("check", parents=[com], help="CI: check commits and identities against a team policy (--policy FILE, --range A..B, --repo DIR)")
     sp.add_argument("--json", action="store_true", help="machine-readable output")
     sp.set_defaults(func=cmd_check)
     k = sub.add_parser("keys", parents=[com], help="list SSH keys and the accounts to register them with")
@@ -155,21 +155,26 @@ def build_parser() -> Tuple[argparse.ArgumentParser, Subs]:
                    help="only this repo, not the repos under it (repeatable)")
     s.add_argument("--json", action="store_true", help="machine-readable output (with --fix: what was removed)")
     s.add_argument("--plain", action="store_true", help="with --fix: a y/N question instead of the interactive list")
+    s.add_argument("--lost", action="store_true",
+                   help="also list work that is only on this machine: unpushed branches, stashes, dirty trees, "
+                        "repos without a remote, stale and empty repos (offline)")
     s.set_defaults(func=cmd_scan)
-    sp = sub.add_parser("pin", parents=[com, conf], help="preview pinning the repo identity (-y writes it)")
+    sp = sub.add_parser("pin", parents=[com, conf],
+                        help="choose a repo's identity: --remote R, --remove (preview; -y writes it)")
     sp.add_argument("dir", nargs="?", default=".", help="repo directory (default: .)")
     sp.add_argument("--remote", metavar="NAME",
                     help="pin the identity of this remote, with its SSH key and signing (for a repo whose "
                          "remotes belong to different identities)")
+    sp.add_argument("--remove", action="store_true", help="remove the pin (preview; -y removes it)")
     sp.set_defaults(func=cmd_pin)
     sp = sub.add_parser("unpin", parents=[conf], help="preview removing the pin (-y removes it)")
     sp.add_argument("dir", nargs="?", default=".", help="repo directory (default: .)")
     sp.set_defaults(func=cmd_unpin)
     u = sub.add_parser("uninstall", parents=[conf],
-                       help="remove everything apply wrote (keeps your config file and SSH keys)")
+                       help="remove everything setup wrote (keeps your config file and SSH keys)")
     u.add_argument("--home", type=Path, default=Path.home(), help=argparse.SUPPRESS)
     u.set_defaults(func=cmd_uninstall)
-    capability("which.json", "check.json", "dry-run-defaults.v1")
+    capability("which.json", "check.json", "dry-run-defaults.v1", "scan.lost", "pin.remove", "deprecations.v1")
 
     mods = list(_extension_modules())
     for mod in mods:
@@ -180,7 +185,127 @@ def build_parser() -> Tuple[argparse.ArgumentParser, Subs]:
         ext = getattr(mod, "extend", None)
         if ext:
             ext(sub.choices)
+    _surface(sub)
     return p, sub.choices
+
+
+# ---------------------------------------------------------------- the 0.4 surface (spec 22 §4, §10)
+
+# `gitpro --help` lists these, in this order; the rest of the registered commands are hidden.
+MAIN = ("setup", "why", "scan", "pin", "clone", "audit", "env", "uninstall")
+MORE = ("completion", "prompt", "report", "team", "policy", "check", "keys", "auth", "forge", "guard")
+# Called by hooks, agents and the extension, never typed.
+HIDDEN = ("agent-check", "agent", "mcp", "guard check")
+# Deprecated in 0.4.0, removed in 0.5.0: the command and what replaces it (None: nothing does).
+DEPRECATED: Dict[str, Optional[str]] = {
+    "init": "gitpro setup", "discover": "gitpro setup PATH", "plan": "gitpro setup -n",
+    "apply": "gitpro setup -y", "doctor": "gitpro setup -n and gitpro why",
+    "which": "gitpro why --json", "lost": "gitpro scan --lost", "unpin": "gitpro pin --remove",
+    "devcontainer": 'the VS Code command "Set up devcontainer pin"',
+    "agent": "gitpro setup -n", "agent install": "gitpro setup --agent NAME", "agent status": "gitpro setup -n",
+    "mcp install": "gitpro setup --agent NAME",
+    "preflight": None, "run": None, "operation-status": None, "operation-reconcile": None, "change": None,
+}
+KEPT = ("agent uninstall", "mcp uninstall")   # under a deprecated or hidden command, but not deprecated
+# Deprecated forms of a kept command: (command, what is deprecated, when it was used, replacement, flag to hide).
+DEPRECATED_FORMS = (
+    # check --policy/--repo/--range is the team policy check CI runs; only the drift check moves to setup -n
+    ("check", "check without --policy, --repo or --range",
+     lambda a: not (getattr(a, "policy_files", None) or getattr(a, "range", None) is not None
+                    or getattr(a, "repo", None)), "gitpro setup -n", None),
+    ("keys", "keys --generate", lambda a: getattr(a, "generate", False), "gitpro setup", "--generate"),
+    ("keys", "keys --no-passphrase", lambda a: False, None, "--no-passphrase"),   # only with --generate
+    ("scan", "scan --suggest", lambda a: getattr(a, "suggest", False), "gitpro setup --add PATH", "--suggest"),
+    ("audit", "audit --rewrite", lambda a: getattr(a, "rewrite_flag", False), "gitpro audit --fix", None),
+    ("setup", "setup --write", lambda a: getattr(a, "write", False), "gitpro setup", None),
+    ("guard install", "guard install without --repo", lambda a: not getattr(a, "repo", None), "gitpro setup", None),
+)
+
+
+def _children(parser: argparse.ArgumentParser):
+    for a in parser._actions:
+        if isinstance(a, argparse._SubParsersAction):
+            return a
+    return None
+
+
+def _find(sub, path: str) -> Optional[argparse.ArgumentParser]:
+    parser = None
+    for word in path.split():
+        action = sub if parser is None else _children(parser)
+        parser = action.choices.get(word) if action is not None else None
+        if parser is None:
+            return None
+    return parser
+
+
+def _hide(action, name: str) -> None:
+    """Out of --help; completion skips a parser marked gitpro_hidden."""
+    action._choices_actions[:] = [c for c in action._choices_actions if c.dest != name]
+    if name in action.choices:
+        action.choices[name].gitpro_hidden = True
+
+
+def _deprecate(parser, old: str, use: Optional[str], when=None) -> None:
+    func = parser.get_default("func")
+    if func is None:
+        return
+
+    def run(args):
+        if when is None or when(args):
+            if deprecation.silenced():
+                pass
+            elif jsonout.wants_json(args):
+                jsonout.EXTRA["deprecated"] = deprecation.field(use)
+            else:
+                deprecation.warn(f"gitpro {old}", use)
+        try:
+            return func(args)
+        finally:
+            jsonout.EXTRA.pop("deprecated", None)   # in-process callers (MCP) run several commands
+    parser.set_defaults(func=run)
+
+
+def _deprecate_tree(sub, path: str, use: Optional[str]) -> None:
+    parser = _find(sub, path)
+    if parser is None:
+        return
+    _deprecate(parser, path, use)
+    nested = _children(parser)
+    for name, child in (nested.choices.items() if nested is not None else ()):
+        full = f"{path} {name}"
+        if full not in DEPRECATED and full not in KEPT:
+            _deprecate_tree(sub, full, use)
+
+
+def _surface(sub) -> None:
+    """Hide, order and deprecate the registered commands (spec 22 §4, §10.3)."""
+    for path, use in DEPRECATED.items():
+        _deprecate_tree(sub, path, use)
+    for path, old, when, use, flag in DEPRECATED_FORMS:
+        parser = _find(sub, path)
+        if parser is None:
+            continue
+        _deprecate(parser, old, use, when)
+        for a in parser._actions:
+            if flag in a.option_strings:
+                a.help = argparse.SUPPRESS
+    for path in list(DEPRECATED) + list(HIDDEN):
+        *parent, name = path.split()
+        owner = _find(sub, " ".join(parent)) if parent else None
+        action = sub if not parent else _children(owner) if owner is not None else None
+        if action is not None:
+            _hide(action, name)
+    shown = {c.dest: c for c in sub._choices_actions}
+    first = [shown.pop(n) for n in MAIN if n in shown]
+    more = [shown.pop(n) for n in MORE if n in shown]
+    sub._choices_actions[:] = first + list(shown.values()) + \
+        ([argparse._SubParsersAction._ChoicesPseudoAction("more:", (), "")] if more else []) + more
+
+
+def shown_commands(sub) -> list:
+    """The names `gitpro --help` lists, in its order."""
+    return [c.dest for c in sub._choices_actions if c.dest in sub.choices]
 
 
 def _env(args: argparse.Namespace):
@@ -229,8 +354,8 @@ def cmd_version(args) -> int:
 def cmd_status(p: argparse.ArgumentParser, subs: Subs) -> int:
     p.print_help()
     print("\ncommand options (COMMAND -h for details):")
-    for s in subs.values():
-        print("  " + " ".join(s.format_usage().split()[1:]))
+    for name in shown_commands(_children(p)):
+        print("  " + " ".join(subs[name].format_usage().split()[1:]))
     print()
     try:
         cfg, env = _load_all(argparse.Namespace(config=None, home=Path.home()))
@@ -238,7 +363,8 @@ def cmd_status(p: argparse.ArgumentParser, subs: Subs) -> int:
     except config.ConfigError as e:
         print(f"status: {e}")
         return 0
-    state = "up to date" if not n else f"{n} pending change(s) -- review with 'plan', write with 'apply'"
+    state = "up to date" if not n else f"{n} pending change(s) -- see them with 'gitpro setup -n', write them " \
+        "with 'gitpro setup -y'"
     print(f"status: {cfg.path} ({cfg.how}), {len(cfg.identities)} identities, {state}")
     return 0
 
@@ -332,17 +458,27 @@ def cmd_keys(args) -> int:
 WHICH_KEYS = ("user.name", "user.email", "user.signingkey", "commit.gpgsign", "core.sshcommand")
 
 
+def which_data(path: Path) -> dict:
+    """`which --json` without the envelope: repo, remotes and the five settings with their origin."""
+    from . import resolve
+    repo = resolve.is_repo(path)
+    if repo is None:
+        raise config.ConfigError(f"{path}: not a git repository")
+    eff = resolve.effective(path)
+    settings = dict(zip(WHICH_KEYS, (eff.name, eff.email, eff.signingkey, eff.gpgsign, eff.sshcommand)))
+    return {"repo": str(repo), "remotes": {n: resolve.redact_url(u) for n, u in eff.remotes.items()},
+            "settings": {k: {"value": s.value, "origin": s.origin, "scope": s.scope} for k, s in settings.items()}}
+
+
 def cmd_which(args) -> int:
     from . import resolve
     if resolve.is_repo(Path(args.dir)) is None:
         raise config.ConfigError(f"{args.dir}: not a git repository")
+    if getattr(args, "json", False):
+        jsonout.emit("which", which_data(Path(args.dir)))
+        return 0
     eff = resolve.effective(Path(args.dir))
     settings = dict(zip(WHICH_KEYS, (eff.name, eff.email, eff.signingkey, eff.gpgsign, eff.sshcommand)))
-    if getattr(args, "json", False):
-        jsonout.emit("which", {
-            "repo": str(resolve.is_repo(Path(args.dir))), "remotes": {n: resolve.redact_url(u) for n, u in eff.remotes.items()},
-            "settings": {k: {"value": s.value, "origin": s.origin, "scope": s.scope} for k, s in settings.items()}})
-        return 0
     print("remotes:" + ("".join(f"\n  remote.{n}.url {resolve.redact_url(u)}" for n, u in eff.remotes.items()) if eff.remotes
                         else " (none)"))
     for key, s in settings.items():
@@ -365,6 +501,9 @@ def cmd_scan(args) -> int:
     def label(src: str) -> str:
         return "[default]" if src == managed else show(src) if src.startswith("/") else src
 
+    if args.lost and args.fix:
+        raise config.ConfigError("--lost lists work only you can sort out, so it does not go with --fix; "
+                                 "run gitpro scan --lost without --fix")
     ask = args.fix and not args.yes and not args.json
     if ask and not sys.stdin.isatty():
         raise config.ConfigError("no terminal to confirm on; re-run with --yes")
@@ -386,6 +525,9 @@ def cmd_scan(args) -> int:
     rep.update(exclude=list(exclude), skipped_excluded=len(excluded),
                roots_source=getattr(args, "roots_source", "args" if args.repo or args.dirs else "default"))
     fixable = [r for r in repos if any(k in r.beneath for k in r.local)]
+    lost_rep = _lost(roots, exclude, cfg, paths, rep["roots_source"]) if args.lost else None
+    if lost_rep is not None:
+        rep["lost"] = {k: v for k, v in lost_rep.items() if k not in ("ok", "command")}
 
     if ask and fixable and not args.plain and sys.stdout.isatty():
         try:
@@ -409,6 +551,12 @@ def cmd_scan(args) -> int:
                   again=f"{PROG} scan --fix{where}", exact=bool(args.repo))
         if not args.fix:
             view.attention(rep, show)
+        if lost_rep is not None:
+            from . import lost
+            for w in lost_rep["warnings"]:
+                print(f"⚠ {w}", file=sys.stderr)
+            print()
+            print(lost.render(lost_rep, args.verbose))
         if getattr(args, "roots_hint", None) and not args.fix:
             print()
             view.step(args.roots_hint)
@@ -427,6 +575,15 @@ def cmd_scan(args) -> int:
             view.aborted()
             return 1
     return _fix(args, fixable, home)
+
+
+def _lost(roots, exclude, cfg, paths, source) -> dict:
+    """lost's offline checks for the repos scan found (spec 22 §7)."""
+    from . import lost
+    scan_cfg = getattr(cfg, "scan", None)
+    stale = getattr(scan_cfg, "stale_days", None) or 180
+    return lost.collect(roots, exclude, cfg, online=False, kinds=set(lost.OFFLINE_KINDS), stale_days=stale,
+                        repos=paths, roots_source=source)
 
 
 def _sh(path: str) -> str:
@@ -451,6 +608,10 @@ def _fix(args, repos: list, home: Path) -> int:
 
 def cmd_pin(args) -> int:
     from . import pin, resolve, view
+    if args.remove:
+        if args.remote is not None:
+            raise config.ConfigError("choose one: --remove takes the pin out, --remote sets one")
+        return cmd_unpin(args)
     remote, cfg = args.remote, None
     if remote is None:
         try:
@@ -539,6 +700,7 @@ def main(argv: Optional[list] = None) -> int:
     if os.name != "posix":
         print(f"✗ {PROG} supports Linux and macOS only", file=sys.stderr)
         return 2
+    jsonout.EXTRA.clear()
     p, subs = build_parser()
     args = p.parse_args(argv)
     if args.version:

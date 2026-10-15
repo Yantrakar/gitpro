@@ -25,7 +25,7 @@ import traceback
 from pathlib import Path
 from typing import Callable, Dict, IO, List, Optional, Tuple
 
-from . import __version__
+from . import __version__, commitcheck, deprecation
 from .config import ConfigError
 from .operation_contract import REQUEST_SCHEMA, OperationError, unique_members
 from .change_contract import REQUEST_SCHEMA as CHANGE_REQUEST_SCHEMA
@@ -155,76 +155,12 @@ def tool_why(args: dict, ctx: Ctx) -> dict:
     rep = resolve.compare(repo, cfg, remote=args.get("remote"), home=ctx.home)
     data = rep.to_json()
     data.pop("ok")
+    from . import cli
+    commit = commitcheck.judge(rep, cfg, committer_email=args.get("committer_email"),
+                               author_email=args.get("author_email"), message=args.get("message"))
     return {"ok": rep.ok(), "command": "why", "repo": data.pop("repo"),
-            "config": {"path": str(cfg.path), "how": cfg.how}, **data}
-
-
-GUARD_CODES = ("ambiguous", "override", "pin_stale", "no_identity", "env_override")   # 10 §2 step 5; agents.TRIGGERS
-CAUSE_CODES = ("url_form", "override", "pin_stale", "global_override", "not_applied", "env_override")
-
-
-def _problem(code: str, message: str, fix: Optional[str]) -> dict:
-    return {"code": code, "message": message, "fix": fix}
-
-
-def _who(rep) -> str:
-    e = rep.expected
-    return f"identity {e.id or '[default]'} <{e.email}>"
-
-
-def _where(rep) -> str:
-    m = rep.expected.match
-    return f"{m.remote} ({m.url})" if m.remote and m.url else str(rep.repo)
-
-
-def _identity_problems(rep, cfg, args: dict) -> List[dict]:
-    """The guard's committer/author judgement (06 §2): committer must be the expected email; the author
-    only counts when it is one of the user's own emails."""
-    from . import resolve
-    expected = rep.expected.email
-    committer = args.get("committer_email") or rep.effective.email.value or ""
-    author = args.get("author_email") or committer
-    if expected is None:
-        return []
-    out = []
-    bad_committer, bad_author = resolve.identity_conflicts(expected, resolve.own_emails(cfg), author, committer)
-    if bad_committer:
-        cause = next((p for p in rep.problems if p.code in CAUSE_CODES), None)
-        msg = (f"this commit would be committed as {committer or '(no email)'} but {_where(rep)} belongs to "
-               f"{_who(rep)}" + (f". cause: {cause.message}" if cause else ""))
-        fix = resolve._shown_fix(cause) if cause else f"gitpro why {shlex.quote(str(rep.repo))}"
-        out.append(_problem("committer", msg, fix))
-    a = author.casefold()
-    if bad_author and a != committer.casefold():   # same as the committer: reported above
-        who = f"{rep.expected.name} <{expected}>"
-        out.append(_problem("author", f"the author would be {author}, your own other email; {_where(rep)} belongs "
-                                      f"to {_who(rep)}", f"git commit --author={shlex.quote(who)} ..."))
-    return out
-
-
-def _trailer_problems(repo: Path, rep, cfg, message: str, warnings: List[str]) -> List[dict]:
-    """Co-Authored-By policy for the message (08's trailers module); a warning when it cannot be checked."""
-    try:
-        from . import trailers
-    except ImportError:
-        warnings.append("message not checked: trailer rules need gitpro's audit package")
-        return []
-    try:
-        r = subprocess.run(["git", "-C", str(repo), "interpret-trailers", "--parse"], input=message,
-                           capture_output=True, text=True, timeout=10)
-        pairs = [tuple(s.strip() for s in ln.split(":", 1)) for ln in r.stdout.splitlines() if ":" in ln]
-        # 08 §11: trailers.policy_for(identity, default), trailers.check(trailers, policy) -> list[str]
-        policy = _call_spec(trailers.policy_for, [("identity", rep.expected.match.identity),
-                                                  ("default", cfg.default)])
-        if hasattr(trailers, "violations"):   # 08: (message, fix) pairs, so a require violation gets its own fix
-            found = [(str(m), str(f)) for m, f in trailers.violations(pairs, policy)]
-        else:
-            found = [(str(m), "remove the trailer from the message")
-                     for m in _call_spec(trailers.check, [("trailers", pairs), ("policy", policy)]) or []]
-    except Exception as e:  # noqa: BLE001 - another package's checker must not break the tool
-        warnings.append(f"message not checked: {type(e).__name__}")
-        return []
-    return [_problem("trailer", m, f) for m, f in found]
+            "config": {"path": str(cfg.path), "how": cfg.how}, **data,
+            "settings": cli.which_data(rep.repo)["settings"], "commit": commit}
 
 
 def tool_check_commit(args: dict, ctx: Ctx) -> dict:
@@ -233,19 +169,9 @@ def tool_check_commit(args: dict, ctx: Ctx) -> dict:
     repo = _repo(args["path"])
     cfg = ctx.config()
     rep = resolve.compare(repo, cfg, remote=args.get("remote"), home=ctx.home)
-    probs = _identity_problems(rep, cfg, args)
-    probs += [_problem(p.code, p.message, resolve._shown_fix(p) or None) for p in rep.problems
-              if p.code in GUARD_CODES]
-    warnings: List[str] = []
-    if args.get("message") is not None:
-        probs += _trailer_problems(rep.repo, rep, cfg, args["message"], warnings)
-    mode = cfg.agents.hook
-    out = {"ok": not probs, "command": "check_commit", "would_block": bool(probs) and mode == "block",
-           "mode": mode, "problems": probs, "reason": probs[0]["message"] if probs else None,
-           "fix": probs[0]["fix"] if probs else None}
-    if warnings:
-        out["warnings"] = warnings
-    return out
+    out = commitcheck.judge(rep, cfg, committer_email=args.get("committer_email"),
+                            author_email=args.get("author_email"), message=args.get("message"))
+    return {"ok": not out["problems"], "command": "check_commit", **out}
 
 
 def _capped(values) -> List[str]:
@@ -258,11 +184,18 @@ def _capped(values) -> List[str]:
 def tool_scan(args: dict, ctx: Ctx) -> dict:
     roots = [str(_dir(r)) for r in _capped(args.get("roots"))]
     argv = ["--json"]
+    if args.get("lost"):
+        argv.append("--lost")
     for r in _capped(args.get("repos")):
         argv += ["--repo", str(_dir(r))]
     if roots:
         argv += ["--", *roots]
     return _cli("scan", argv, ctx.cfg_path)
+
+
+def tool_setup(args: dict, ctx: Ctx) -> dict:
+    """`gitpro setup -n --json`: ok=false (exit 1) just means something is pending, so it is returned as is."""
+    return _cli("setup", ["-n", "--json"], ctx.cfg_path)
 
 
 def tool_env(args: dict, ctx: Ctx) -> dict:
@@ -368,21 +301,8 @@ def tool_lost(args: dict, ctx: Ctx) -> dict:
     return _envelope("lost", rep)
 
 
-def _call_spec(fn: Callable, values: List[Tuple[str, object]]):
-    """fn called with values, which follow the spec's positional order (name, value). Tolerant of how the
-    other package declares them: keyword-only parameters get their value by name, and positional ones by
-    name when every name matches, else by position."""
-    try:
-        params = list(inspect.signature(fn).parameters.values())
-    except (TypeError, ValueError):
-        return fn(*[v for _, v in values])
-    named = dict(values)
-    positional = [p for p in params if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)]
-    kwargs = {p.name: named[p.name] for p in params if p.kind == p.KEYWORD_ONLY and p.name in named}
-    if all(p.name in named for p in positional):
-        return fn(*[named[p.name] for p in positional], **kwargs)
-    rest = [v for k, v in values if k not in kwargs]
-    return fn(*rest[:len(positional)], **kwargs)
+_call_spec = commitcheck.call_spec
+GUARD_CODES = commitcheck.GUARD_CODES
 
 
 def tool_audit(args: dict, ctx: Ctx) -> dict:
@@ -441,16 +361,29 @@ def _strings(desc: str, **items) -> dict:
             "description": desc}
 
 
+COMMIT_PROPS = {"author_email": _string("the commit's author email (default: the committer)"),
+                "committer_email": _string("the committer email (default: what git would use in the repo)"),
+                "message": {"type": "string", "description": "the commit message, for the Co-Authored-By rules"}}
 PATH = _string("a directory inside the git repository (absolute, or relative to the server's directory)")
+
+
+LIVE = object()   # Tool.deprecated_use of a tool that is not deprecated
 
 
 class Tool:
     """One MCP tool; `fn(args, ctx) -> dict` is looked up per call, so tests can replace it."""
 
     def __init__(self, name: str, description: str, schema: dict, fn: Callable[[dict, Ctx], dict],
-                 module: Optional[str] = None, execution: bool = False):
+                 module: Optional[str] = None, execution: bool = False, deprecated_use: object = LIVE):
         self.name, self.description, self.schema, self.fn, self.module = name, description, schema, fn, module
         self.execution = execution
+        self.deprecated_use = deprecated_use     # LIVE, or the replacement tool (None: nothing replaces it)
+        if self.deprecated:
+            self.description = deprecation.describe(deprecated_use, description)
+
+    @property
+    def deprecated(self) -> bool:
+        return self.deprecated_use is not LIVE
 
     def available(self) -> bool:
         """False when the module behind the tool is not installed (or blocked with sys.modules[...] = None)."""
@@ -472,39 +405,49 @@ class Tool:
 TOOLS: Dict[str, Tool] = {t.name: t for t in (
     Tool("which_identity", "The git identity settings (user.name, user.email, signing, core.sshCommand) a repo "
          "uses right now and where each comes from; same as `gitpro which --json`.",
-         _schema({"path": PATH}, ("path",)), tool_which),
+         _schema({"path": PATH}, ("path",)), tool_which, deprecated_use="why"),
     Tool("why", "Which gitpro identity a repo should use, which it really uses, why, and the fix command for "
-         "every problem; same as `gitpro why --json`.",
-         _schema({"path": PATH, "remote": _string("judge against this remote (name or url) instead of origin")},
-                 ("path",)), tool_why),
+         "every problem; same as `gitpro why --json`. Also gives the repo's git settings (`settings`) and answers "
+         "\"would the guard block this commit?\" (`commit`; pass committer_email, author_email and message to "
+         "judge a particular commit).",
+         _schema({"path": PATH, "remote": _string("judge against this remote (name or url) instead of origin"),
+                  **COMMIT_PROPS}, ("path",)), tool_why),
     Tool("check_commit", "Would gitpro's guard block this commit? Judges the committer (default: the repo's "
          "effective email) and author emails against the repo's identity and returns the reason and fix.",
-         _schema({"path": PATH, "author_email": _string("the commit's author email (default: the committer)"),
-                  "committer_email": _string("the committer email (default: what git would use in the repo)"),
-                  "remote": _string("judge against this remote (name or url) instead of origin"),
-                  "message": {"type": "string", "description": "the commit message, for the Co-Authored-By rules"}},
-                 ("path",)), tool_check_commit),
+         _schema({"path": PATH, "remote": _string("judge against this remote (name or url) instead of origin"),
+                  **COMMIT_PROPS}, ("path",)), tool_check_commit, deprecated_use="why"),
     Tool("scan", "List repositories under the given roots (or only the given repos) and the identity git uses "
-         "in each; never fixes anything. Same as `gitpro scan --json`.",
+         "in each; never fixes anything. Same as `gitpro scan --json`; lost=true adds the `lost` member "
+         "(unpushed branches, stashes, dirty trees and so on, as `gitpro scan --lost`).",
          _schema({"roots": _strings("directories to search (default: the configured roots)"),
+                  "lost": {"type": "boolean", "description": "also report work that exists only here (--lost)"},
                   "repos": _strings("only these repositories, not the repos under them")}), tool_scan),
     Tool("env_for", "Shell lines that set GH_TOKEN etc. for the repo's identity: the commands that fetch the "
          "tokens, never their values. Same as `gitpro env --json`.",
          _schema({"path": PATH, "shell": {"type": "string", "enum": ["sh", "fish", "pwsh"],
                                           "description": "shell syntax (default: sh)"}}, ("path",)),
+         tool_env, "gitpro.envcmd", deprecated_use="env"),
+    Tool("env", "Shell lines that set GH_TOKEN etc. for the repo's identity: the commands that fetch the "
+         "tokens, never their values. Same as `gitpro env --json`.",
+         _schema({"path": PATH, "shell": {"type": "string", "enum": ["sh", "fish", "pwsh"],
+                                          "description": "shell syntax (default: sh)"}}, ("path",)),
          tool_env, "gitpro.envcmd"),
+    Tool("setup", "What `gitpro setup` would do, without doing it (`setup -n --json`): the identities, what is "
+         "already set up and what is pending. ok=false means something is pending, not an error. Never changes "
+         "anything; show the user `gitpro setup` to run.", _schema({}), tool_setup),
     Tool("lost", "Unpushed branches, stashes, dirty trees, repos without a remote and duplicate clones under "
          "the roots (offline checks only). Same as `gitpro lost --json`.",
          _schema({"roots": _strings("directories to search (default: the configured roots)"),
-                  "only": _strings("only these kinds", enum=list(LOST_KINDS))}), tool_lost, "gitpro.lost"),
+                  "only": _strings("only these kinds", enum=list(LOST_KINDS))}), tool_lost, "gitpro.lost",
+         deprecated_use="scan"),
     Tool("audit", "Commits whose author or committer is not the repo's identity, and agent trailers; never "
          "rewrites. Same as `gitpro audit --json`.",
          _schema({"path": PATH, "range": _string("a git revision range (default: the unpushed commits)"),
                   "all": {"type": "boolean", "description": "every commit on the branch"}}, ("path",)),
          tool_audit, "gitpro.audit"),
     Tool("identities", "The configured identities (name, email, host, owners, forge accounts, signing); no key "
-         "contents, no extra git settings.", _schema({}), tool_identities),
-    Tool("draft_report", "Draft a redacted gitpro bug report (versions, a redacted why, the last crash or "
+         "contents, no extra git settings.", _schema({}), tool_identities, deprecated_use="setup"),
+    Tool("report", "Draft a redacted gitpro bug report (versions, a redacted why, the last crash or "
          "denial) and the prefilled GitHub issue URL. It never sends or opens anything. Show the user the draft "
          "and the URL and let them decide; for a security problem, give them security_url instead of an issue.",
          _schema({"path": PATH, "kind": {"type": "string", "enum": ["bug", "crash", "denial"],
@@ -512,37 +455,45 @@ TOOLS: Dict[str, Tool] = {t.name: t for t in (
                   "message": {"type": "string", "minLength": 1, "maxLength": 2000,
                               "description": "what happened (redacted before it is used)"}}),
          tool_draft_report),
+    Tool("draft_report", "Draft a redacted gitpro bug report (versions, a redacted why, the last crash or "
+         "denial) and the prefilled GitHub issue URL. It never sends or opens anything. Show the user the draft "
+         "and the URL and let them decide; for a security problem, give them security_url instead of an issue.",
+         _schema({"path": PATH, "kind": {"type": "string", "enum": ["bug", "crash", "denial"],
+                                         "description": "what to report (default: bug)"},
+                  "message": {"type": "string", "minLength": 1, "maxLength": 2000,
+                              "description": "what happened (redacted before it is used)"}}),
+         tool_draft_report, deprecated_use="report"),
     Tool("preflight", "Versioned operation decision and state token for commit, push or GitHub PR creation. "
          "Read-only; online=true explicitly permits account/destination reads. Ready is not authorization.",
-         _schema({"request": REQUEST_SCHEMA, "online": {"type": "boolean"}}, ("request",)), tool_preflight),
+         _schema({"request": REQUEST_SCHEMA, "online": {"type": "boolean"}}, ("request",)), tool_preflight, deprecated_use=None),
     Tool("operation_status", "Read the durable result of an idempotency key. Never executes or retries.",
          _schema({"idempotency_key": _string("the original operation key")}, ("idempotency_key",)),
-         tool_operation_status),
+         tool_operation_status, deprecated_use=None),
     Tool("reconcile_operation", "Read-only inspection of recorded commit/push/PR intent versus current state. "
          "Remote reads require online=true. Does not retry writes, change the ledger outcome or prove attribution.",
          _schema({"idempotency_key": _string("the original operation key"), "online": {"type": "boolean"}},
-                 ("idempotency_key",)), tool_reconcile_operation),
+                 ("idempotency_key",)), tool_reconcile_operation, deprecated_use=None),
     Tool("propose_change", "Read-only exact configuration/repair proposal. Does not record approval or change "
          "target files. Reports coverage by the operator's startup policy; otherwise ask a human to review "
          "its JSON with gitpro change approve --write in their terminal.",
-         _schema({"request": CHANGE_REQUEST_SCHEMA}, ("request",)), tool_propose_change),
+         _schema({"request": CHANGE_REQUEST_SCHEMA}, ("request",)), tool_propose_change, deprecated_use=None),
     Tool("change_status", "Read the approval/apply/recovery status of a persistent change. Does not execute.",
-         _schema({"plan_id": _string("the complete change plan ID")}, ("plan_id",)), tool_change_status),
+         _schema({"plan_id": _string("the complete change plan ID")}, ("plan_id",)), tool_change_status, deprecated_use=None),
     Tool("apply_change", "Apply an exact persistent change with human approval or a covering operator policy. "
          "Provide request only to obtain a scoped grant from the server's startup policy. Host authorization "
          "is still required; clients cannot choose policies or approve themselves.",
          _schema({"plan_id": _string("the complete plan ID"), "request": CHANGE_REQUEST_SCHEMA}, ("plan_id",)),
-         tool_apply_change, execution=True),
+         tool_apply_change, execution=True, deprecated_use=None),
     Tool("recover_change", "Recover an interrupted approved change by restoring its recorded backups only "
          "where current files match the planned before/after contents and modes. Never retries forward writes.",
          _schema({"plan_id": _string("the interrupted approved plan ID")}, ("plan_id",)),
-         tool_recover_change, execution=True),
+         tool_recover_change, execution=True, deprecated_use=None),
     Tool("run_operation", "EXECUTES a reviewed commit, push or GitHub PR operation; requires host/user approval. "
          "Never edits identity configuration. Reuse the exact request, plan_token and idempotency_key for retries. "
          "Unknown outcomes must be inspected, not retried under a new key.",
          _schema({"request": REQUEST_SCHEMA, "plan_token": _string("the reviewed ready preflight token"),
                   "idempotency_key": _string("stable unique operation key"), "online": {"type": "boolean"}},
-                 ("request", "plan_token", "idempotency_key")), tool_run_operation, execution=True),
+                 ("request", "plan_token", "idempotency_key")), tool_run_operation, execution=True, deprecated_use=None),
 )}
 
 
@@ -704,6 +655,8 @@ class Server:
         try:
             with contextlib.redirect_stdout(sys.stderr):
                 obj = tool.fn(args, Ctx(self.cfg_path, self.allow_execution, self.approval_policy))
+            if tool.deprecated and isinstance(obj, dict) and not deprecation.silenced():
+                obj = {**obj, "deprecated": deprecation.field(tool.deprecated_use)}
             return self.result(obj)
         except RpcError:
             raise

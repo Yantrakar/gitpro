@@ -26,14 +26,22 @@ AGENTS = ("claude", "claude-desktop", "codex", "cursor", "gemini", "opencode", "
 TITLE = {"claude": "Claude Code", "claude-desktop": "Claude Desktop", "codex": "Codex", "cursor": "Cursor",
          "gemini": "Gemini CLI", "opencode": "opencode"}
 QUESTION = "Apply these changes?"
+LEARN = "Look through your repos to find your identities?"
+LEARN_BUDGET = 20.0    # seconds for inspecting the repos found
 
 
 def register(sub, common, confirm) -> None:
     from .args import capability
     p = sub.add_parser("setup", parents=[common],
-                       help="set up this machine: config, SSH keys, Git, SSH, the commit guard and your AI agent")
+                       help="set up or update this machine: identities from your repos, SSH keys, Git, SSH, "
+                            "the commit guard and your AI agent")
+    p.add_argument("paths", nargs="*", type=Path, metavar="PATH",
+                   help="find identities in the repos under these folders (implies --add)")
+    p.add_argument("-n", "--dry-run", action="store_true",
+                   help="show this machine's state and what setup would do; exit 1 when something is to do")
     p.add_argument("-y", "--yes", action="store_true",
                    help="apply without asking (the first run still asks for your identities)")
+    p.add_argument("--json", action="store_true", help="with -n: machine-readable output")
     p.add_argument("--add", action="store_true", help="add identities to an existing config")
     p.add_argument("--agent", action="append", choices=AGENTS, metavar="NAME",
                    help=f"set up this AI agent's hook and MCP server ({', '.join(AGENTS[:-1])}); repeatable; "
@@ -42,7 +50,7 @@ def register(sub, common, confirm) -> None:
                    help="create missing SSH keys without a passphrase (not advised)")
     p.add_argument("--write", action="store_true", help=argparse.SUPPRESS)   # before 0.4 setup saved only with it
     p.set_defaults(func=cmd_setup)
-    capability("setup")
+    capability("setup", "setup.dry-run", "setup.learn")
 
 
 def _snapshot(path: Path) -> Snapshot:
@@ -133,11 +141,146 @@ def _key_file(home: Path, v: str) -> Path:
     return home / v[2:] if v.startswith("~/") else Path(v)
 
 
-def _wizard(out, home: Path, path: Path, original: str, from_example: bool,
-            cfg: Optional[config.Config]) -> str:
-    """Ask for the identities; the config text to save (original when nothing was added)."""
-    from rich.prompt import Confirm, Prompt
+def _ask(out, label: str, default: str = "", validate: Optional[Callable[[str], None]] = None) -> str:
+    from rich.prompt import Prompt
     from rich.text import Text
+    while True:
+        value = Prompt.ask(Text(label), default=default, show_default=bool(default), console=out).strip()
+        try:
+            config._no_control_chars(value, label)
+            if validate:
+                validate(value)
+            return value
+        except ConfigError as e:
+            out.print(Text(str(e), style="red"))
+
+
+def _person(out, suggested: dict) -> dict:
+    name = _ask(out, "Commit name", suggested.get("name", ""),
+                lambda v: check(v and "<" not in v and ">" not in v, "Enter a name without < or >"))
+    email = _ask(out, "Commit email", suggested.get("email", ""),
+                 lambda v: config._check_person(config.Default(name=name, email=v), "identity", True))
+    suggested.update(name=name, email=email)
+    return {"name": name, "email": email}
+
+
+def _key_path(home: Path) -> Callable[[str], None]:
+    def key_path(v: str) -> None:
+        if v:
+            config._check_path(v, "SSH key")
+            key = _key_file(home, v)
+            check(not v.endswith(".pub"), "Enter the private-key path, not .pub")
+            check(key.is_file() or not key.exists(), "Choose a private-key file, or a new path to create")
+            check(key.exists() or not Path(str(key) + ".pub").exists(),
+                  "That .pub has no private key next to it; choose another path")
+    return key_path
+
+
+def _key_questions(out, home: Path, values: dict) -> bool:
+    """ssh_key, ssh_alias and sign for values (an identity); a key found in the repos' SSH alias is kept
+    and only signing is asked. False when the answers must be asked again."""
+    from rich.prompt import Confirm
+    if not values.get("ssh_key"):
+        public_keys = sorted(p for p in (home / ".ssh").glob("*.pub") if p.is_file())
+        if public_keys:
+            from rich.text import Text
+            out.print("Existing SSH keys (only public-key filenames are inspected):")
+            for pub in public_keys:
+                out.print(Text(f"  {pub.with_suffix('')}"))
+        key = _ask(out, f"SSH key path for {values['id']} (an existing key, or a new path setup creates; blank "
+                        "keeps your existing authentication)", validate=_key_path(home))
+        if not key:
+            values["sign"] = False
+            return True
+        values["ssh_key"] = key
+        alias = "gitpro-" + (re.sub(r"[^a-z0-9-]", "-", values["id"].lower()).strip("-") or "identity")
+        values["ssh_alias"] = _ask(out, "SSH alias for this identity", alias,
+                                   lambda v: check(config.HOST_RE.fullmatch(v) and v != values["host"],
+                                                   "Choose an SSH alias different from the Git host"))
+    values["sign"] = Confirm.ask("Sign commits with this SSH key?", default=False, console=out)
+    private = _key_file(home, values["ssh_key"])
+    if values["sign"] and private.exists() and not Path(str(private) + ".pub").is_file():
+        out.print("The matching .pub file is missing. Choose a key with a public key to enable signing.")
+        values.pop("ssh_key"), values.pop("ssh_alias", None)
+        return False
+    return True
+
+
+def _identity(out, home: Path, ids: set, suggested: dict, found: Optional[dict] = None) -> dict:
+    """One identity's questions; found (from the repos) gives the defaults."""
+    from rich.prompt import Confirm
+    found = found or {}
+    proposed_id = found.get("id") or "work"
+    n = 2
+    while proposed_id in ids:
+        proposed_id, n = f"{found.get('id') or 'work'}-{n}", n + 1
+    ident = _ask(out, "Identity label (for example work or personal)", proposed_id,
+                 lambda v: check(config.ID_RE.fullmatch(v) and v not in ids, "Use a unique identity label"))
+    seen = {k: found[k] for k in ("name", "email") if found.get(k)}
+    values = {"id": ident, **_person(out, dict(suggested, **seen) if seen else suggested)}
+    host = _ask(out, "Git host", found.get("host") or suggested.get("host", "github.com"),
+                lambda v: config._check_host(v, "Git host"))
+    owners_default = ", ".join(found["owners"]) if found.get("owners") else (
+        suggested.get("owners", "") if host == suggested.get("host") else "")
+    while True:
+        owners = _ask(out, "Owners or groups, comma-separated (blank means the entire host)", owners_default,
+                      lambda v: check(all(config.OWNER_RE.fullmatch(s.strip()) for s in v.split(","))
+                                      if v else True, "Enter valid, comma-separated owners or groups"))
+        if owners or Confirm.ask(f"Match EVERY repository on {host}?", default=False, console=out):
+            break
+    values.update(host=host, owners=list(dict.fromkeys(s.strip() for s in owners.split(",") if s.strip())))
+    if found.get("ssh_key") and found.get("host") == host:
+        values.update({k: found[k] for k in ("ssh_alias", "ssh_key", "ssh_user", "ssh_port") if found.get(k)})
+    return values
+
+
+def _add(text: str, values: dict, path: Path, home: Path, out) -> Optional[str]:
+    """text with values as one more [[identity]], or None (and why, on out) when the config check rejects it."""
+    from rich.text import Text
+    block = "\n\n" + _block("[[identity]]", values)
+    try:
+        _validate(text + block, path, home)
+    except ConfigError as e:
+        out.print(Text(f"{e}\nPlease enter this identity again; nothing has been saved.", style="red"))
+        return None
+    return text + block
+
+
+def _learned(out, home: Path, path: Path, roots: List[Path], cfg: Optional[config.Config]) -> list:
+    """Identities proposed from the repos under roots (spec 22 §5.2-5.4), shown; [] when none."""
+    from rich.table import Table
+    from rich.text import Text
+    from . import learn, undo, view
+    shown = ", ".join(undo.tilde(r) for r in roots)
+    found = learn.learn(roots, home, cfg, budget=LEARN_BUDGET)
+    view.step(f"looked at {view.plural(found.repos, 'repo')} in {shown} ({found.seconds:.1f} s)")
+    if not found.identities:
+        out.print("No identities found in those repos" + (": " + "; ".join(found.notes) if found.notes else "."))
+        return []
+    out.print(Text(f"\nFound {view.plural(len(found.identities), 'identity')} in "
+                   f"{view.plural(found.committed, 'repo')} with commits under {shown}:", style="bold"))
+    table = Table(box=None, show_header=False, pad_edge=False, padding=(0, 2, 0, 0))
+    for _ in range(6):
+        table.add_column()
+    for n, i in enumerate(found.identities, 1):
+        owners = ", ".join(i["owners"][:3]) + (f" (+{len(i['owners']) - 3})" if len(i["owners"]) > 3 else "")
+        table.add_row(str(n), i["id"], Text(f"{i.get('name') or '(no name)'} <{i['email']}>"), i["host"],
+                      Text(owners), Text(i.get("ssh_key") or "no key found", style="dim"))
+        for e, c in i.get("also", []):
+            table.add_row("", "", Text(f"also seen: {e} in {view.plural(c, 'repo')}", style="dim"), "", "", "")
+    out.print(table)
+    for u in found.unassigned:
+        out.print(Text(f"  not assigned: {u}", style="dim"), soft_wrap=True)
+    for note in found.notes:
+        out.print(Text(f"  skipped: {note}", style="dim"), soft_wrap=True)
+    return found.identities
+
+
+def _wizard(out, home: Path, path: Path, original: str, from_example: bool,
+            cfg: Optional[config.Config], roots: Optional[List[Path]] = None) -> str:
+    """Ask for the identities; the config text to save (original when nothing was added). roots: look
+    for identities there without asking; None asks first."""
+    from rich.prompt import Confirm, Prompt
     text = original if cfg is not None else (
         "# Created with gitpro setup.\n"
         "# Reference: https://github.com/Yantrakar/gitpro/blob/main/docs/guide.md\n\n")
@@ -152,90 +295,56 @@ def _wizard(out, home: Path, path: Path, original: str, from_example: bool,
             suggested.setdefault("name", person_default.name)
             suggested.setdefault("email", person_default.email)
 
-    def ask(label: str, default: str = "", validate: Optional[Callable[[str], None]] = None) -> str:
-        while True:
-            value = Prompt.ask(Text(label), default=default, show_default=bool(default), console=out).strip()
-            try:
-                config._no_control_chars(value, label)
-                if validate:
-                    validate(value)
-                return value
-            except ConfigError as e:
-                out.print(Text(str(e), style="red"))
-
-    def person() -> dict:
-        name = ask("Commit name", suggested.get("name", ""),
-                   lambda v: check(v and "<" not in v and ">" not in v, "Enter a name without < or >"))
-        email = ask("Commit email", suggested.get("email", ""),
-                    lambda v: config._check_person(config.Default(name=name, email=v), "identity", True))
-        suggested.update(name=name, email=email)
-        return {"name": name, "email": email}
+    if roots is None and Confirm.ask(LEARN, default=True, console=out):
+        where = _ask(out, "Where (folders, separated by spaces)", "~")
+        roots = [Path(w).expanduser() for w in where.split()] or [home]
+    proposals = _learned(out, home, path, roots, cfg) if roots else []
 
     if cfg is None:
         out.print("A fallback identity applies to repositories that do not match a host/owner rule.")
-        fallback = person() if Confirm.ask("Set a fallback identity?", default=False, console=out) else {}
+        fallback = _person(out, suggested) if Confirm.ask("Set a fallback identity?", default=False, console=out) else {}
         text += _block("[default]", fallback)
         cfg = config.loads(text, path)
 
     ids = {i.id for i in cfg.identities}
     added = 0
-    while Confirm.ask("Add an identity for a Git host?", default=not added, console=out):
-        while True:
-            proposed_id = "work"
-            n = 2
-            while proposed_id in ids:
-                proposed_id, n = f"work-{n}", n + 1
-            ident = ask("Identity label (for example work or personal)", proposed_id,
-                        lambda v: check(config.ID_RE.fullmatch(v) and v not in ids, "Use a unique identity label"))
-            values = {"id": ident, **person()}
-            host = ask("Git host", suggested.get("host", "github.com"),
-                       lambda v: config._check_host(v, "Git host"))
-            while True:
-                owners = ask("Owners or groups, comma-separated (blank means the entire host)",
-                             suggested.get("owners", "") if host == suggested.get("host") else "",
-                             lambda v: check(all(config.OWNER_RE.fullmatch(s.strip()) for s in v.split(","))
-                                             if v else True, "Enter valid, comma-separated owners or groups"))
-                if owners or Confirm.ask(f"Match EVERY repository on {host}?", default=False, console=out):
-                    break
-            values.update(host=host, owners=list(dict.fromkeys(s.strip() for s in owners.split(",") if s.strip())))
-            public_keys = sorted(p for p in (home / ".ssh").glob("*.pub") if p.is_file())
-            if public_keys:
-                out.print("Existing SSH keys (only public-key filenames are inspected):")
-                for pub in public_keys:
-                    out.print(Text(f"  {pub.with_suffix('')}"))
-
-            def key_path(v: str) -> None:
-                if v:
-                    config._check_path(v, "SSH key")
-                    key = _key_file(home, v)
-                    check(not v.endswith(".pub"), "Enter the private-key path, not .pub")
-                    check(key.is_file() or not key.exists(), "Choose a private-key file, or a new path to create")
-                    check(key.exists() or not Path(str(key) + ".pub").exists(),
-                          "That .pub has no private key next to it; choose another path")
-
-            key = ask("SSH key path (an existing key, or a new path setup creates; blank keeps your "
-                      "existing authentication)", validate=key_path)
-            if key:
-                values["ssh_key"] = key
-                alias = "gitpro-" + (re.sub(r"[^a-z0-9-]", "-", ident.lower()).strip("-") or "identity")
-                values["ssh_alias"] = ask("SSH alias for this identity", alias,
-                                          lambda v: check(config.HOST_RE.fullmatch(v) and v != host,
-                                                          "Choose an SSH alias different from the Git host"))
-                values["sign"] = Confirm.ask("Sign commits with this SSH key?", default=False, console=out)
-                private = _key_file(home, key)
-                if values["sign"] and private.exists() and not Path(str(private) + ".pub").is_file():
-                    out.print("The matching .pub file is missing. Choose a key with a public key to enable signing.")
+    if proposals:
+        choice = Prompt.ask("Use these? (e: go through them one by one)", choices=["y", "n", "e"], default="y",
+                            console=out)
+        for found in proposals if choice != "n" else []:
+            if choice == "e":
+                what = Prompt.ask(f"{found['id']} ({found['email']} on {found['host']}): keep, edit or skip",
+                                  choices=["k", "e", "s"], default="k", console=out)
+                if what == "s":
                     continue
             else:
-                values["sign"] = False
-            block = "\n\n" + _block("[[identity]]", values)
-            try:
-                cfg = _validate(text + block, path, home)
-            except ConfigError as e:
-                out.print(Text(f"{e}\nPlease enter this identity again; nothing has been saved.", style="red"))
+                what = "k"
+            while True:
+                if what == "k" and found["id"] not in ids and found.get("name"):
+                    values = {k: found[k] for k in ("id", "name", "email", "host", "owners", "ssh_alias", "ssh_key",
+                                                    "ssh_user", "ssh_port") if found.get(k)}
+                else:
+                    values = _identity(out, home, ids, suggested, found)
+                if not _key_questions(out, home, values):
+                    what = "e"
+                    continue
+                new = _add(text, values, path, home, out)
+                if new is not None:
+                    break
+                what = "e"
+            text = new
+            ids.add(values["id"])
+            added += 1
+    while Confirm.ask("Add an identity for a Git host?", default=not added, console=out):
+        while True:
+            values = _identity(out, home, ids, suggested)
+            if not _key_questions(out, home, values):
                 continue
-            text += block
-            ids.add(ident)
+            new = _add(text, values, path, home, out)
+            if new is None:
+                continue
+            text = new
+            ids.add(values["id"])
             added += 1
             break
     return text
@@ -332,9 +441,8 @@ def inspect(cfg: config.Config, env, names: List[str]) -> Work:
     return w
 
 
-def show(out, w: Work, env, passphrase: bool) -> None:
-    from rich.table import Table
-    from rich.text import Text
+def rows(w: Work, env, passphrase: bool) -> List[Tuple[str, str]]:
+    """(group, what) for each change setup would make, in the preview's order."""
     from . import plan, render, undo
     guard_files = set(plan.guard_paths(env))
     hooks_dir = env.home / plan.HOOKS_DIR
@@ -360,12 +468,19 @@ def show(out, w: Work, env, passphrase: bool) -> None:
     rows += [(f"{TITLE[a]} MCP", f"{line} (read-only identity tools)") for a, line in w.mcps]
     order = ["config", "SSH key", "Git, SSH", "guard"]
     rows.sort(key=lambda r: order.index(r[0]) if r[0] in order else len(order))   # stable: agents keep theirs
-    if rows:
+    return rows
+
+
+def show(out, w: Work, env, passphrase: bool) -> None:
+    from rich.table import Table
+    from rich.text import Text
+    rows_ = rows(w, env, passphrase)
+    if rows_:
         table = Table(box=None, show_header=False, pad_edge=False, padding=(0, 2, 0, 0))
         table.add_column(style="bold")
         table.add_column()
         last = None
-        for group, line in rows:
+        for group, line in rows_:
             table.add_row("" if group == last else group, Text(line))
             last = group
         out.print(Text("\nSetup will:", style="bold"))
@@ -390,6 +505,58 @@ def _apply_files(cfg: config.Config, env, guard: bool) -> None:
     print(f"↩ undo: sh {undo.tilde(script)}")
 
 
+def _identity_json(i, d) -> dict:
+    return {"id": i.id, "name": i.name, "email": i.email, "host": i.host, "owners": list(i.owners),
+            "ssh_alias": i.ssh_alias, "ssh_key": i.ssh_key, "gh_account": i.gh_account,
+            "glab_account": i.glab_account, "clone_dir": i.clone_dir, "sign": config.signs(i, d)}
+
+
+def state(args, home: Path, path: Path, cfg: Optional[config.Config], names: List[str]) -> int:
+    """`setup -n`: this machine's identities, keys and what setup would still do (spec 22 §5.6). Never
+    asks, never writes; exit 1 when something is to do."""
+    from rich.text import Text
+    from . import jsonout, keys, lint, plan, undo, view
+    env = plan.Env(home)
+    if cfg is None or _empty(cfg):
+        todo = [{"group": "config", "what": f"no identities in {undo.tilde(path)} yet: run gitpro setup in a terminal"}]
+        if args.json:
+            jsonout.emit("setup", {"dry_run": True, "config": str(path), "identities": [], "default": None,
+                                   "pending": todo, "done": [], "notes": []}, ok=False)
+        else:
+            print(f"Config: {path}")
+            view.warn(todo[0]["what"])
+        return 1
+    w = inspect(cfg, env, names)
+    pending = [{"group": g, "what": what} for g, what in rows(w, env, passphrase=not args.no_passphrase)]
+    warnings = list(lint.warnings(cfg.default, list(cfg.identities), env))
+    if args.json:
+        d = cfg.default
+        jsonout.emit("setup", {
+            "dry_run": True, "config": str(cfg.path),
+            "identities": [_identity_json(i, d) for i in cfg.identities],
+            "default": {"name": d.name, "email": d.email, "gh_account": d.gh_account, "glab_account": d.glab_account,
+                        "clone_dir": d.clone_dir, "sign": d.sign},
+            "pending": pending, "done": w.done, "notes": w.notes + warnings}, ok=not pending)
+        return 1 if pending else 0
+    out = view.console()
+    out.print(Text(f"Config: {cfg.path}"))
+    for identity in cfg.identities:
+        scope = ", ".join(identity.owners) or "all owners"
+        out.print(Text(f"  {identity.id}: {identity.name} <{identity.email}> on {identity.host} ({scope})"))
+    show(out, w, env, passphrase=not args.no_passphrase)
+    for msg in warnings:
+        view.warn(msg)
+    inv = keys.inventory(cfg.default, list(cfg.identities))
+    if inv:
+        out.print()
+        keys.report(inv, env.expand)
+    if pending:
+        view.step("to do it: gitpro setup")
+        return 1
+    view.ok("this machine is set up; nothing to change")
+    return 0
+
+
 def cmd_setup(args) -> int:
     from rich.prompt import Confirm
     from rich.syntax import Syntax
@@ -399,6 +566,9 @@ def cmd_setup(args) -> int:
     resolve.require_git()
     tty = sys.stdin.isatty() and sys.stdout.isatty()
     home = args.home.expanduser().resolve()
+    check(not (args.dry_run and args.yes), "choose one: -n shows what setup would do, -y does it")
+    check(not args.json or args.dry_run, "--json goes with -n (gitpro setup -n --json)")
+    roots = [p.expanduser() for p in args.paths] or None
     path = Path(args.config or os.environ.get(config.ENV_VAR) or home / config.USER_CONFIG).expanduser().absolute()
     before = _snapshot(path)
     original = before[0].decode("utf-8") if before else ""
@@ -407,6 +577,8 @@ def cmd_setup(args) -> int:
     cfg = config.loads(original, path) if original and not from_example else None
     _validate(original if cfg is not None else "[default]\n", path, home)
     names = _agents(args, home)
+    if args.dry_run:
+        return state(args, home, path, cfg, names)
     out = view.console()
     out.print(Text("gitpro setup", style="bold"))
     out.print(Text(f"Config: {path}"))
@@ -416,13 +588,15 @@ def cmd_setup(args) -> int:
             out.print(Text(f"  {identity.id}: {identity.name} <{identity.email}> on {identity.host} ({scope})"))
 
     text = original
-    if cfg is None or args.add or _empty(cfg):
+    if cfg is None or args.add or roots or _empty(cfg):
         check(tty, "setup asks for your identities, so it needs an interactive terminal; run gitpro setup "
-                   "there, or write the config yourself (gitpro init) and run gitpro setup -y")
+                   "there, or write the config yourself and run gitpro setup -y")
+        for r in roots or ():
+            check(r.is_dir(), f"{r}: not a folder")
         out.print("Setup asks a few questions, shows everything it will do, and asks once before writing.")
         out.print("It never changes your repos and never contacts an account. Ctrl-C stops it; nothing is "
                   "written before you say yes.\n")
-        text = _wizard(out, home, path, original, from_example, cfg)
+        text = _wizard(out, home, path, original, from_example, cfg, roots)
         cfg = _validate(text, path, home)
         if _empty(cfg):
             if text == original:
@@ -450,9 +624,8 @@ def cmd_setup(args) -> int:
         check(not w.keys or args.no_passphrase or tty,
               "creating SSH keys asks for a passphrase; run gitpro setup in a terminal, or add --no-passphrase")
         if not args.yes:
-            if not tty:
-                print("Dry run: nothing written. Run gitpro setup -y to apply, or run it in a terminal.")
-                return 0
+            check(tty, "no terminal to confirm on; run gitpro setup -y to apply, or gitpro setup -n to see "
+                       "what it would do")
             if not Confirm.ask(QUESTION, default=False, console=out):
                 view.aborted()
                 return 1

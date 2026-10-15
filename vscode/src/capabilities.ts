@@ -59,3 +59,31 @@ export class LiveCapabilities implements Capabilities {
     this.current = caps;
   }
 }
+
+// ---------------------------------------------------------------- which CLI call a feature makes (spec 22 §11)
+// Each 0.4 call is gated on a capability the CLI announces; the 0.3 call is the fallback.
+
+/** Effective settings of a repo: `why --json` (its `settings`) with `why.commit`, else `which --json`. */
+export function settingsCall(caps: Pick<Capabilities, "has">, dir: string): { argv: string[]; accept: number[] } {
+  return caps.has("why.commit") ? { argv: ["why", "--json", dir], accept: [0, 1, 2] } : { argv: ["which", "--json", dir], accept: [0] };
+}
+
+/** The Find Lost Work search: `scan --lost --json` with `scan.lost`, else `lost --json --offline`. */
+export function lostCall(caps: Pick<Capabilities, "has">): string[] {
+  return caps.has("scan.lost") ? ["scan", "--lost", "--json"] : ["lost", "--json", "--offline"];
+}
+
+/** The lost body of the search's JSON: scan's `lost` member, or the whole `lost --json` output. */
+export function lostBody<T>(caps: Pick<Capabilities, "has">, json: unknown): T | undefined {
+  if (!caps.has("scan.lost")) {
+    return json as T;
+  }
+  const lost = (json as { lost?: unknown } | null | undefined)?.lost;
+  return lost && typeof lost === "object" ? (lost as T) : undefined;
+}
+
+/** Remove a pin: `pin --remove -y DIR` with `pin.remove`, else `unpin DIR` (with -y when the CLI has dry-run defaults). */
+export function unpinCall(caps: Pick<Capabilities, "has">, dir: string): string[] {
+  return caps.has("pin.remove") ? ["pin", "--remove", "-y", dir]
+    : ["unpin", ...(caps.has("dry-run-defaults.v1") ? ["-y"] : []), dir];
+}

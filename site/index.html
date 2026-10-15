@@ -206,7 +206,7 @@
 <p class="prose">You describe each identity once: a name, an email, an SSH key, and the hosts and owners it belongs to. gitpro turns that into git's own <code>includeIf</code> rules and SSH host entries, so git picks the identity from the remote URL on every commit.</p>
 <ul class="proof">
 <li><span class="tag">PLAIN CONFIG</span><p>Ordinary git and SSH files in a marked block. No daemon, no wrapper around git.</p></li>
-<li><span class="tag">PREVIEW</span><p><code>gitpro plan</code> shows every change as a diff before anything is written.</p></li>
+<li><span class="tag">PREVIEW</span><p><code>gitpro setup</code> shows every change before anything is written, and <code>gitpro setup -n</code> only shows.</p></li>
 <li><span class="tag">BACKUPS</span><p>Hand-written files are backed up, and <code>gitpro uninstall</code> removes everything again.</p></li>
 <li><span class="tag tag-accent">GUARD</span><p>Optional hooks refuse a commit or push with the wrong identity and print the command that fixes it.</p></li>
 </ul>
@@ -353,10 +353,10 @@
 <h2 id="agents-h">AI agents commit too</h2>
 <p class="prose">Coding agents run <code>git commit</code>, <code>git push</code> and <code>gh pr create</code> on their own. gitpro checks each of those calls before it runs. When the identity is wrong, the call is denied with a reason, and the agent has to ask you.</p>
 <ul class="proof">
-<li><span class="tag tag-accent">HOOK</span><p>A Claude Code PreToolUse hook, from <code>gitpro agent install</code> or the plugin. It only denies; it never grants anything.</p></li>
-<li><span class="tag">MCP</span><p>A read-only MCP server, <code>gitpro mcp</code> or <code>uvx gitpro mcp</code>, so an agent can ask which identity a repository uses and why, and whether a commit would be blocked. Tools include <code>which_identity</code>, <code>why</code>, <code>check_commit</code>, <code>audit</code> and <code>draft_report</code>. It is listed in the official MCP Registry as <code>io.github.Yantrakar/gitpro</code>.</p></li>
-<li><span class="tag">APPROVAL</span><p>Changes an agent proposes wait for your approval, and an interrupted apply can be recovered.</p></li>
-<li><span class="tag">AUDIT</span><p><code>gitpro audit</code> finds commits made as the wrong identity or by an agent; <code>--rewrite</code> fixes the unpushed ones.</p></li>
+<li><span class="tag tag-accent">HOOK</span><p>A Claude Code PreToolUse hook, from <code>gitpro setup</code> or the plugin. It only denies; it never grants anything.</p></li>
+<li><span class="tag">MCP</span><p>A read-only MCP server, <code>gitpro mcp</code> or <code>uvx gitpro mcp</code>, so an agent can ask which identity a repository uses and why, and whether a commit would be blocked. Tools include <code>why</code>, <code>setup</code>, <code>scan</code>, <code>audit</code>, <code>env</code> and <code>report</code>. It is listed in the official MCP Registry as <code>io.github.Yantrakar/gitpro</code>.</p></li>
+<li><span class="tag">APPROVAL</span><p>Agents can read the answers, and the fix commands wait for your approval.</p></li>
+<li><span class="tag">AUDIT</span><p><code>gitpro audit</code> finds commits made as the wrong identity or by an agent; <code>--fix</code> fixes the unpushed ones.</p></li>
 <li><span class="tag">LLMS.TXT</span><p>Agents can read <a href="/llms.txt">gitpro.dev/llms.txt</a> for the commands, the MCP tools and the docs in plain text.</p></li>
 </ul>
 </div>
@@ -434,16 +434,16 @@
 <p class="prose">Linux or macOS, Git 2.36 or newer, Python 3.9 or newer and OpenSSH.</p>
 <ol class="steps">
 <li><div><strong>Install pipx if you don't have it.</strong> <code>brew install pipx</code> on macOS, <code>sudo apt install pipx</code> on Ubuntu.</div></li>
-<li><div><strong>Answer a few questions, then say yes once.</strong> <code>gitpro setup</code> asks for identities, hosts, owners and SSH keys, shows everything it will set up, and applies it after one yes. It never changes your repos.</div></li>
-<li><div><strong>See what needs a fix.</strong> <code>gitpro scan</code> lists the repos that need attention and the command for each.</div></li>
+<li><div><strong>Answer a few questions, then say yes once.</strong> <code>gitpro setup</code> offers to look through your repos to find your identities, shows everything it will set up, and applies it after one yes. It never changes your repos.</div></li>
 <li><div><strong>Ask a repository.</strong> <code>gitpro why</code> shows the identity it should use, the one it uses, and the fix if they differ.</div></li>
+<li><div><strong>See what needs a fix.</strong> <code>gitpro scan</code> lists the repos that need attention and the command for each.</div></li>
 </ol>
 <div class="cmd">
 <pre class="term"><code><span class="prompt">$</span> pipx install gitpro
 <span class="prompt">$</span> gitpro setup
-<span class="prompt">$</span> gitpro scan
-<span class="prompt">$</span> gitpro why</code></pre>
-<button class="copy" type="button" data-copy="pipx install gitpro&#10;gitpro setup&#10;gitpro scan&#10;gitpro why" hidden>Copy</button>
+<span class="prompt">$</span> gitpro why
+<span class="prompt">$</span> gitpro scan</code></pre>
+<button class="copy" type="button" data-copy="pipx install gitpro&#10;gitpro setup&#10;gitpro why&#10;gitpro scan" hidden>Copy</button>
 </div>
 </div>
 <div class="split-fig">
@@ -453,23 +453,23 @@
 <!-- fig:f04 -->
 <svg class="f04w wv sw" data-fig="f04" data-v="w" viewBox="0 0 680 234" role="img" aria-labelledby="f04w-t f04w-d" data-routes='{"k1":[[164,68],[188,68]],"k2":[[328,68],[352,68]],"k3":[[492,68],[516,68]],"d3":[[590,96],[590,164]],"d2":[[590,96],[590,130],[418,130],[418,164]],"d1":[[590,96],[590,130],[246,130],[246,164]],"w":[[172,192],[148,192]]}' xmlns="http://www.w3.org/2000/svg">
 <title id="f04w-t">Setup in four steps</title>
-<desc id="f04w-d">gitpro setup asks a few questions and saves ~/.config/gitpro.toml. gitpro plan previews every change. gitpro apply writes a marked block in ~/.gitconfig, one file per identity and the SSH host entries. From then on git and ssh read those files themselves. gitpro uninstall removes them again.</desc>
+<desc id="f04w-d">gitpro setup finds your identities and saves ~/.config/gitpro.toml. It previews every change. After one yes it writes a marked block in ~/.gitconfig, one file per identity and the SSH host entries. From then on git and ssh read those files themselves. gitpro uninstall removes them again.</desc>
 <defs><marker id="f04w-m" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="6" markerHeight="6" markerUnits="userSpaceOnUse" orient="auto"><path class="arrow" d="M0 0L10 5L0 10z"/></marker></defs>
 <text class="st" data-k="st" x="664" y="20" text-anchor="end"></text>
 <rect class="box" data-k="s1" x="24" y="40" width="140" height="56" rx="2"/>
 <text class="lbl" x="94" y="65.3" text-anchor="middle">gitpro setup</text>
-<text class="sub" x="94" y="81.5" text-anchor="middle">--write</text>
+<text class="sub" x="94" y="81.5" text-anchor="middle">finds identities</text>
 <rect class="box-accent" data-k="s2" x="188" y="40" width="140" height="56" rx="2"/>
 <text class="lbl" x="258" y="65.3" text-anchor="middle">gitpro.toml</text>
 <text class="sub" x="258" y="81.5" text-anchor="middle">~/.config</text>
 <path class="ln" d="M164 68 L188 68" marker-end="url(#f04w-m)"/>
 <rect class="box" data-k="s3" x="352" y="40" width="140" height="56" rx="2"/>
-<text class="lbl" x="422" y="65.3" text-anchor="middle">gitpro plan</text>
+<text class="lbl" x="422" y="65.3" text-anchor="middle">the preview</text>
 <text class="sub" x="422" y="81.5" text-anchor="middle">preview only</text>
 <path class="ln" d="M328 68 L352 68" marker-end="url(#f04w-m)"/>
 <rect class="box" data-k="s4" x="516" y="40" width="140" height="56" rx="2"/>
-<text class="lbl" x="586" y="65.3" text-anchor="middle">gitpro apply</text>
-<text class="sub" x="586" y="81.5" text-anchor="middle">-y</text>
+<text class="lbl" x="586" y="65.3" text-anchor="middle">one yes</text>
+<text class="sub" x="586" y="81.5" text-anchor="middle">setup -y</text>
 <path class="ln" d="M492 68 L516 68" marker-end="url(#f04w-m)"/>
 <rect class="box" data-k="o1" x="172" y="164" width="148" height="56" rx="2"/>
 <text class="lbl" x="246" y="189.3" text-anchor="middle">~/.gitconfig</text>
@@ -490,23 +490,23 @@
 </svg>
 <svg class="f04n nv sw" data-fig="f04" data-v="n" viewBox="0 0 320 558" role="img" aria-labelledby="f04n-t f04n-d" data-routes='{"k1":[[160,78],[160,100]],"k2":[[160,148],[160,170]],"k3":[[160,218],[160,240]],"d1":[[40,264],[20,264],[20,332],[40,332]],"d2":[[40,264],[20,264],[20,396],[40,396]],"d3":[[40,264],[20,264],[20,460],[40,460]],"w":[[280,332],[300,332],[300,526],[280,526]]}' xmlns="http://www.w3.org/2000/svg">
 <title id="f04n-t">Setup in four steps</title>
-<desc id="f04n-d">gitpro setup asks a few questions and saves ~/.config/gitpro.toml. gitpro plan previews every change. gitpro apply writes a marked block in ~/.gitconfig, one file per identity and the SSH host entries. From then on git and ssh read those files themselves. gitpro uninstall removes them again.</desc>
+<desc id="f04n-d">gitpro setup finds your identities and saves ~/.config/gitpro.toml. It previews every change. After one yes it writes a marked block in ~/.gitconfig, one file per identity and the SSH host entries. From then on git and ssh read those files themselves. gitpro uninstall removes them again.</desc>
 <defs><marker id="f04n-m" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="6" markerHeight="6" markerUnits="userSpaceOnUse" orient="auto"><path class="arrow" d="M0 0L10 5L0 10z"/></marker></defs>
 <text class="st" data-k="st" x="316" y="16" text-anchor="end"></text>
 <rect class="box" data-k="s1" x="40" y="30" width="240" height="48" rx="2"/>
 <text class="lbl" x="160" y="50.9" text-anchor="middle">gitpro setup</text>
-<text class="sub" x="160" y="66.8" text-anchor="middle">--write</text>
+<text class="sub" x="160" y="66.8" text-anchor="middle">finds identities</text>
 <rect class="box-accent" data-k="s2" x="40" y="100" width="240" height="48" rx="2"/>
 <text class="lbl" x="160" y="120.9" text-anchor="middle">gitpro.toml</text>
 <text class="sub" x="160" y="136.8" text-anchor="middle">~/.config</text>
 <path class="ln" d="M160 78 L160 100" marker-end="url(#f04n-m)"/>
 <rect class="box" data-k="s3" x="40" y="170" width="240" height="48" rx="2"/>
-<text class="lbl" x="160" y="190.9" text-anchor="middle">gitpro plan</text>
+<text class="lbl" x="160" y="190.9" text-anchor="middle">the preview</text>
 <text class="sub" x="160" y="206.8" text-anchor="middle">preview only</text>
 <path class="ln" d="M160 148 L160 170" marker-end="url(#f04n-m)"/>
 <rect class="box" data-k="s4" x="40" y="240" width="240" height="48" rx="2"/>
-<text class="lbl" x="160" y="260.9" text-anchor="middle">gitpro apply</text>
-<text class="sub" x="160" y="276.8" text-anchor="middle">-y</text>
+<text class="lbl" x="160" y="260.9" text-anchor="middle">one yes</text>
+<text class="sub" x="160" y="276.8" text-anchor="middle">setup -y</text>
 <path class="ln" d="M160 218 L160 240" marker-end="url(#f04n-m)"/>
 <rect class="box" data-k="o1" x="40" y="308" width="240" height="48" rx="2"/>
 <text class="lbl" x="160" y="328.9" text-anchor="middle">~/.gitconfig</text>
@@ -574,18 +574,16 @@
 <caption class="sr-only">The main gitpro commands and what each one does</caption>
 <thead><tr><th scope="col">Command</th><th scope="col">What it does</th></tr></thead>
 <tbody>
-<tr><td data-label="Command"><code>gitpro setup</code></td><td data-label="What it does">Guided, offline configuration. Keeps existing settings and backs up the file. Applies nothing.</td></tr>
-<tr><td data-label="Command"><code>gitpro plan</code></td><td data-label="What it does">Shows what <code>apply</code> would change, as diffs.</td></tr>
-<tr><td data-label="Command"><code>gitpro apply</code></td><td data-label="What it does">Writes the git and SSH config. Previews by default; <code>-y</code> writes.</td></tr>
-<tr><td data-label="Command"><code>gitpro why</code></td><td data-label="What it does">Which identity a repository should use, which it uses, why, and the fix.</td></tr>
-<tr><td data-label="Command"><code>gitpro scan</code></td><td data-label="What it does">Lists your repositories by the identity git uses. <code>--fix</code> removes repository overrides.</td></tr>
-<tr><td data-label="Command"><code>gitpro keys</code></td><td data-label="What it does">Each SSH key and where to register it. <code>--generate</code> creates the missing ones.</td></tr>
-<tr><td data-label="Command"><code>gitpro guard install</code></td><td data-label="What it does">Git hooks that refuse a commit or push with the wrong identity.</td></tr>
-<tr><td data-label="Command"><code>gitpro agent install</code></td><td data-label="What it does">The hook that stops an AI agent committing as the wrong identity.</td></tr>
+<tr><td data-label="Command"><code>gitpro setup</code></td><td data-label="What it does">Sets up this machine after one yes: config, SSH keys, Git and SSH files, guard and agents. It offers to find your identities in your repos. <code>-n</code> only shows.</td></tr>
+<tr><td data-label="Command"><code>gitpro why</code></td><td data-label="What it does">Which identity a repository should use, which it uses, why, and the fix. <code>--committer</code> and <code>--message</code> ask whether a commit would be blocked.</td></tr>
+<tr><td data-label="Command"><code>gitpro scan</code></td><td data-label="What it does">Lists your repositories by the identity git uses. <code>--fix</code> removes repository overrides, <code>--lost</code> adds the work that is only on this machine.</td></tr>
+<tr><td data-label="Command"><code>gitpro keys</code></td><td data-label="What it does">Each SSH key and where to register it. <code>gitpro setup</code> creates the missing ones.</td></tr>
+<tr><td data-label="Command"><code>gitpro guard</code></td><td data-label="What it does">Git hooks that refuse a commit or push with the wrong identity.</td></tr>
+<tr><td data-label="Command"><code>gitpro setup --agent claude</code></td><td data-label="What it does">The hook that stops an AI agent committing as the wrong identity.</td></tr>
 <tr><td data-label="Command"><code>gitpro audit</code></td><td data-label="What it does">Finds commits made as the wrong identity or with an AI agent.</td></tr>
 <tr><td data-label="Command"><code>gitpro clone</code></td><td data-label="What it does"><code>git clone</code> with the identity, SSH alias and folder the URL calls for.</td></tr>
-<tr><td data-label="Command"><code>gitpro lost</code></td><td data-label="What it does">Unpushed branches, stashes and dirty trees across your repositories.</td></tr>
-<tr><td data-label="Command"><code>gitpro uninstall</code></td><td data-label="What it does">Removes everything <code>apply</code> wrote. Keeps your config and SSH keys.</td></tr>
+<tr><td data-label="Command"><code>gitpro scan --lost</code></td><td data-label="What it does">Unpushed branches, stashes and dirty trees across your repositories.</td></tr>
+<tr><td data-label="Command"><code>gitpro uninstall</code></td><td data-label="What it does">Removes everything <code>setup</code> wrote. Keeps your config and SSH keys.</td></tr>
 </tbody>
 </table>
 </div>

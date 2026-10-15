@@ -32,7 +32,9 @@ def no_agents(monkeypatch, tmp_path):
     monkeypatch.setenv("PATH", str(bin_))
 
 
-def interact(monkeypatch, answers=(), confirms=(), on_save=None):
+def interact(monkeypatch, answers=(), confirms=(), on_save=None, learn=False):
+    """Mock the prompts. The "look through your repos?" question is answered `learn` without taking a
+    confirm, so the 0.3 tests keep their answers."""
     values, choices = deque(answers), deque(confirms)
     monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
     monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
@@ -44,6 +46,8 @@ def interact(monkeypatch, answers=(), confirms=(), on_save=None):
         return value
 
     def confirm(label, **kwargs):
+        if label == setup.LEARN and not learn:
+            return False
         if label == setup.QUESTION and on_save:
             on_save()
         return choices.popleft()
@@ -351,7 +355,7 @@ def test_real_terminal_setup_and_git_identity_selection(home, tmp_path, finish, 
                                 stdin=slave, stdout=slave, stderr=slave)
         os.close(slave)
         slave = None
-        answers = ["n", "y", "work", "Jane Doe", "jane@corp.test", "github.com", "my-org", "", "n", finish]
+        answers = ["n", "n", "y", "work", "Jane Doe", "jane@corp.test", "github.com", "my-org", "", "n", finish]
         os.write(master, b"\x04" if finish == "eof" else ("\n".join(answers) + "\n").encode())
         deadline = time.monotonic() + TIMEOUT
         while time.monotonic() < deadline:
@@ -424,12 +428,14 @@ def test_setup_existing_config_converges_unattended(home, capsys):
     for k in ("id_work", "id_personal"):
         (home / ".ssh").mkdir(exist_ok=True)
         (home / ".ssh" / k).write_text("x")
-    assert run("setup") == 0                                         # no terminal, no -y: preview only
-    out = capsys.readouterr().out
-    assert "Setup will:" in out and "Dry run: nothing written" in out
+    assert run("setup") == 2                                         # no terminal, no -y: refused
+    assert "gitpro setup -y" in capsys.readouterr().err
+    assert run("setup", "-n") == 1                                   # -n: what it would do
+    assert "Setup will:" in capsys.readouterr().out
     assert not (home / ".gitconfig").exists()
     assert run("setup", "-y") == 0
     assert run("check") == 0 and plan.guard_installed(plan.Env(home))
+    assert run("setup", "-n") == 0
     capsys.readouterr()
     assert run("setup", "-y") == 0
     assert "nothing to change" in capsys.readouterr().out

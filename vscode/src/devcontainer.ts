@@ -1,6 +1,7 @@
 // Spec 13 §5: "gitpro: Set up devcontainer pin" and the one-per-session nudge. devcontainer.json is a team file:
-// the extension shows the line and copies it; it writes only when the user picks Write (through the CLI's
-// --write, which backs up and leaves an undo script). Commands run through Cli as argv arrays, never a shell.
+// the extension shows the line and copies it; it writes only when the user picks Write, and edits the file
+// itself (0.4 dropped `gitpro devcontainer --write`): the one key, nothing else touched, and never a file with
+// comments (JSONC), which it cannot edit without losing them. Commands run through Cli as argv arrays.
 // The vscode and ./cli modules are loaded inside registerDevcontainer, so the pure parts below load without
 // VS Code (the node:test unit tests import this file).
 import * as fs from "node:fs";
@@ -8,6 +9,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import type * as vscode from "vscode";
 import type { Cli } from "./cli";
+import { settingsCall } from "./capabilities";
 
 /** The initializeCommand, line for line as gitpro's devcontainer.LINE (tests/test_devcontainer.py checks it). */
 export const LINE = [
@@ -30,10 +32,10 @@ export const NUDGE = "This repo has a devcontainer; add gitpro pin to initialize
 const DONT_ASK = "gitpro.devcontainer.dontAsk";
 /** An internal command (not contributed): run the nudge check now; resolves to one NudgeResult per folder. */
 export const NUDGE_COMMAND = "gitpro.devcontainerNudge";
-export type NudgeResult = "shown" | "seen" | "off" | "no-file" | "has-pin" | "old-gitpro" | "no-identity";
+export type NudgeResult = "shown" | "seen" | "off" | "no-file" | "has-pin" | "no-identity";
 const PIN_RE = /gitpro\s+pin\b[^\n;|&]*?\s(?:-y|--yes)(?=\s|[;|&]|$)/;
 
-/** What `gitpro devcontainer --json` prints (with --write: written, backup, undo). */
+/** What Set up devcontainer pin works out for one devcontainer.json (the shape `devcontainer --json` had). */
 export interface Proposal {
   ok: boolean;
   file: string | null;
@@ -41,13 +43,109 @@ export interface Proposal {
   has_pin: boolean;
   existing_command: unknown;
   proposed: unknown;
+  /** Comments or trailing commas (JSONC), or text that is not JSON: the file is not edited, the line is shown. */
   has_comments: boolean;
   written: boolean;
   /** The user's string or array command moved into the object form (runs in parallel with the pin). */
   merged?: boolean;
-  backup?: string;
-  undo?: string;
+  /** Why the file cannot be edited or read (shown with the line to paste). */
   error?: string;
+}
+
+/** Text without comments and trailing commas, and whether it had any (strings are left alone). */
+export function stripJsonc(text: string): { text: string; jsonc: boolean } {
+  let out = "";
+  let jsonc = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (c === '"') {
+      let j = i + 1;
+      while (j < text.length && text[j] !== '"') {
+        j += text[j] === "\\" ? 2 : 1;
+      }
+      out += text.slice(i, j + 1);
+      i = j;
+    } else if (c === "/" && text[i + 1] === "/") {
+      jsonc = true;
+      while (i < text.length && text[i] !== "\n") {
+        i++;
+      }
+      out += "\n";
+    } else if (c === "/" && text[i + 1] === "*") {
+      jsonc = true;
+      const end = text.indexOf("*/", i + 2);
+      i = end < 0 ? text.length : end + 1;
+    } else if (c === ",") {
+      const next = /^\s*([}\]])/.exec(stripLeading(text.slice(i + 1)));
+      if (next) {
+        jsonc = true;
+      } else {
+        out += c;
+      }
+    } else {
+      out += c;
+    }
+  }
+  return { text: out, jsonc };
+}
+
+/** Skips whitespace and comments at the start of s (what may sit between a comma and a closing bracket). */
+function stripLeading(s: string): string {
+  let t = s;
+  for (;;) {
+    const m = /^(\s+|\/\/[^\n]*|\/\*[\s\S]*?\*\/)/.exec(t);
+    if (!m) {
+      return t;
+    }
+    t = t.slice(m[0].length);
+  }
+}
+
+/** Reads a devcontainer.json's text: what it has now, what to add, and whether it can be edited in place.
+ * Never throws: a file that is not an object (or not JSON at all) comes back with `error` and the line to add. */
+export function inspectText(file: string, text: string): Proposal {
+  const base = { ok: true, file, tracked: false, has_pin: false, existing_command: null as unknown, proposed: LINE as unknown,
+    has_comments: false, written: false };
+  const { text: plain, jsonc } = stripJsonc(text.replace(/^\uFEFF/, ""));
+  let obj: unknown;
+  try {
+    obj = JSON.parse(plain);
+  } catch (e) {
+    return { ...base, ok: false, has_comments: true, error: `${file} cannot be parsed (${(e as Error).message})` };
+  }
+  if (!obj || typeof obj !== "object" || Array.isArray(obj)) {
+    return { ...base, ok: false, has_comments: true, error: `${file}: the top level is not an object` };
+  }
+  const existing = (obj as Record<string, unknown>).initializeCommand;
+  const pinned = hasPin(existing);
+  let proposed: unknown;
+  try {
+    proposed = proposeLine(existing);
+  } catch (e) {
+    return { ...base, ok: false, has_comments: true, existing_command: existing ?? null, has_pin: pinned,
+      error: (e as Error).message };
+  }
+  return { ...base, has_pin: pinned, existing_command: existing ?? null, proposed, has_comments: jsonc,
+    merged: !pinned && (typeof existing === "string" || Array.isArray(existing)) && proposed !== LINE };
+}
+
+/** The text with initializeCommand set to `value`, everything else byte for byte: a new key is inserted before
+ * the closing brace (the file's own indent, trailing newline kept); an existing key is re-serialized with the
+ * file's indent. Only for text without comments (inspectText says so) whose top level is an object. */
+export function withInitializeCommand(text: string, value: unknown): string {
+  const indent = /^([ \t]+)"/m.exec(text)?.[1] ?? "  ";
+  const bom = text.startsWith("\uFEFF") ? "\uFEFF" : "";
+  const body = text.slice(bom.length);
+  const obj = JSON.parse(body) as Record<string, unknown>;
+  if (Object.prototype.hasOwnProperty.call(obj, "initializeCommand")) {
+    obj.initializeCommand = value;
+    return bom + JSON.stringify(obj, null, indent) + (body.endsWith("\n") ? "\n" : "");
+  }
+  const close = body.lastIndexOf("}");
+  const before = body.slice(0, close).replace(/\s+$/, "");
+  const comma = before.endsWith("{") ? "" : ",";
+  const entry = `"initializeCommand": ${JSON.stringify(value, null, indent).replace(/\n/g, "\n" + indent)}`;
+  return `${bom}${before}${comma}\n${indent}${entry}\n${body.slice(close)}`;
 }
 
 /** value (string, argv array or object form) already runs `gitpro pin`; mirrors devcontainer.has_pin. */
@@ -131,7 +229,8 @@ export function question(p: Proposal, home = os.homedir()): string {
     lines.push(`Note: ${MERGED}.`, "");
   }
   if (p.has_comments) {
-    lines.push("The file has comments, which writing would lose: copy the key and add it by hand.", "");
+    lines.push(p.error ? `${p.error}.` : "The file has comments, which writing would lose.",
+      "Copy the key and add it by hand.", "");
   } else if (p.tracked) {
     lines.push("The file is committed and shared with your team.", "");
   }
@@ -141,6 +240,21 @@ export function question(p: Proposal, home = os.homedir()): string {
 
 function tildeOf(p: string, home: string): string {
   return p === home || p.startsWith(home + path.sep) ? "~" + p.slice(home.length) : p;
+}
+
+/** Why the file must not be written (a symlink out of the repo, read-only), else undefined. */
+export function editRefusal(file: string, repo: string): string | undefined {
+  try {
+    const real = fs.realpathSync(file);
+    const top = fs.realpathSync(repo);
+    if (real !== top && !real.startsWith(top + path.sep)) {
+      return `${file} is a symlink to ${real}, outside the repo`;
+    }
+    fs.accessSync(real, fs.constants.W_OK);
+  } catch (e) {
+    return (e as NodeJS.ErrnoException).code === "EACCES" ? `${file} is read-only` : `${file}: ${String(e)}`;
+  }
+  return undefined;
 }
 
 /** Registers gitpro.devcontainerSetup and the nudge for workspace folders. */
@@ -153,24 +267,35 @@ export function registerDevcontainer(context: vscode.ExtensionContext, cli: Cli)
   const nudged = new Set<string>();
 
   async function setup(target?: string): Promise<string | undefined> {
-    if (!cli.require("devcontainer")) {
-      return undefined;
-    }
     const dir = typeof target === "string" ? target : cli.dir();
     if (!dir) {
       void ui.error("Open a file in a git repository first.");
       return undefined;
     }
-    const p = await cli.json<Proposal>(["devcontainer", "--json", dir], { cwd: dir });
-    if (!p || !p.file) {
+    const file0 = locate(dir);
+    if (!file0) {
+      void ui.error(`No devcontainer.json in ${tildeOf(dir, home)} (looked at ${CANDIDATES.join(", ")}); create one with `
+        + "the Dev Containers extension first.");
       return undefined;
     }
-    const file = tildeOf(p.file, home);
+    let text: string;
+    try {
+      text = fs.readFileSync(file0, "utf8");
+    } catch (e) {
+      void ui.error(`Cannot read ${tildeOf(file0, home)}: ${String(e)}`);
+      return undefined;
+    }
+    const p = inspectText(file0, text);
+    const file = tildeOf(file0, home);
     if (p.has_pin) {
       void ui.info(`Already set up: ${file} runs gitpro pin in initializeCommand.`);
       return "already";
     }
-    const pick = await ui.modal(question(p, home), ...(p.has_comments ? ["Copy"] : ["Write", "Copy"]));
+    const tracked = (await cli.git(["ls-files", "--error-unmatch", "--", file0], dir, { quiet: true })).code === 0;
+    p.tracked = tracked;
+    const refusal = p.error ?? editRefusal(file0, dir);
+    const pick = await ui.modal(question(refusal ? { ...p, error: p.error ?? refusal, has_comments: true } : p, home),
+      ...(p.has_comments || refusal ? ["Copy"] : ["Write", "Copy"]));
     if (pick === "Copy") {
       await vs.env.clipboard.writeText(snippet(p.proposed));
       void ui.info(`Copied the initializeCommand line: paste it into ${file}.`);
@@ -179,7 +304,7 @@ export function registerDevcontainer(context: vscode.ExtensionContext, cli: Cli)
     if (pick !== "Write") {
       return undefined;
     }
-    if (p.tracked) {
+    if (tracked) {
       const sure = await ui.modal("This file is shared with your team. Write anyway?\n\nThe line pins only on hosts "
         + "that have gitpro: every teammate who opens this container needs gitpro on their host to get the right "
         + "identity (without it, the line does nothing).", "Write");
@@ -187,17 +312,17 @@ export function registerDevcontainer(context: vscode.ExtensionContext, cli: Cli)
         return undefined;
       }
     }
-    // A refusal (comments appeared, a parse error) exits 2: cli.json shows the CLI's error and returns undefined.
-    const w = await cli.json<Proposal>(["devcontainer", "--write", "-y", "--json", dir], { cwd: dir });
-    if (!w?.written) {
+    try {
+      fs.writeFileSync(file0, withInitializeCommand(text, p.proposed));
+    } catch (e) {
+      void ui.error(`Cannot write ${file}: ${String(e)}`);
       return undefined;
     }
     cli.log.info(`✓ ${file}: initializeCommand runs gitpro pin on the next container start`);
-    const undo = w.undo ? `sh ${tildeOf(w.undo, home)}` : "(none)";
-    cli.log.info(`↩ undo: ${undo}`);
-    await vs.window.showTextDocument(vs.Uri.file(p.file));
+    await vs.window.showTextDocument(vs.Uri.file(file0));
     const merged = p.merged ? ` Note: ${MERGED}.` : "";
-    void ui.info(`Written: the next container start runs gitpro pin on the host.${merged} Undo: ${undo}`);
+    void ui.info(`Written: the next container start runs gitpro pin on the host.${merged} `
+      + (tracked ? "Undo: git checkout -- the file, or Ctrl+Z in the editor." : "Undo: Ctrl+Z in the editor."));
     return "written";
   }
 
@@ -215,12 +340,10 @@ export function registerDevcontainer(context: vscode.ExtensionContext, cli: Cli)
     if (!file || fileHasPin(file)) {
       return file ? "has-pin" : "no-file";
     }
-    if (!cli.caps.has("devcontainer")) {
-      return "old-gitpro";
-    }
     nudged.add(folder);
     type Which = { settings?: Record<string, { value: unknown }> };
-    const w = await cli.json<Which>(["which", "--json", folder], { cwd: folder, quiet: true });
+    const call = settingsCall(cli.caps, folder);
+    const w = await cli.json<Which>(call.argv, { cwd: folder, quiet: true, accept: call.accept });
     if (!w?.settings?.["user.email"]?.value) {
       return "no-identity";
     }

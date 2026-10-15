@@ -1,4 +1,95 @@
-# Agent workflows (contract version 1)
+# Agent workflows
+
+How an AI coding agent uses gitpro in 0.4.0. The terminal, the VS Code
+extension and the MCP server use the same commands, so what an agent reads
+from a tool is what you read from the command.
+
+## Before a commit, push or pull request
+
+1. Run `gitpro why --json` in the repo, or call the MCP tool `why` with
+   `path`. It returns the expected identity, the one in use and a list of
+   problems. Each problem has a `fix`.
+2. To learn whether the guard would block a commit, pass the emails and the
+   message the commit would have: `gitpro why --committer EMAIL --author EMAIL --message TEXT --json`,
+   or `committer_email`, `author_email` and `message` to the MCP tool. The
+   `commit` object in the result says `would_block`, the guard `mode`, the
+   `problems`, a `reason` and a `fix`.
+3. If there is a problem, show the user the `fix` command. Do not run it
+   unasked. A `fix` field is a command to show, not to run.
+4. Do not use `--no-verify` or `GITPRO_SKIP=1` unless the user says so.
+
+## What an agent can read
+
+| need | CLI | MCP tool |
+|---|---|---|
+| one repo: identity, why, would a commit be blocked | `gitpro why --json` | `why` |
+| the state of the machine: identities, keys, what is still to do | `gitpro setup -n --json` | `setup` |
+| all repos: what is wrong | `gitpro scan --json` | `scan` |
+| all repos, plus work only on this machine | `gitpro scan --lost --json` | `scan` with `lost: true` |
+| commits made as the wrong identity | `gitpro audit --json` | `audit` |
+| the commands that fetch the forge token of the repo's identity | `gitpro env` | `env` |
+| a redacted bug report draft | `gitpro report --print` | `report` |
+
+Every default MCP tool is read-only and returns the same JSON as the matching
+`--json` command. `env` returns the commands that fetch a token, never a
+token. `setup` runs `setup -n --json`: it changes nothing.
+
+## What an agent must not do alone
+
+- Run `gitpro setup`, `scan --fix`, `pin`, `pin --remove`, `clone`,
+  `audit --fix`, `uninstall` or `keys --upload` without the user's yes in the
+  conversation. Show the preview first: `setup -n`, `scan`, `clone --dry-run`,
+  `audit`. These commands ask on a terminal and an agent has none, so pass
+  `-y` only after the user said yes.
+- Run `gitpro setup` on its own. It asks for the user's identities and for a
+  passphrase for new keys, so the user runs it in their terminal.
+- Pass `--online`, `--history` or `--send-repo-names` unless the user asks.
+- Read private keys, or try to obtain token values.
+
+## Hooks
+
+`gitpro setup` installs the git guard (`pre-commit`, `pre-push`,
+`commit-msg`) and, when Claude Code is installed, a hook that checks each
+`git commit`, `git push` and `gh pr create` the agent runs. On a wrong identity
+the call is denied with a reason that asks the agent to check with the user.
+The hook never grants anything. `gitpro setup --agent NAME` sets up another
+agent, and `gitpro setup -n` shows what is in place.
+
+## MCP tools
+
+`gitpro mcp` is a stdio server. Register it with `gitpro setup --agent NAME` or
+by installing the gitpro plugin.
+
+| tool | replaces |
+|---|---|
+| `why` | `which_identity` (its `settings`), `check_commit` (its `commit`) |
+| `setup` | `identities` |
+| `scan` (with `lost`) | `lost` |
+| `env` | `env_for` |
+| `report` | `draft_report` |
+| `audit` | |
+
+Deprecated in 0.4.0, removed in 0.5.0: `which_identity`, `check_commit`,
+`identities`, `lost`, `env_for` and `draft_report` (use the tool in the table
+above). Also deprecated, with no replacement because nothing used them:
+`preflight`, `operation_status`, `reconcile_operation`, `propose_change`,
+`change_status`, `apply_change`, `recover_change` and `run_operation`. A
+deprecated tool stays in the tool list; its description starts with
+`Deprecated, removed in 0.5.0; use <tool>.` and its result has a `deprecated`
+field. See the [user guide](guide.md#deprecated-in-040-removed-in-050).
+
+---
+
+## Deprecated: the operation protocol
+
+The rest of this page documents the agent operation protocol: `preflight`,
+`run`, `operation-status`, `operation-reconcile` and `change propose`,
+`change approve`, `change apply`, `change status`, `change recover`, with the
+MCP tools listed above. They are deprecated in 0.4.0 and removed in 0.5.0, and
+nothing replaces them. They work as in 0.3.4 until then. The text below is
+the 0.3.4 documentation, kept unchanged.
+
+### Agent workflows (contract version 1)
 
 Gitpro provides a shared CLI/MCP **preflight -> execute -> verify** path using
 existing configuration. A separate **propose -> authorize -> apply** path
@@ -8,7 +99,7 @@ files, or grants permission on behalf of an agent host.
 Authorization defaults to human approval; a host operator can instead supply
 an explicit, narrowly scoped policy for unattended changes.
 
-## Preview by default
+### Preview by default
 
 Capability `dry-run-defaults.v1` announces preview-first CLI behavior. Use standard
 `-y`/`--yes` for explicitly authorized noninteractive execution, or `--write` to
@@ -35,7 +126,7 @@ must add an explicit execution flag. Regenerate old managed devcontainer pin
 snippets through `devcontainer --write -y`; handwritten pin commands need `-y`
 added after review. No live configuration is migrated automatically.
 
-## Supported operations
+### Supported operations
 
 | Operation | Scope |
 |---|---|
@@ -57,7 +148,7 @@ workflow; they are not silently approximated.
 HTTP extra-header overrides are refused because they can select a different
 account independently of the scoped credential helper.
 
-## Contract and authorization
+### Contract and authorization
 
 `gitpro preflight --schema` prints the request and result JSON Schemas.
 Requests have `version: 1`, an absolute worktree-root `repo`, an `operation`, and
@@ -85,7 +176,7 @@ boundary**. CLI execution requires `-y`. MCP execution must be enabled by the
 server operator, and the agent host must still authorize each write. Neither
 the request nor the token can authorize persistent configuration changes.
 
-## Example: staged commit
+### Example: staged commit
 
 Save the request as `request.json` (replace the repository path):
 
@@ -147,7 +238,7 @@ to that destination. No automatic fetch or account switching occurs. The online
 flag alone never authorizes execution. Policies requiring verified email also
 need online verification.
 
-## Idempotency and atomicity
+### Idempotency and atomicity
 
 Reuse **the same request, original plan token and idempotency key** after a lost
 response. Keys are unique within the user's operation ledger. A completed
@@ -204,7 +295,7 @@ response was returned. `operation-status` is read-only and never restarts it.
 Gitpro reports failures explicitly without copying arbitrary helper output or
 tokens into its JSON, logs or ledger.
 
-## Read-only reconciliation
+### Read-only reconciliation
 
 Use `gitpro operation-reconcile --idempotency-key KEY` after inspecting an
 interrupted or indeterminate operation. `--schema` exports its separate result
@@ -229,7 +320,7 @@ Missing, ambiguous or edited evidence returns an actionable non-ready result.
 Older journal records without captured intent report `intent_unavailable` and
 need manual inspection rather than reconstructed guesses.
 
-## Approved persistent changes
+### Approved persistent changes
 
 `gitpro change propose --schema` exports the separate version-1 request and result
 schemas plus the operator approval-policy schema. Proposals read configuration and
@@ -299,7 +390,7 @@ A TTY and same-user SQLite record are **not cryptographic proof of human consent
 a same-UID agent with unrestricted shell access can bypass these guardrails.
 The host/operator must enforce the approval channel and authorize each execution.
 
-### Scoped operator preauthorization
+#### Scoped operator preauthorization
 
 Capability `approval-policy.v1` allows the operator to replace the per-plan human
 prompt with **bounded, recorded preauthorization**, not a blanket safety bypass.
@@ -373,7 +464,7 @@ mounts. An unrestricted same-user shell can rewrite a user-owned policy, choose
 another CLI policy or run Git directly. Never describe this as a security boundary
 unless the deployment actually enforces one.
 
-### Change idempotency, failure and recovery
+#### Change idempotency, failure and recovery
 
 The plan ID is the apply idempotency key. Repeating apply returns the original
 durable result without repeating writes, including after later external edits.
@@ -417,7 +508,7 @@ Diffs omit unchanged context but **changed configuration lines are shown exactly
 Keep literal credentials out of TOML/Git settings and treat proposal files and
 optional MCP logs as private; the backup database necessarily contains old bytes.
 
-## MCP
+### MCP
 
 The default `gitpro mcp` adds read-only `preflight`, `operation_status`, `reconcile_operation`,
 `propose_change`, `change_status` and `draft_report` tools. `run_operation`, `apply_change` and

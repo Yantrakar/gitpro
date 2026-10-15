@@ -40,6 +40,7 @@ def sandbox(home, fake_bin, monkeypatch, tmp_path):
     monkeypatch.chdir(work)
     for v in ENV_VARS:
         monkeypatch.delenv(v, raising=False)
+    monkeypatch.setenv("GITPRO_NO_DEPRECATION", "1")
     return work
 
 
@@ -218,7 +219,7 @@ def test_why_reports_override(work_repo, capsys):
     got = payload(r)
     assert got["problems"][0]["code"] == "override" and got["ok"] is False
     want = cli_json(capsys, "why", "--json", str(work_repo))
-    assert got == want
+    assert got == want                              # settings and commit too (spec 22 §6)
 
 
 def test_why_with_remote(work_repo):
@@ -1088,3 +1089,104 @@ def test_check_commit_blocks_two_identity_remotes(work_repo):  # spec 21 B1
 def test_guard_codes_follow_the_agent_hook():
     from gitpro import agents
     assert mcp.GUARD_CODES == agents.TRIGGERS
+
+
+# ---------------------------------------------------------------- spec 22: why/scan/setup/env/report, deprecations
+
+def test_why_commit_matches_check_commit(work_repo):
+    cases = [{}, {"committer_email": "me@personal.test"}, {"author_email": "ME@personal.test"},
+             {"author_email": "pat@other.test", "message": "x\n\nCo-Authored-By: Bot <bot@x.test>\n"}]
+    for extra in cases:
+        args = {"path": str(work_repo), **extra}
+        want = payload(call("check_commit", args))
+        got = payload(call("why", args))
+        assert got["commit"] == {k: v for k, v in want.items() if k not in ("ok", "command")}
+
+
+def test_why_has_settings_like_which_identity(work_repo):
+    got = payload(call("why", {"path": str(work_repo)}))
+    assert got["settings"] == payload(call("which_identity", {"path": str(work_repo)}))["settings"]
+    assert "commit" in got
+
+
+def test_scan_lost_passes_flag(monkeypatch, tmp_path):
+    seen = []
+    monkeypatch.setattr(mcp, "_cli", lambda command, argv, cfg=None: seen.append((command, argv)) or {"ok": True})
+    payload(call("scan", {"roots": [str(tmp_path)], "lost": True}))
+    payload(call("scan", {"roots": [str(tmp_path)]}))
+    assert seen[0][0] == "scan" and "--lost" in seen[0][1] and "--json" in seen[0][1]
+    assert "--lost" not in seen[1][1]
+
+
+def test_setup_tool_returns_pending_object(monkeypatch):
+    seen = []
+
+    def fake(command, argv, cfg=None):
+        seen.append((command, argv))
+        return {"ok": False, "command": "setup", "pending": ["x"]}
+    monkeypatch.setattr(mcp, "_cli", fake)
+    got = payload(call("setup"))
+    assert seen == [("setup", ["-n", "--json"])] and got["ok"] is False and got["pending"] == ["x"]
+
+
+def test_setup_cli_keeps_not_ok_object(monkeypatch):
+    import gitpro.cli as cli
+    monkeypatch.setattr(cli, "build_parser", lambda: _fake_parser({"ok": False, "command": "setup"}))
+    assert mcp._cli("setup", ["-n", "--json"]) == {"ok": False, "command": "setup"}
+    monkeypatch.setattr(cli, "build_parser", lambda: _fake_parser({"ok": False, "command": "setup", "error": "bad"}))
+    with pytest.raises(mcp.ToolError):
+        mcp._cli("setup", ["-n", "--json"])
+
+
+def _fake_parser(obj):
+    class Parser:
+        def parse_args(self, argv):
+            return types.SimpleNamespace(func=lambda a: print(json.dumps(obj)) or 1)
+    return Parser(), {"setup": types.SimpleNamespace(_option_string_actions={})}
+
+
+@pytest.mark.skipif(not has("gitpro.envcmd"), reason="no env command")
+def test_env_and_report_equal_old_tools(work_repo):
+    assert payload(call("env", {"path": str(work_repo)})) == payload(call("env_for", {"path": str(work_repo)}))
+    args = {"path": str(work_repo), "message": "it broke"}
+    assert payload(call("report", args)) == payload(call("draft_report", args))
+
+
+DEPRECATED = {"which_identity": "why", "check_commit": "why", "identities": "setup", "lost": "scan",
+              "env_for": "env", "draft_report": "report", "preflight": None, "operation_status": None,
+              "reconcile_operation": None, "propose_change": None, "change_status": None, "apply_change": None,
+              "recover_change": None, "run_operation": None}
+
+
+def test_deprecated_tool_descriptions():
+    for name, use in DEPRECATED.items():
+        tool = mcp.TOOLS[name]
+        head = f"Deprecated, removed in 0.5.0; use {use}." if use else "Deprecated, removed in 0.5.0; nothing"
+        assert tool.description.startswith(head), name
+    for name in ("why", "scan", "setup", "env", "report", "audit"):
+        assert not mcp.TOOLS[name].description.startswith("Deprecated")
+
+
+def test_deprecated_field_in_results(work_repo, monkeypatch):
+    monkeypatch.delenv("GITPRO_NO_DEPRECATION", raising=False)
+    path = {"path": str(work_repo)}
+    for name, args, use in (("which_identity", path, "why"), ("check_commit", path, "why"),
+                            ("identities", {}, "setup"), ("env_for", path, "env"),
+                            ("draft_report", {"path": str(work_repo), "message": "m"}, "report"),
+                            ("lost", {"roots": [str(work_repo.parent)]}, "scan")):
+        if name in ("lost", "env_for") and not has("gitpro." + ("lost" if name == "lost" else "envcmd")):
+            continue
+        got = payload(call(name, args))
+        assert got["deprecated"] == {"removed_in": "0.5.0", "use": use}, name
+    for name in ("why", "env", "report"):
+        assert "deprecated" not in payload(call(name, {"path": str(work_repo)}))
+    monkeypatch.setenv("GITPRO_NO_DEPRECATION", "1")
+    for name, args in (("which_identity", path), ("identities", {}), ("check_commit", path)):
+        assert "deprecated" not in payload(call(name, args))
+
+
+def test_deprecated_field_for_use_none(monkeypatch):
+    monkeypatch.delenv("GITPRO_NO_DEPRECATION", raising=False)
+    monkeypatch.setattr(mcp.TOOLS["operation_status"], "fn", lambda a, c: {"ok": True})
+    got = payload(call("operation_status", {"idempotency_key": "k"}))
+    assert got["deprecated"] == {"removed_in": "0.5.0", "use": None}

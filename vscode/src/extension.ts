@@ -2,12 +2,12 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import * as vscode from "vscode";
-import { Capabilities, LiveCapabilities, loadCapabilities } from "./capabilities";
+import { Capabilities, LiveCapabilities, loadCapabilities, unpinCall } from "./capabilities";
 import { Cli, exec, killAll, makeCli, ui } from "./cli";
 import { registerFeatures } from "./features";
 import type { RootsSeam } from "./roots";
-import { Before, Choice, fixArgs, Fixed, fixedMessage, Group, isReport, plan, question, Repo, Report, scanArgs, stepText, steps,
-  suggestions, summary, tilde, tree, walk } from "./scan";
+import { Before, fixArgs, Fixed, fixedMessage, Group, isReport, plan, question, Repo, Report, scanArgs, summary, tilde,
+  tree } from "./scan";
 import { containerHere, registerIdentityBar, trackFolder } from "./statusBar";
 
 type Node = Group | Before | Repo;
@@ -23,8 +23,6 @@ export interface Api {
   scanMessage(): string | undefined;
   /** Replaces the modal question before a fix. */
   setConfirm(ask: (question: string) => Promise<boolean>): void;
-  /** Replaces the picker Review One by One shows for repo i (fix: what it would preselect). */
-  setReview(choose: (repos: Repo[], i: number, fix: boolean) => Promise<Choice | undefined>): void;
   /** The message boxes and pickers every command uses; tests replace its functions. */
   ui: typeof ui;
   /** What the configured gitpro can do (reloaded when gitpro.path changes). */
@@ -67,10 +65,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<Api> {
   }));
   void bar.refresh();
   return { status: bar.status, refresh: bar.refresh, overrides: overrides.overrides, scanState: overrides.scanState,
-    scanMessage: overrides.scanMessage, setConfirm: overrides.setConfirm, setReview: overrides.setReview, ui, caps, reloadCapabilities };
+    scanMessage: overrides.scanMessage, setConfirm: overrides.setConfirm, ui, caps, reloadCapabilities };
 }
 
-/** plan, apply, pin, unpin, openConfig, refresh: the commands that predate the feature packages. */
+/** setup, pin, unpin, openConfig: the commands that predate the feature packages. */
 function registerCore(context: vscode.ExtensionContext, cli: Cli): void {
   const refresh = () => vscode.commands.executeCommand("gitpro.refresh");
 
@@ -78,10 +76,9 @@ function registerCore(context: vscode.ExtensionContext, cli: Cli): void {
     if (!cli.require("setup")) {
       return;
     }
-    const file = process.env.GITPRO_CONFIG || path.join(os.homedir(), ".config", "gitpro.toml");
-    cli.log.info("Opening the configuration wizard in a terminal; no changes are applied automatically.");
-    vscode.window.createTerminal({ name: "gitpro setup", shellPath: cli.executable(),
-      shellArgs: ["setup", ...(cli.caps.has("dry-run-defaults.v1") ? ["--write"] : []), "-c", file],
+    // `gitpro setup` asks questions (scan, review, confirm), so it runs in a terminal.
+    cli.log.info(`$ ${cli.executable()} setup    (in a terminal)`);
+    vscode.window.createTerminal({ name: "gitpro setup", shellPath: cli.executable(), shellArgs: ["setup"],
       cwd: cli.dir() || os.homedir() }).show();
   }
 
@@ -93,43 +90,8 @@ function registerCore(context: vscode.ExtensionContext, cli: Cli): void {
     return dir;
   }
 
-  /** Whether `gitpro apply` has nothing to write: `check --json` when the CLI has it, else plan's text (old CLI). */
-  async function upToDate(): Promise<boolean | undefined> {
-    if (cli.caps.has("check.json")) {
-      const c = await cli.json<{ up_to_date?: boolean }>(["check", "--json"], { accept: [0, 1] });
-      if (!c) {
-        return undefined;
-      }
-      if (c.up_to_date) {
-        return true;
-      }
-      const p = await cli.show(["plan"]);
-      return p && p.code === 0 ? false : undefined;
-    }
-    const p = await cli.show(["plan"]);
-    return !p || p.code !== 0 ? undefined : p.stdout.includes("up to date: nothing to change");
-  }
-
   const commands: Record<string, () => Promise<unknown>> = {
     "gitpro.setup": async () => setup(),
-    "gitpro.plan": () => cli.show(["plan"]),
-    "gitpro.apply": async () => {
-      const done = await upToDate();
-      if (done === undefined) {
-        return;
-      }
-      if (done) {
-        cli.log.info("up to date: nothing to change");
-        void ui.info("gitpro: up to date, nothing to change.");
-        return;
-      }
-      if ((await ui.modal("Apply the changes shown in the gitpro output?", "Apply")) === "Apply") {
-        await cli.show(["apply", "--yes"]);
-        await refresh();
-      } else {
-        cli.log.info("✗ apply cancelled, nothing written");
-      }
-    },
     "gitpro.pin": async () => {
       if (containerHere()) {
         void ui.warn("Pin on the host, where your identities are set up: run 'gitpro pin' in this repo there.");
@@ -144,17 +106,17 @@ function registerCore(context: vscode.ExtensionContext, cli: Cli): void {
     "gitpro.unpin": async () => {
       const dir = repoDir();
       if (dir) {
-        await cli.show(["unpin", ...(cli.caps.has("dry-run-defaults.v1") ? ["-y"] : []), dir], { cwd: dir });
+        await cli.show(unpinCall(cli.caps, dir), { cwd: dir });
         await refresh();
       }
     },
     "gitpro.openConfig": async () => {
       const file = process.env.GITPRO_CONFIG || path.join(os.homedir(), ".config", "gitpro.toml");
       if (!fs.existsSync(file)) {
-        const wizard = cli.caps.has("setup") ? ["Guided Setup"] : [];
+        const wizard = cli.caps.has("setup") ? ["Set Up"] : [];
         const discover = cli.caps.has("init.discover") ? ["Create with Discovery"] : [];
         const pick = await ui.info(`${file} does not exist.`, ...wizard, ...discover, "Create from Example");
-        if (pick === "Guided Setup") {
+        if (pick === "Set Up") {
           setup();
           return;
         }
@@ -183,7 +145,7 @@ function registerCore(context: vscode.ExtensionContext, cli: Cli): void {
 
 /** The Repo Overrides view: `gitpro scan` results, with checkboxes for what Fix Checked removes. */
 function repoOverrides(context: vscode.ExtensionContext, out: vscode.LogOutputChannel, cli: Cli, roots: () => RootsSeam):
-  Pick<Api, "overrides" | "scanState" | "scanMessage" | "setConfirm" | "setReview"> &
+  Pick<Api, "overrides" | "scanState" | "scanMessage" | "setConfirm"> &
   { scan(): Promise<void>; rescan(): Promise<void> } {
   const home = os.homedir();
   let report: Report | undefined;
@@ -329,108 +291,6 @@ function repoOverrides(context: vscode.ExtensionContext, out: vscode.LogOutputCh
     await scan();
   }
 
-  type StepItem = vscode.QuickPickItem & { choice?: Choice };
-  const openConfig: vscode.QuickInputButton = { iconPath: new vscode.ThemeIcon("go-to-file"), tooltip: "Open .git/config" };
-
-  /** One step of Review One by One, as a multi-step quick pick: "Review app (3/15)". */
-  function pickStep(rs: Repo[], i: number, fixNow: boolean): Promise<Choice | undefined> {
-    const r = rs[i];
-    const t = stepText(r, home);
-    const rest = rs.length - i - 1;
-    const q = vscode.window.createQuickPick<StepItem>();
-    q.title = `Review ${r.label}`;
-    q.step = i + 1;
-    q.totalSteps = rs.length;
-    q.placeholder = t.where;
-    q.ignoreFocusOut = true; // stays open while .git/config is shown
-    q.buttons = [...(i ? [vscode.QuickInputButtons.Back] : []), openConfig];
-    const items: StepItem[] = [
-      { label: "$(check) Fix", description: t.fix, detail: t.removes, choice: "fix" },
-      { label: "$(debug-step-over) Skip", description: t.skip, choice: "skip" },
-    ];
-    if (rest) {
-      items.push({ label: "the rest", kind: vscode.QuickPickItemKind.Separator },
-        { label: `$(check-all) Fix this and the ${rest} after it`, choice: "fixRest" },
-        { label: `$(close-all) Skip this and the ${rest} after it`, choice: "skipRest" });
-    }
-    q.items = items;
-    q.activeItems = [items[fixNow ? 0 : 1]];
-    return new Promise((resolve) => {
-      let answer: Choice | undefined;
-      q.onDidAccept(() => {
-        answer = q.activeItems[0]?.choice;
-        q.hide();
-      });
-      q.onDidTriggerButton((b) => {
-        if (b === vscode.QuickInputButtons.Back) {
-          answer = "back";
-          q.hide();
-        } else {
-          void openRepoConfig(r.path, true);
-        }
-      });
-      q.onDidHide(() => {
-        q.dispose();
-        resolve(answer);
-      });
-      q.show();
-    });
-  }
-  let choose = pickStep;
-  const said: Record<Choice | "cancel", string> = { fix: "✓ fix", skip: "→ skip", back: "← back", fixRest: "✓ fix the rest",
-    skipRest: "→ skip the rest", cancel: "✗ cancelled" };
-
-  /** Walk through the fixable repos one at a time; the answers set the ticks, then the usual Fix Checked runs. */
-  async function review(): Promise<void> {
-    if (!report) {
-      await scan();
-    }
-    const rs = steps(groups);
-    if (!rs.length) {
-      void vscode.window.showInformationMessage("Nothing to review: no repo override can be fixed.");
-      return;
-    }
-    const before = new Set(unchecked);
-    const fixIt = new Map(rs.map((r) => [r.path, !unchecked.has(r.path)]));
-    const tick = () => {
-      fixIt.forEach((yes, p) => (yes ? unchecked.delete(p) : unchecked.add(p)));
-      changed.fire();
-    };
-    out.info(`review: ${rs.length} repos, one at a time`);
-    const done = await walk(rs, fixIt, async (i) => {
-      tick();
-      void Promise.resolve(view.reveal(rs[i], { select: true, focus: false })).catch(() => undefined);
-      const c = await choose(rs, i, fixIt.get(rs[i].path) ?? true);
-      out.info(`  ${i + 1}/${rs.length} ${tilde(rs[i].path, home)}: ${said[c ?? "cancel"]}`);
-      return c;
-    });
-    if (!done) {
-      unchecked.clear();
-      before.forEach((p) => unchecked.add(p));
-      changed.fire();
-      out.info("✗ review cancelled: ticks restored, nothing changed");
-      return;
-    }
-    tick();
-    await fix();
-  }
-
-  async function suggest(): Promise<void> {
-    if (!report) {
-      await scan();
-    }
-    if (!report) {
-      return;
-    }
-    if (!report.suggestions.length && !report.unmatched.length) {
-      void vscode.window.showInformationMessage("Nothing to suggest: no repo sets an identity worth keeping.");
-      return;
-    }
-    const language = (await vscode.languages.getLanguages()).includes("toml") ? "toml" : "plaintext";
-    const doc = await vscode.workspace.openTextDocument({ language, content: suggestions(report, os.homedir()) });
-    await vscode.window.showTextDocument(doc);
-  }
-
   async function openRepoConfig(repo: string, preserveFocus = false): Promise<void> {
     // .git is a file in worktrees and submodules; git knows where their config lives.
     const r = await cli.git(["rev-parse", "--git-path", "config"], repo);
@@ -452,13 +312,10 @@ function repoOverrides(context: vscode.ExtensionContext, out: vscode.LogOutputCh
     }),
     vscode.commands.registerCommand("gitpro.scan", scan),
     vscode.commands.registerCommand("gitpro.scanFix", fix),
-    vscode.commands.registerCommand("gitpro.scanReview", review),
-    vscode.commands.registerCommand("gitpro.scanSuggest", suggest),
     vscode.commands.registerCommand("gitpro.openRepoConfig", openRepoConfig),
   );
   return { scan, rescan, overrides: () => groups, scanState: () => scanState, scanMessage: () => view.message,
-    setConfirm: (fn) => (ask = fn),
-    setReview: (fn) => (choose = fn) };
+    setConfirm: (fn) => (ask = fn) };
 }
 
 /** Ends the gitpro processes still running (their whole process groups), e.g. a clone, when the window closes. */
