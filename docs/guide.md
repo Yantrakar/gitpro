@@ -1485,7 +1485,11 @@ same files to GitHub Releases (with `SHA256SUMS`), PyPI (trusted publishing,
 environment `pypi`) and the VS Code Marketplace (`marketplace.yml`: a Microsoft
 Entra managed identity, variables `AZURE_CLIENT_ID` and `AZURE_TENANT_ID`,
 environment `marketplace`; skipped while the variables are unset, and runnable
-by hand for an existing tag).
+by hand for an existing tag). Once PyPI has the release, `mcp-registry.yml`
+publishes `server.json` to the MCP Registry, signed in with the workflow's
+GitHub OIDC token (environment `mcp-registry`). A registry version cannot be
+changed after it is published, so a version already there is skipped; run the
+workflow by hand to publish an existing tag.
 
 Live GitHub qualification is separate and opt-in: `python tests/smoke_github.py --help`.
 It previews by default; `-y` authorizes a private clone/configuration, candidate
