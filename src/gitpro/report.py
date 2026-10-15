@@ -25,6 +25,21 @@ SECTIONS = ("title", "versions", "why", "crash", "denial", "message")
 MAX_URL = 7000          # bytes; a longer prefilled url is cut at a section boundary
 MAX_MESSAGE = 2000
 CLIENT_RE = re.compile(r"^[a-z][a-z0-9-]{0,20}/[0-9A-Za-z.+-]{1,32}$")
+# The report's own fixed words (labels, enum values, this project's name). A private value equal to one of
+# them is not searched for (5.3 a): finding it shows nothing private, and searching would block every report
+# from a repo named "gitpro" or an identity named "local". Values that only contain such a word still are.
+PUBLIC_WORDS = frozenset("""
+    yantrakar gitpro github.com gitlab.com bitbucket.org codeberg.org git.sr.ht gitea.com
+    versions python linux darwin install pip pipx client unknown
+    why redacted true false remotes origin upstream https ssh scp file other none expected default name email
+    ssh_key exists such sign match rule matched no_match remote url pattern unset effective signingkey
+    sshcommand gpgsign scope system global local worktree command repo pin generated line include pinned
+    problems config user
+    crash time version exception note recorded this report from frames innermost last inside outside
+    denial source guard agent-check agent action reason codes committer author no_identity pushed_to problem
+    push the above repository's state now not the denial commit pre-commit pre-push
+    bug security what happened git override url_form unavailable usable could read repository
+""".split())
 
 
 class ReportError(Exception):
@@ -58,12 +73,13 @@ class Redactor:
         key = (kind, _norm(kind, value))
         if key not in self._seen:
             n = self._count[kind] = self._count.get(kind, 0) + 1
-            self._seen[key] = f"email-{n}@users.noreply.github.com" if kind == "email" else f"{kind}-{n}"
+            noreply = kind == "email" and key[1].endswith("@users.noreply.github.com")
+            self._seen[key] = f"email-{n}@users.noreply.github.com" if noreply else f"{kind}-{n}"
             self._values.append((kind, value))
         return self._seen[key]
 
     def watch(self, kind: str, value: Optional[str]) -> None:
-        if value and len(value.strip()) >= 3:
+        if value and len(value.strip()) >= 3 and value.strip().lower() not in PUBLIC_WORDS:
             self._watched.append((kind, value.strip()))
 
     def values(self) -> List[Tuple[str, str]]:
@@ -72,7 +88,7 @@ class Redactor:
 
     def rewrite(self, text: str) -> str:
         """text with every known value (longest first, case-insensitive, at word boundaries) replaced."""
-        cands = {v: k for k, v in self.values() if len(v) >= 3}
+        cands = {v: k for k, v in self.values() if len(v) >= 3 and v.lower() not in PUBLIC_WORDS}
         if not cands:
             return text
         order = sorted(cands, key=len, reverse=True)
@@ -122,11 +138,13 @@ def _pattern_kinds(text: str) -> List[str]:
     return kinds
 
 
-def _known_rx(known: Iterable[Tuple[str, str]]) -> List[Tuple[str, "re.Pattern[str]"]]:
+def _known_rx(known: Iterable[Tuple[str, str]], public: Iterable[str] = ()
+              ) -> List[Tuple[str, "re.Pattern[str]"]]:
+    skip = PUBLIC_WORDS | {w.lower() for w in public}
     out = []
     for kind, value in known:
         value = (value or "").strip()
-        if len(value) >= 3:
+        if len(value) >= 3 and value.lower() not in skip:
             out.append((kind, re.compile(r"(?<![A-Za-z0-9_])" + re.escape(value) + r"(?![A-Za-z0-9_])", re.I)))
     return out
 
@@ -138,11 +156,13 @@ def _decoded_url(url: str) -> str:
     return "\n".join(v for vals in parts.values() for v in vals)
 
 
-def scan(sections: Mapping[str, str], known: Iterable[Tuple[str, str]], *, url: str = "") -> List[Dict[str, str]]:
+def scan(sections: Mapping[str, str], known: Iterable[Tuple[str, str]], *, url: str = "",
+         public: Iterable[str] = ()) -> List[Dict[str, str]]:
     """Hits as [{"kind", "section"}] (empty: clean). `known` is (kind, value) pairs; `url` is a finished
-    prefilled-issue url, whose title and body are decoded and scanned again as section "url". Never
-    returns, prints or raises with a matched value."""
-    rxs = _known_rx(known)
+    prefilled-issue url, whose title and body are decoded and scanned again as section "url". A known value
+    equal to a word of PUBLIC_WORDS or `public` (gitpro's own identifiers in this draft) is not searched.
+    Never returns, prints or raises with a matched value."""
+    rxs = _known_rx(known, public)
     hits: List[Dict[str, str]] = []
 
     def check(name: str, text: str) -> None:
@@ -545,7 +565,12 @@ def build_draft(kind: str, *, message: Optional[str] = None, repo: Optional[Path
         body, url, truncated = _fit(kind, title, order)
         scan_url = url
     known = _known_values(cfg, top or where, red)
-    hits = scan(sections, known, url=scan_url)
+    public = [w for p, _, fn in (crash_c or {}).get("frames", ()) for w in (fn, Path(p).stem)]
+    if crash_c:
+        public += [crash_c["type"], *crash_c["command"].split()]
+    if denial_c:
+        public += [denial_c["action"], denial_c["agent"], denial_c["reason"], *denial_c["codes"]]
+    hits = scan(sections, known, url=scan_url, public=public)
     return Draft(kind, title, sections, body, full_body, url, truncated, hits)
 
 

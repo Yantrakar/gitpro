@@ -446,14 +446,70 @@ def test_block_message_names_kinds_and_sections_but_not_values(capsys):
 def test_the_redactor_numbers_each_kind_in_order_and_reuses_placeholders():
     from gitpro import report
     red = report.Redactor()
-    assert red.P("email", "A@b.test") == "email-1@users.noreply.github.com"
-    assert red.P("email", "c@d.test") == "email-2@users.noreply.github.com"
-    assert red.P("email", "a@B.test") == "email-1@users.noreply.github.com"
+    assert red.P("email", "A@b.test") == "email-1"
+    assert red.P("email", "1+someone@users.noreply.github.com") == "email-2@users.noreply.github.com"
+    assert red.P("email", "a@B.test") == "email-1"
+    assert red.P("email", "1+Someone@Users.Noreply.GitHub.com") == "email-2@users.noreply.github.com"
     assert red.P("host", "git.one.test") == "host-1"
     assert red.P("host", "GIT.one.test") == "host-1"
     assert red.P("host", "git.two.test") == "host-2"
     assert red.P("owner", "someone") == "owner-1"
     assert red.P("repo", "thing") == "repo-1"
+
+
+def test_a_private_value_equal_to_a_public_word_is_not_searched():
+    from gitpro import report
+    for word in ("gitpro", "Yantrakar", "local", "origin", "github.com"):
+        assert report.scan({"title": f"[bug] {word}", "why": f"- {word}"}, [("repo", word)]) == [], word
+    red = report.Redactor()
+    red.P("repo", "gitpro")
+    red.watch("owner", "Yantrakar")
+    assert red.rewrite("gitpro from Yantrakar") == "gitpro from Yantrakar"
+    assert report.scan({"crash": "- cli.py:3 in cmd_zap"}, [("id", "cmd_zap")], public=["cmd_zap"]) == []
+    assert report.scan({"message": "cmd_zap"}, [("id", "cmd_zap")]) == [{"kind": "id", "section": "message"}]
+
+
+def test_a_value_that_only_contains_a_public_word_is_still_found():
+    from gitpro import report
+    for value in ("Some gitpro", "gitpro-fork", "local.host.test"):
+        hits = report.scan({"message": f"x {value} y"}, [("name", value)])
+        assert hits == [{"kind": "name", "section": "message"}], value
+    red = report.Redactor()
+    red.P("repo", "gitpro-fork")
+    assert red.rewrite("cloned gitpro-fork") == "cloned repo-1"
+
+
+def test_a_repo_named_gitpro_does_not_block_its_own_report(world, monkeypatch, capsys):
+    git(world.repo, "remote", "set-url", "origin", "git@github.com:Yantrakar/gitpro.git")
+    record_world(world, monkeypatch, capsys)
+    for argv in (["--repo", str(world.repo)], ["--crash"], ["--denial"], ["--security", "--repo", str(world.repo)]):
+        rc, out, err = go(world, capsys, "--print", *argv)
+        assert rc == 0, out + err
+        assert_clean(out, world, "stdout")
+    rc, out, err = go(world, capsys, "--print", "--repo", str(world.repo))
+    assert "scp github.com owner-1/repo-1" in out
+
+
+def test_every_fixed_word_of_a_draft_is_public(world, monkeypatch, capsys):
+    """A config value equal to a label of the report would block every report; each word gitpro writes
+    itself is in PUBLIC_WORDS or is one of this draft's own identifiers (frames, command, exception)."""
+    from gitpro import report
+    record_world(world, monkeypatch, capsys)
+    seen = []
+    real = report.scan
+    monkeypatch.setattr(report, "scan", lambda s, k, **kw: seen.append((s, kw)) or real(s, k, **kw))
+    for argv in (["--repo", str(world.repo)], ["--crash"], ["--denial"], ["--security", "--repo", str(world.repo)],
+                 ["--repo", str(world.home)]):
+        rc, out, err = go(world, capsys, "--print", *argv)
+        assert rc == 0, out + err
+    assert len(seen) == 5
+    for sections, kw in seen:
+        public = report.PUBLIC_WORDS | {w.lower() for w in kw.get("public", ())}
+        text = "\n".join(v for k, v in sections.items() if k != "message")
+        words = {w.strip(".'-").lower() for w in re.split(r"[\s:;,()\[\]/`*#=<>|]+", text)}
+        words = {w[:-3] if w.endswith(".py") else w for w in words}
+        left = sorted(w for w in words if len(w) >= 3 and not re.search(r"\d", w) and w not in public)
+        assert left == [], left
 
 
 def test_the_redactor_rewrites_message_text_longest_value_first():

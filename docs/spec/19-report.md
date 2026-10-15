@@ -229,6 +229,9 @@ the files on disk hold nothing sensitive (section 8).
 
 `Redactor`, one per report:
 - `P(kind, value)` returns `<kind>-<n>`, numbered per kind in the order first seen.
+  An email keeps the domain only when it is a GitHub noreply address: a value ending in
+  `@users.noreply.github.com` becomes `email-<n>@users.noreply.github.com`, any other
+  email `email-<n>`, so a company address does not read as a GitHub one.
 - Equal values get the same placeholder: emails and hosts compared case-insensitively,
   paths after `~` expansion.
 - So the maintainer can read `expected email-1, effective email-2 (from repo .git/config)`
@@ -255,6 +258,19 @@ Runs on the final title, body and URL, after layers 1 and 2.
 
 A value of 3 or more characters found case-insensitively, at word boundaries, is a hit.
 Shorter values are skipped. The list of kinds that matched is all that is reported.
+
+A value equal (ignoring case) to one of gitpro's own words is not searched for, and the
+Redactor does not rewrite it in `-m`:
+- `PUBLIC_WORDS` in report.py: `yantrakar`, `gitpro`, the `KNOWN_HOSTS`, and every fixed
+  label and enum value the sections print (`versions`, `origin`, `local`, `url_form`, ...);
+- this draft's own identifiers: the crash's frame function names, file stems, command words
+  and exception type, and the denial's action, agent, reason and codes. These come from the
+  record files gitpro wrote (section 8), already cleaned to their patterns.
+
+Finding such a value shows nothing private: the word is in every report. Without this, a
+repo named `gitpro` or an identity id `local` would block every report. A value that only
+contains such a word (`Some gitpro`, `gitpro-fork`) is still searched for. A test renders
+each kind of draft and fails if a word gitpro wrote is in neither list.
 
 (b) **Patterns.** Each is a hit:
 - the token regexes already in gitpro: `forge._SECRET_RE` and `forge._HEX_TOKEN_RE`
@@ -519,6 +535,15 @@ the stubs show no call.
   `gitpro/forge.py:512`.
 - The URL-decode pass catches `%40`-encoded emails.
 - The block output never contains the value.
+- A known value equal to a public word (`gitpro`, `Yantrakar`, `local`, `origin`,
+  `github.com`) or to a `public` identifier is not a hit; `Some gitpro`, `gitpro-fork` and
+  `local.host.test` are.
+- A repo whose remote is `git@github.com:Yantrakar/gitpro.git` reports in every mode,
+  clean, with `scp github.com owner-1/repo-1`.
+- Every word of 3 or more letters that gitpro wrote in a draft (all sections but `-m`) is
+  in `PUBLIC_WORDS` or the draft's identifiers.
+- `P(email, …)` gives `email-N` for a company address and
+  `email-N@users.noreply.github.com` for a noreply one.
 
 ### 10.4 Paths
 
