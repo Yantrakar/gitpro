@@ -14,7 +14,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Release tag whose VSIX to publish, e.g. v0.3.3
+        description: Release tag whose VSIX to publish, e.g. v0.3.4
         type: string
         required: true
       whoami:
