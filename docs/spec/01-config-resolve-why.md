@@ -649,7 +649,7 @@ Checked in this order; all applicable ones are reported.
 | code | when | fix |
 |---|---|---|
 | `no_identity` | expected email is None (nothing matched and `[default]` has no email) | `add an identity: gitpro scan --suggest --repo <repo>` |
-| `url_form` | no pattern matched, but a pattern **would** match the URL with userinfo removed, a missing `git@` user added, or a port removed (the three transformations are tried in that order against every identity's patterns) | `git -C <repo> remote set-url <name> <fixed url>` |
+| `url_form` | no pattern matched, but one **would** match after a repair: the scheme `git+ssh://` or `ssh+git://` written as `ssh://`; userinfo removed; a missing user added; the port removed; letter case changed to the identity's (tried in that order, first repair that matches wins; see 18) | `git -C <repo> remote set-url <name> <fixed url>`, or fix text with no argv when that URL would be wrong: a non-default port (set `ssh_port`, or use ssh), or user `git` on AWS CodeCommit (set `ssh_user`) |
 | `override` | effective name/email scope is `repo` or `worktree` and the value differs from expected | `git -C <repo> config --unset user.<key>` + `(or: gitpro scan --fix --repo <repo>)` |
 | `pin_stale` | pinned and the pin file's name/email differ from expected | `gitpro pin <repo>` |
 | `global_override` | scope `global`/`system`/`other` sets name or email that beats expected (the generated file is missing from `~/.gitconfig` or not included last) | `gitpro apply` |

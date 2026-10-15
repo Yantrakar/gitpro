@@ -607,28 +607,75 @@ def _p(code: str, message: str, argv: Optional[Sequence[str]], fix: Optional[str
                    tuple(argv) if argv else None)
 
 
-def _url_fixes(url: str, cfg: Config) -> List[Tuple[str, str, Identity, str]]:
-    """[(fixed url, reason, identity, pattern)] for the three repairs, in order: userinfo removed,
-    missing user added, port removed. First repair that makes some identity match wins."""
-    tries: List[Tuple[str, str]] = []
+_DEFAULT_PORT = {"ssh": 22, "https": 443, "http": 80}
+_CODECOMMIT = re.compile(r"^git-codecommit\.[a-z0-9-]+\.amazonaws\.com$", re.I)
+_Fix = Tuple[Optional[str], str, Identity, str, Optional[Tuple[str, str]]]
+
+
+def is_codecommit(host: str) -> bool:
+    return bool(_CODECOMMIT.match(host))
+
+
+def _repairs(url: str, users: List[str]) -> List[Tuple[str, str, Optional[Tuple[str, int]]]]:
+    tries: List[Tuple[str, str, Optional[Tuple[str, int]]]] = []
     m = re.match(r"^(https?://)[^@/]+@(.*)$", url)
     if m:
-        tries.append((m[1] + m[2], "no user in the URL"))
-    users = list(dict.fromkeys(i.ssh_user for i in cfg.identities)) or ["git"]
+        tries.append((m[1] + m[2], "no user in the URL", None))
     m = re.match(r"^ssh://([^@/]+)(/.*)$", url)
     if m:
-        tries += [(f"ssh://{u}@{m[1]}{m[2]}", f"user {u}@ in the URL") for u in users]
+        tries += [(f"ssh://{u}@{m[1]}{m[2]}", f"user {u}@ in the URL", None) for u in users]
     elif "://" not in url:
         m = _SCP_RE.match(url)
         if m and m[1] is None and "/" not in url.split(":", 1)[0]:
-            tries += [(f"{u}@{url}", f"user {u}@ in the URL") for u in users]
-    m = re.match(r"^((?:ssh|https?)://[^/]*?):\d+(/.*)$", url)
+            tries += [(f"{u}@{url}", f"user {u}@ in the URL", None) for u in users]
+    m = re.match(r"^((ssh|https?)://[^/]*?):(\d+)(/.*)$", url)
     if m:
-        tries.append((m[1] + m[2], "no port in the URL"))
-    for fixed, reason in tries:
+        tries.append((m[1] + m[4], "no port in the URL", (m[2], int(m[3]))))
+    return tries
+
+
+def _url_fixes(url: str, cfg: Config, label: str = "the remote") -> List[_Fix]:
+    """[(fixed url, reason, identity, pattern, note)] for the repairs, in order: git+ssh:// or ssh+git://
+    written as ssh://, then (on that url) userinfo removed, missing user added, port removed, then
+    letter case changed to an identity's. First repair that makes some identity match wins. When the
+    fixed url would point at the wrong place (a non-default port removed, user git on CodeCommit),
+    fixed is None and note is (message tail, fix text) instead."""
+    users = list(dict.fromkeys(i.ssh_user for i in cfg.identities)) or ["git"]
+    tries: List[Tuple[str, str, Optional[Tuple[str, int]]]] = []
+    m = re.match(r"^(git\+ssh|ssh\+git)://(.*)$", url)
+    if m:
+        pre = f"ssh:// instead of {m[1]}://"
+        tries.append((f"ssh://{m[2]}", pre, None))
+        tries += [(f, f"{pre}, {r}", p) for f, r, p in _repairs(f"ssh://{m[2]}", users)]
+    tries += _repairs(url, users)
+    for fixed, reason, port in tries:
         i, pat = match_url(fixed, cfg)
-        if i is not None:
-            return [(fixed, reason, i, pat)]
+        if i is None:
+            continue
+        if port and port[1] != _DEFAULT_PORT[port[0]]:
+            if port[0] == "ssh":
+                tail = f"it looks like {i.id}, whose patterns have no port {port[1]}"
+                fix = f"set ssh_port = {port[1]} on identity {i.id} in the gitpro config, then run: gitpro apply"
+                if i.ssh_port:
+                    fix += f" (it is {i.ssh_port} now; an identity has one ssh_port)"
+            else:
+                tail = f"it looks like {i.id}, but gitpro's https patterns never carry a port"
+                fix = f"switch {label} to an ssh URL for {i.id}"
+            return [(None, reason, i, pat, (tail, fix))]
+        if reason.endswith("user git@ in the URL") and is_codecommit(i.host):
+            return [(None, reason, i, pat, (
+                f"it looks like {i.id}, but CodeCommit's SSH user is the SSH key ID, not git",
+                f'set ssh_user = "<your SSH key ID>" on identity {i.id} in the gitpro config, then run: gitpro apply'))]
+        return [(fixed, reason, i, pat, None)]
+    from .render import url_patterns
+    for i in cfg.identities:
+        for pat in url_patterns(i):
+            prefix = pat.split("*", 1)[0]
+            if url.lower().startswith(prefix.lower()) and not url.startswith(prefix):
+                fixed = prefix + url[len(prefix):]
+                j, jpat = match_url(fixed, cfg)
+                if j is not None:
+                    return [(fixed, "letter case differs; git matches case-sensitively", j, jpat, None)]
     return []
 
 
@@ -686,9 +733,12 @@ def compare(repo: Path, cfg: Config, *, remote: Optional[str] = None,
 
     if exp.match.identity is None:
         for name, url in candidates:
-            fixes = _url_fixes(url, cfg)
+            fixes = _url_fixes(url, cfg, name or "the remote")
             if fixes:
-                fixed, reason, i, pat = fixes[0]
+                fixed, reason, i, pat, note = fixes[0]
+                if note:
+                    out.append(_p("url_form", f"{name or 'the remote'} is {redact_url(url)}; {note[0]}", None, note[1]))
+                    break
                 argv = ["git", "-C", str(top), "remote", "set-url", name, fixed] \
                     if name and remote_url is None else None
                 need = pat.replace("**", "…")
