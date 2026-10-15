@@ -158,6 +158,7 @@ DIFF_URLS = [
     "https://git.whole.test/any/thing.git",
     "ssh://git@github.com:22/corp-org/app.git",
     "https://github.com:8443/corp-org/app.git",        # https port
+    "https://github.com/Corp-Org/app.git",             # uppercase owner, https
     # owner-less identity (V-001): scp, alias, ssh://, single segment
     "git@git.whole.test:any/thing.git",
     "git@git.whole.test:any/deep/thing.git",
@@ -661,6 +662,50 @@ def test_codecommit_https_and_other_hosts(cfg, tmp_path):
     repo = repo_with_remote(tmp_path, "gh", "ssh://github.com/corp-org/app.git")
     p = [p for p in resolve.compare(repo, load(cfg())).problems if p.code == "url_form"][0]
     assert p.fix_argv[-1] == "ssh://git@github.com/corp-org/app.git"
+
+
+CASE = DEFAULT_CONFIG + """
+[[identity]]
+id = "gh-corp"
+name = "Corp"
+email = "gc@corp.test"
+host = "github.com"
+owners = ["corp-org"]
+
+[[identity]]
+id = "teamx"
+name = "Team"
+email = "tx@corp.test"
+host = "github.com"
+owners = ["team-*"]
+"""
+
+
+@pytest.mark.parametrize("url, fixed", [
+    ("git@github.com:CORP-ORG/app.git", "git@github.com:corp-org/app.git"),
+    ("https://github.com/Corp-Org/app.git", "https://github.com/corp-org/app.git"),
+    ("git@GitHub.com:corp-org/app.git", "git@github.com:corp-org/app.git"),
+    ("git@github.com:TEAM-x/r.git", "git@github.com:team-x/r.git"),
+])
+def test_url_form_letter_case(cfg, tmp_path, url, fixed):
+    repo = repo_with_remote(tmp_path, "app", url)
+    ps = [p for p in resolve.compare(repo, load(cfg(CASE))).problems if p.code == "url_form"]
+    assert len(ps) == 1
+    assert ps[0].fix_argv[-1] == fixed and "(letter case differs; git matches case-sensitively)" in ps[0].message
+
+
+@pytest.mark.parametrize("url", [
+    "git@github.com:other/app.git",
+    "https://me@github.com/CORP-ORG/app.git",       # two repairs: out of scope
+])
+def test_url_form_letter_case_none(cfg, tmp_path, url):
+    repo = repo_with_remote(tmp_path, "app", url)
+    assert [p for p in resolve.compare(repo, load(cfg(CASE))).problems if p.code == "url_form"] == []
+
+
+def test_url_form_letter_case_matching_url_no_problem(cfg, tmp_path):
+    repo = repo_with_remote(tmp_path, "app", "git@github.com:corp-org/app.git")
+    assert resolve.compare(repo, load(cfg(CASE))).problems == ()
 
 
 def test_home_argument_decides_block_check(cfg, tmp_path):  # QA01-7: --home

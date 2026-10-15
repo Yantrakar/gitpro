@@ -636,7 +636,8 @@ def _repairs(url: str, users: List[str]) -> List[Tuple[str, str, Optional[Tuple[
 
 def _url_fixes(url: str, cfg: Config, label: str = "the remote") -> List[_Fix]:
     """[(fixed url, reason, identity, pattern, note)] for the repairs, in order: git+ssh:// or ssh+git://
-    written as ssh://, then (on that url) userinfo removed, missing user added, port removed. First
+    written as ssh://, then (on that url) userinfo removed, missing user added, port removed, then
+    letter case changed to an identity's. First
     repair that makes some identity match wins. When the fixed url would point at the wrong place (a
     non-default port removed, user git on CodeCommit), fixed is None and note is (message tail, fix text) instead."""
     users = list(dict.fromkeys(i.ssh_user for i in cfg.identities)) or ["git"]
@@ -666,6 +667,15 @@ def _url_fixes(url: str, cfg: Config, label: str = "the remote") -> List[_Fix]:
                 f"it looks like {i.id}, but CodeCommit's SSH user is the SSH key ID, not git",
                 f'set ssh_user = "<your SSH key ID>" on identity {i.id} in the gitpro config, then run: gitpro apply'))]
         return [(fixed, reason, i, pat, None)]
+    from .render import url_patterns
+    for i in cfg.identities:
+        for pat in url_patterns(i):
+            prefix = pat.split("*", 1)[0]
+            if url.lower().startswith(prefix.lower()) and not url.startswith(prefix):
+                fixed = prefix + url[len(prefix):]
+                j, jpat = match_url(fixed, cfg)
+                if j is not None:
+                    return [(fixed, "letter case differs; git matches case-sensitively", j, jpat, None)]
     return []
 
 
