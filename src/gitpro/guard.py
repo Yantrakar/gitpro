@@ -189,6 +189,7 @@ def _check(name: str, argv: List[str], stdin: Optional[str], repo: Optional[Path
         except KeyboardInterrupt:
             raise
         except Exception as e:   # noqa: BLE001
+            _record_crash(f"guard {name}", e)
             _warn(name, f"⚠ gitpro {spec}: {e}; not blocking")
             continue
         if rc == BLOCK:
@@ -227,8 +228,13 @@ def _where(exp) -> str:
     return url or "this repo"
 
 
-def _mismatch(ctx: Context, head: str, lines: List[str], skip: str) -> int:
+_RECORD = True        # False while `guard test` simulates a hook: nothing was denied
+
+
+def _mismatch(ctx: Context, head: str, lines: List[str], skip: str, reason: str = "problem") -> int:
     warn = ctx.cfg.guard.on_mismatch != "block"
+    if not warn and _RECORD:
+        _record_denial(ctx, reason)
     ctx.say(("⚠" if warn else "✗") + f" gitpro: {head}")
     for line in lines:
         ctx.say("  " + line)
@@ -236,6 +242,23 @@ def _mismatch(ctx: Context, head: str, lines: List[str], skip: str) -> int:
     if warn:
         ctx.say('  (not blocking: [guard] on_mismatch = "warn")')
     return BLOCK
+
+
+def _record_crash(command: str, e: Exception) -> None:
+    try:
+        from . import incident
+        incident.record_crash(command, e)
+    except Exception:   # noqa: BLE001
+        pass
+
+
+def _record_denial(ctx: Context, reason: str) -> None:
+    try:
+        from . import incident
+        codes = tuple(p.code for p in getattr(ctx.report, "problems", ()) or ())
+        incident.record_denial("guard", None, ctx.hook, reason, codes)
+    except Exception:   # noqa: BLE001 - recording never changes the hook's answer
+        pass
 
 
 def _id_of(cfg, email: str) -> str:
@@ -269,14 +292,14 @@ def identity_commit(ctx: Context) -> int:
             lines = [f"cause: git resolves user.email to {ctx.committer_email} here",
                      f"fix:   {PROG} why {shlex.quote(str(ctx.repo))}"]
         return _mismatch(ctx, f"this commit would be committed as {ctx.committer_email} but {_where(exp)} "
-                              f"belongs to {_belongs(exp)}", lines, "commit")
+                              f"belongs to {_belongs(exp)}", lines, "commit", "committer")
     a = ctx.author_email
     if a and bad_author:
         lines = [f"cause: author is your {_id_of(ctx.cfg, a)} email",
                  f"fix:   unset GIT_AUTHOR_NAME GIT_AUTHOR_EMAIL, or commit with "
                  f"--author={shlex.quote(f'{exp.name} <{exp.email}>')}"]
         return _mismatch(ctx, f"this commit would be authored as {a} but {_where(exp)} belongs to "
-                              f"{_belongs(exp)}", lines, "commit")
+                              f"{_belongs(exp)}", lines, "commit", "author")
     return 0
 
 
@@ -325,7 +348,7 @@ def identity_push(ctx: Context) -> int:
                      "then git commit --amend --no-edit on each)")
     head = (f"{n} commit{'s' * (n != 1)} to {_where(exp)} {'are' if n != 1 else 'is'} committed as {emails}; "
             f"this remote belongs to {exp.id or '[default]'} <{exp.email}>")
-    return _mismatch(ctx, head, lines, "push")
+    return _mismatch(ctx, head, lines, "push", "push")
 
 
 def _audit_available() -> bool:
@@ -598,10 +621,15 @@ def _check_strict(repo: Path) -> int:
     ctx = Context("pre-commit", top, (), "", cfg, report, _ident_email(top, "COMMITTER", os.environ),
                   _ident_email(top, "AUTHOR", os.environ), _say)
     refused = False
-    for spec in HOOKS["pre-commit"]:
-        fn = _entry(spec)
-        if fn is not None and fn(ctx) == BLOCK:
-            refused = True
+    global _RECORD
+    _RECORD = False
+    try:
+        for spec in HOOKS["pre-commit"]:
+            fn = _entry(spec)
+            if fn is not None and fn(ctx) == BLOCK:
+                refused = True
+    finally:
+        _RECORD = True
     return BLOCK if refused and cfg.guard.on_mismatch == "block" else 0
 
 

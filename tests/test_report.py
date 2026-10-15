@@ -122,6 +122,7 @@ def build_world(tmp_path: Path, monkeypatch, fake_bin) -> World:
     url, a repo-local user.email override, and canary secrets in the environment."""
     home = tmp_path / "home" / "canaryuser"
     (home / ".ssh").mkdir(parents=True)
+    (home / ".ssh").chmod(0o700)
     for name in ("canary_key_file",):
         (home / ".ssh" / name).write_text("")
         (home / ".ssh" / name).chmod(0o600)

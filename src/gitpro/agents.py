@@ -1113,6 +1113,9 @@ class Decision:
     cause: str
     fix: str
     repo: str
+    why: str = ""                        # the denial record's reason code (not `reason`: that is the text below)
+    codes: Tuple[str, ...] = ()          # problem codes of the repo's report
+    action: str = ""                     # the git subcommand or program
 
     @property
     def reason(self) -> str:
@@ -1312,6 +1315,9 @@ def _judge_one(c: Call, rep, cfg, own: set, pushed_to: Optional[str] = None) -> 
     top = str(rep.repo)
     what = _what(c)
     commits = c.prog == "git" and c.sub != "push"
+    codes = tuple(p.code for p in rep.problems)
+    action = c.sub if c.prog == "git" else c.prog
+    why = ("no_identity" if exp.email is None else "committer" if c_bad else "author" if a_bad else "problem")
     if exp.email is None:
         from .resolve import redact_url
         url = redact_url(next(iter(rep.effective.remotes.values()), None)) or top
@@ -1329,9 +1335,10 @@ def _judge_one(c: Call, rep, cfg, own: set, pushed_to: Optional[str] = None) -> 
     if c_bad and c_src == "effective" and pushed_to and not triggers:
         # the repo's other problems were computed for this remote's identity; they would mislead here
         return Decision(headline, f"this repo's commits use {committer or '(no email)'} and {pushed_to} belongs "
-                                  f"to {exp.id or '[default]'}", f"gitpro why {shlex.quote(top)}", top)
+                                  f"to {exp.id or '[default]'}", f"gitpro why {shlex.quote(top)}", top,
+                        "pushed_to", codes, action)
     cause, fix = _cause(c, c_bad, c_src, committer, a_bad, a_src, author, rep, cfg, environ)
-    return Decision(headline, cause, fix, top)
+    return Decision(headline, cause, fix, top, why, codes, action)
 
 
 def _command_text(c: Call, limit: int = 200) -> str:
@@ -1447,12 +1454,18 @@ def _check(args: argparse.Namespace, text: str) -> int:
             sys.stdout.flush()
         print(msg, file=sys.stderr)
         return 0
+    _record_denial(args.agent, d)
     out, rc = adapter.deny(d)
     if out:
         sys.stdout.write(out + "\n")
         sys.stdout.flush()
     print(f"✗ {d.reason}", file=sys.stderr)
     return rc
+
+
+def _record_denial(agent: str, d: Decision) -> None:
+    from . import incident              # lazy: stdlib only, but most checks never deny
+    incident.record_denial("agent-check", agent, d.action, d.why, d.codes)
 
 
 def _fail_open(func: Callable[[], int]) -> int:
@@ -1463,7 +1476,16 @@ def _fail_open(func: Callable[[], int]) -> int:
     except _ArgError as e:
         return _fail_open_msg(str(e))
     except Exception as e:                 # fail open: never stop the agent
+        _record_crash(e)
         return _fail_open_msg(str(e) or type(e).__name__)
+
+
+def _record_crash(e: Exception) -> None:
+    try:
+        from . import incident
+        incident.record_crash("agent-check", e)
+    except Exception:                      # noqa: BLE001
+        pass
 
 
 def _fail_open_msg(msg: str) -> int:

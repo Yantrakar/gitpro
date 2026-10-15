@@ -19,8 +19,6 @@ from conftest import TIMEOUT, run, write_config
 from gitpro import cli, undo
 from test_report import CANARY_EMAIL, CONFIG, assert_clean, build_world, record_world, world  # noqa: F401
 
-NO_INCIDENT_YET = pytest.mark.xfail(strict=True, reason="incident records land in step 2")
-
 TWO_LINES = ["✗ internal error (KeyError): this is a gitpro bug", "→ draft a report with: gitpro report --crash"]
 
 
@@ -56,7 +54,6 @@ def agent_check(world, monkeypatch, capsys):
 
 # ---------------------------------------------------------------- the crash record
 
-@NO_INCIDENT_YET
 def test_cli_crash_is_recorded_without_the_message(world, monkeypatch, capsys):
     boom_in_cli(monkeypatch, world)
     assert run("check") == 2
@@ -78,7 +75,6 @@ def test_cli_crash_is_recorded_without_the_message(world, monkeypatch, capsys):
     assert rec["version"] == __version__
 
 
-@NO_INCIDENT_YET
 def test_a_second_crash_overwrites_the_first(world, monkeypatch, capsys):
     boom_in_cli(monkeypatch, world, KeyError("one"))
     run("check")
@@ -88,7 +84,6 @@ def test_a_second_crash_overwrites_the_first(world, monkeypatch, capsys):
     assert json.loads(crash_file().read_text())["type"] == "ValueError"
 
 
-@NO_INCIDENT_YET
 def test_an_odd_exception_class_name_is_stored_as_exception(world, monkeypatch, capsys):
     odd = type("Odd name; rm -rf", (Exception,), {})
     boom_in_cli(monkeypatch, world, odd("x"))
@@ -99,7 +94,6 @@ def test_an_odd_exception_class_name_is_stored_as_exception(world, monkeypatch, 
 
 # ---------------------------------------------------------------- 10.6 the exit
 
-@NO_INCIDENT_YET
 def test_unexpected_exception_exits_two_with_two_lines(world, monkeypatch, capsys):
     boom_in_cli(monkeypatch, world)
     assert run("check") == 2
@@ -109,7 +103,6 @@ def test_unexpected_exception_exits_two_with_two_lines(world, monkeypatch, capsy
     assert_clean(out + err, world, "output")
 
 
-@NO_INCIDENT_YET
 def test_debug_env_prints_the_traceback(world, monkeypatch, capsys):
     monkeypatch.setenv("GITPRO_DEBUG", "1")
     boom_in_cli(monkeypatch, world)
@@ -119,7 +112,6 @@ def test_debug_env_prints_the_traceback(world, monkeypatch, capsys):
     assert "Traceback" in err
 
 
-@NO_INCIDENT_YET
 def test_unexpected_exception_under_json(world, monkeypatch, capsys):
     boom_in_cli(monkeypatch, world)
     assert run("check", "--json") == 2
@@ -151,7 +143,6 @@ def test_existing_errors_keep_their_exit_codes(world, monkeypatch, capsys):
 
 # ---------------------------------------------------------------- the other crash writers
 
-@NO_INCIDENT_YET
 def test_agent_check_crash_is_recorded_and_still_fails_open(world, monkeypatch, capsys):
     from gitpro import resolve
     monkeypatch.setattr(resolve, "compare", lambda *a, **k: (_ for _ in ()).throw(KeyError(CANARY_EMAIL)))
@@ -162,19 +153,24 @@ def test_agent_check_crash_is_recorded_and_still_fails_open(world, monkeypatch, 
     assert_clean(crash_file().read_text(), world, "last-crash.json")
 
 
-@NO_INCIDENT_YET
 def test_guard_hook_crash_is_recorded_and_still_warns(world, monkeypatch, capsys):
-    from gitpro import guard, resolve
+    import types
+    from gitpro import guard
+
+    def boom(ctx):
+        raise KeyError(f"{CANARY_EMAIL} {ctx.repo}")
+    mod = types.ModuleType("incident_guard_fake")
+    mod.boom = boom
+    monkeypatch.setitem(sys.modules, "incident_guard_fake", mod)
+    monkeypatch.setitem(guard.HOOKS, "pre-commit", ["incident_guard_fake:boom"])
     monkeypatch.chdir(world.repo)
-    monkeypatch.setattr(resolve, "compare", lambda *a, **k: (_ for _ in ()).throw(KeyError(CANARY_EMAIL)))
     assert guard.check("pre-commit", []) == 0
     assert "not blocking" in capsys.readouterr().err
     rec = json.loads(crash_file().read_text())
-    assert rec["command"].startswith("guard") and rec["type"] == "KeyError"
+    assert rec["command"] == "guard pre-commit" and rec["type"] == "KeyError"
     assert_clean(crash_file().read_text(), world, "last-crash.json")
 
 
-@NO_INCIDENT_YET
 def test_mcp_tool_crash_is_recorded_and_the_traceback_stays(world, monkeypatch, capsys):
     from gitpro import mcp
     from test_mcp import call_msg, init, rpc
@@ -192,7 +188,6 @@ def test_mcp_tool_crash_is_recorded_and_the_traceback_stays(world, monkeypatch, 
 
 # ---------------------------------------------------------------- the denial record
 
-@NO_INCIDENT_YET
 def test_agent_denial_is_recorded(world, monkeypatch, capsys):
     rc, out, err = agent_check(world, monkeypatch, capsys)
     assert "deny" in out
@@ -208,7 +203,6 @@ def test_agent_denial_is_recorded(world, monkeypatch, capsys):
     assert_clean(path.read_text(), world, "denials.jsonl")
 
 
-@NO_INCIDENT_YET
 def test_guard_denial_is_recorded(world, monkeypatch, capsys):
     from gitpro import guard
     monkeypatch.chdir(world.repo)
@@ -220,7 +214,6 @@ def test_guard_denial_is_recorded(world, monkeypatch, capsys):
     assert_clean(denial_file().read_text(), world, "denials.jsonl")
 
 
-@NO_INCIDENT_YET
 def test_warn_mode_records_nothing(world, monkeypatch, capsys):
     from gitpro import guard
     write_config(world.home, CONFIG + '\n[agents]\nhook = "warn"\n\n[guard]\non_mismatch = "warn"\n')
@@ -232,7 +225,6 @@ def test_warn_mode_records_nothing(world, monkeypatch, capsys):
     assert not denial_file().exists()
 
 
-@NO_INCIDENT_YET
 def test_denials_file_keeps_the_last_twenty(world):
     from gitpro import incident
     for n in range(25):
@@ -243,7 +235,6 @@ def test_denials_file_keeps_the_last_twenty(world):
     assert (denial_file().stat().st_mode & 0o777) == 0o600
 
 
-@NO_INCIDENT_YET
 def test_an_unwritable_state_dir_changes_nothing_for_the_hooks(world, monkeypatch, capsys, tmp_path):
     from gitpro import guard
     first = agent_check(world, monkeypatch, capsys)
@@ -263,7 +254,6 @@ def test_an_unwritable_state_dir_changes_nothing_for_the_hooks(world, monkeypatc
     assert capsys.readouterr().err.splitlines() == TWO_LINES
 
 
-@NO_INCIDENT_YET
 def test_state_dir_is_the_undo_state_dir(world, monkeypatch, tmp_path):
     from gitpro import incident
     assert incident.state_dir() == undo.state_dir()

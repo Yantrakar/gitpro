@@ -695,6 +695,11 @@ class Server:
             tb = traceback.format_exc()
             sys.stderr.write(tb)
             self.note("!", tb)
+            try:
+                from . import incident
+                incident.record_crash(f"mcp {tool.name}", e)
+            except Exception:  # noqa: BLE001 - recording never changes the answer
+                pass
             return self.failed(f"internal error: {type(e).__name__}")
 
     def result(self, obj: dict) -> dict:
