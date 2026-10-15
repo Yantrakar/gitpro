@@ -494,3 +494,29 @@ def test_llms_txt_lists_the_default_mcp_tools_and_real_docs():
     for rel in re.findall(r"raw\.githubusercontent\.com/Yantrakar/gitpro/main/([^)]+)\)", LLMS):
         assert (ROOT / rel).exists(), rel
     assert INSTALL in LLMS and 'href="/llms.txt"' in SITE
+
+
+
+def test_site_loads_nothing_from_other_hosts():
+    pages = SITE + (ROOT / "site/404.html").read_text(encoding="utf-8")
+    css = (ROOT / "site/styles.css").read_text(encoding="utf-8")
+    fetched = [re.search(r'href="([^"]+)"', link)[1] for link in re.findall(r"<link\b[^>]*>", pages)
+               if re.search(r'rel="(?:stylesheet|preload|preconnect|icon|apple-touch-icon)"', link)]
+    fetched += re.findall(r'<(?:script|img)\b[^>]*\bsrc="([^"]+)"', pages) + re.findall(r'url\("?([^")]+)', css)
+    assert fetched and not [u for u in fetched if "//" in u], fetched
+    for url in fetched:
+        assert (ROOT / "site" / url.lstrip("/")).is_file(), url
+
+
+def test_site_meta_writes_version_and_git_dates():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("site_meta", ROOT / "design/site_meta.py")
+    meta = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(meta)
+    assert meta.release() == VERSION and meta.with_version(SITE, VERSION) == SITE
+    bumped = meta.with_version(SITE, "9.8.7")
+    assert '"softwareVersion": "9.8.7"' in bumped and "· v9.8.7</p>" in bumped
+    sitemap = (ROOT / "site/sitemap.xml").read_text(encoding="utf-8")
+    dated = meta.with_dates(sitemap, lambda path: f"date of {path.relative_to(ROOT).as_posix()}")
+    assert dated.count("<lastmod>") == sitemap.count("<lastmod>") == 1
+    assert "<lastmod>date of site/index.html</lastmod>" in dated
