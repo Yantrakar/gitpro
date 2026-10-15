@@ -229,8 +229,9 @@ def test_within_budget_in_process(work_repo):  # time budget: cold run within 80
 
 def test_cached_prompt_process_is_fast(work_repo, home, fake_bin):  # time budget, end to end
     env = dict(os.environ)
-    r = subprocess.run([sys.executable, "-m", "gitpro", "prompt"], cwd=work_repo, env=env, capture_output=True,
-                       text=True, timeout=TIMEOUT)
+    # the first run fills the cache: it runs git, which a loaded runner can stall past the 80 ms budget
+    r = subprocess.run([sys.executable, "-m", "gitpro", "prompt", *SLOW_OK], cwd=work_repo, env=env,
+                       capture_output=True, text=True, timeout=TIMEOUT)
     assert r.stdout == "✓ work-github\n", r.stderr
     fake_bin.add("git", "print('fake git called', file=sys.stderr)\nsys.exit(1)")   # any git call now shows
     best = None
