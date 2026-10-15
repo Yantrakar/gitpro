@@ -26,7 +26,6 @@ from gitpro import cli
 
 # step 4 lands `gitpro report`, step 3 the redactor and the scan, step 5 --security/--online
 NOT_YET = pytest.mark.xfail(strict=True, reason="gitpro report lands in step 4")
-NO_SCAN_YET = pytest.mark.xfail(strict=True, reason="the redactor and the scan land in step 3")
 NO_ONLINE_YET = pytest.mark.xfail(strict=True, reason="--online lands in step 5")
 
 CANARY_EMAIL = "canary.person@canary-corp.test"
@@ -381,7 +380,6 @@ CLEAN_CASES = [
 ]
 
 
-@NO_SCAN_YET
 @pytest.mark.parametrize("kind,text", PATTERN_CASES, ids=[f"{k}-{i}" for i, (k, _) in enumerate(PATTERN_CASES)])
 def test_scan_pattern_is_found(kind, text):
     from gitpro import report
@@ -390,7 +388,6 @@ def test_scan_pattern_is_found(kind, text):
         assert {"kind": kind, "section": section} in hits, (kind, section, hits)
 
 
-@NO_SCAN_YET
 @pytest.mark.parametrize("kind,value", KNOWN_CASES, ids=[k for k, _ in KNOWN_CASES])
 def test_scan_known_value_is_found(kind, value):
     from gitpro import report
@@ -399,7 +396,6 @@ def test_scan_known_value_is_found(kind, value):
         assert {"kind": kind, "section": "message"} in report.scan({"message": text}, known)
 
 
-@NO_SCAN_YET
 def test_scan_known_values_need_a_word_boundary_and_three_characters():
     from gitpro import report
     assert report.scan({"message": "canaryowners and mycanaryowner"}, [("owner", "canaryowner")]) == []
@@ -407,7 +403,6 @@ def test_scan_known_values_need_a_word_boundary_and_three_characters():
     assert report.scan({"message": "an abc here"}, [("name", "abc")]) == [{"kind": "name", "section": "message"}]
 
 
-@NO_SCAN_YET
 @pytest.mark.parametrize("text", CLEAN_CASES)
 def test_scan_lets_ordinary_text_through(text):
     from gitpro import report
@@ -415,7 +410,6 @@ def test_scan_lets_ordinary_text_through(text):
         assert report.scan({section: text}, []) == [], text
 
 
-@NO_SCAN_YET
 def test_scan_decodes_the_url_body_once_more():
     from gitpro import report
     body = "reach me at someone%40elsewhere.invalid"
@@ -428,7 +422,6 @@ def test_scan_decodes_the_url_body_once_more():
     assert report.scan({}, [], url="https://github.com/Yantrakar/gitpro/security/advisories/new") == []
 
 
-@NO_SCAN_YET
 def test_scan_sees_encoded_known_values_in_the_url():
     from gitpro import report
     url = "https://github.com/Yantrakar/gitpro/issues/new?" + urllib.parse.urlencode(
@@ -436,7 +429,6 @@ def test_scan_sees_encoded_known_values_in_the_url():
     assert {"kind": "owner", "section": "url"} in report.scan({}, [("owner", "canaryowner")], url=url)
 
 
-@NO_SCAN_YET
 def test_scan_hits_have_exactly_kind_and_section_never_the_value():
     from gitpro import report
     hits = report.scan({"message": "mail me: someone@elsewhere.invalid"}, [])
@@ -444,14 +436,12 @@ def test_scan_hits_have_exactly_kind_and_section_never_the_value():
     assert "someone" not in json.dumps(hits)
 
 
-@NO_SCAN_YET
 def test_known_hosts_constant_is_pinned():
     from gitpro import report
     assert set(report.KNOWN_HOSTS) == {"github.com", "gitlab.com", "bitbucket.org", "codeberg.org",
                                        "git.sr.ht", "gitea.com"}
 
 
-@NO_SCAN_YET
 def test_block_message_names_kinds_and_sections_but_not_values(capsys):
     from gitpro import report
     hits = [{"kind": "email", "section": "message"}, {"kind": "token", "section": "why"}]
@@ -463,7 +453,6 @@ def test_block_message_names_kinds_and_sections_but_not_values(capsys):
     assert only[1] == "→ remove it from -m"
 
 
-@NO_SCAN_YET
 def test_the_redactor_numbers_each_kind_in_order_and_reuses_placeholders():
     from gitpro import report
     red = report.Redactor()
@@ -477,7 +466,6 @@ def test_the_redactor_numbers_each_kind_in_order_and_reuses_placeholders():
     assert red.P("repo", "thing") == "repo-1"
 
 
-@NO_SCAN_YET
 def test_the_redactor_rewrites_message_text_longest_value_first():
     from gitpro import report
     red = report.Redactor()
