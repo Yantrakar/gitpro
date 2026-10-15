@@ -131,6 +131,14 @@ name = "Srht"
 email = "srht@corp.test"
 host = "git.sr.ht"
 owners = ["~me"]
+
+[[identity]]
+id = "lp"
+name = "Lp"
+email = "lp@corp.test"
+host = "git.launchpad.net"
+owners = ["~me"]
+ssh_user = "me"
 """
 
 DIFF_URLS = [
@@ -163,6 +171,10 @@ DIFF_URLS = [
     "ssh://git@git.sr.ht/~me/app",
     "git@git.sr.ht:~mex/app",
     "git@git.sr.ht:me/app",
+    # Launchpad: git+ssh:// is not matched by git
+    "git+ssh://me@git.launchpad.net/~me/r",
+    "ssh://me@git.launchpad.net/~me/r",
+    "https://git.launchpad.net/~me/r",
 ]
 
 
@@ -565,6 +577,50 @@ def test_url_form_no_argv_text_output(cfg, tmp_path):
     out = resolve.render_text(resolve.compare(repo, c), c)
     assert "✗ origin is https://github.com:8443/corp-org/app.git; it looks like work-github" in out
     assert "→ switch origin to an ssh URL for work-github" in out
+
+
+LP = DEFAULT_CONFIG + """
+[[identity]]
+id = "lp"
+name = "Lp"
+email = "lp@corp.test"
+host = "git.launchpad.net"
+owners = ["~me"]
+ssh_user = "me"
+"""
+
+
+@pytest.mark.parametrize("url, fixed, reason", [
+    ("git+ssh://me@git.launchpad.net/~me/r", "ssh://me@git.launchpad.net/~me/r",
+     "ssh:// instead of git+ssh://"),
+    ("ssh+git://me@git.launchpad.net/~me/r", "ssh://me@git.launchpad.net/~me/r",
+     "ssh:// instead of ssh+git://"),
+    ("git+ssh://git.launchpad.net/~me/r", "ssh://me@git.launchpad.net/~me/r",
+     "ssh:// instead of git+ssh://, user me@ in the URL"),
+])
+def test_url_form_git_plus_ssh(cfg, tmp_path, url, fixed, reason):
+    repo = repo_with_remote(tmp_path, "app", url)
+    p = [p for p in resolve.compare(repo, load(cfg(LP))).problems if p.code == "url_form"][0]
+    assert p.fix_argv[-1] == fixed and f"({reason})" in p.message
+
+
+@pytest.mark.parametrize("url", [
+    "ssh://me@git.launchpad.net/~me/r",
+    "https://git.launchpad.net/~me/r",
+    "git+ssh://me@git.launchpad.net/~other/r",
+])
+def test_url_form_git_plus_ssh_no_repair(cfg, tmp_path, url):
+    repo = repo_with_remote(tmp_path, "app", url)
+    assert [p for p in resolve.compare(repo, load(cfg(LP))).problems if p.code == "url_form"] == []
+
+
+def test_url_form_git_plus_ssh_port(cfg, tmp_path):
+    repo = repo_with_remote(tmp_path, "app", "git+ssh://me@git.launchpad.net:2200/~me/r")
+    p = [p for p in resolve.compare(repo, load(cfg(LP))).problems if p.code == "url_form"][0]
+    assert p.fix_argv is None and "whose patterns have no port 2200" in p.message
+    repo = repo_with_remote(tmp_path, "app22", "git+ssh://me@git.launchpad.net:22/~me/r")
+    p = [p for p in resolve.compare(repo, load(cfg(LP))).problems if p.code == "url_form"][0]
+    assert p.fix_argv[-1] == "ssh://me@git.launchpad.net/~me/r"
 
 
 def test_home_argument_decides_block_check(cfg, tmp_path):  # QA01-7: --home

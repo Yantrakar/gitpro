@@ -611,16 +611,11 @@ _DEFAULT_PORT = {"ssh": 22, "https": 443, "http": 80}
 _Fix = Tuple[Optional[str], str, Identity, str, Optional[Tuple[str, str]]]
 
 
-def _url_fixes(url: str, cfg: Config, label: str = "the remote") -> List[_Fix]:
-    """[(fixed url, reason, identity, pattern, note)] for the three repairs, in order: userinfo removed,
-    missing user added, port removed. First repair that makes some identity match wins. When the fixed
-    url would point at the wrong place (a non-default port removed), fixed is None and note is
-    (message tail, fix text) instead."""
+def _repairs(url: str, users: List[str]) -> List[Tuple[str, str, Optional[Tuple[str, int]]]]:
     tries: List[Tuple[str, str, Optional[Tuple[str, int]]]] = []
     m = re.match(r"^(https?://)[^@/]+@(.*)$", url)
     if m:
         tries.append((m[1] + m[2], "no user in the URL", None))
-    users = list(dict.fromkeys(i.ssh_user for i in cfg.identities)) or ["git"]
     m = re.match(r"^ssh://([^@/]+)(/.*)$", url)
     if m:
         tries += [(f"ssh://{u}@{m[1]}{m[2]}", f"user {u}@ in the URL", None) for u in users]
@@ -631,6 +626,22 @@ def _url_fixes(url: str, cfg: Config, label: str = "the remote") -> List[_Fix]:
     m = re.match(r"^((ssh|https?)://[^/]*?):(\d+)(/.*)$", url)
     if m:
         tries.append((m[1] + m[4], "no port in the URL", (m[2], int(m[3]))))
+    return tries
+
+
+def _url_fixes(url: str, cfg: Config, label: str = "the remote") -> List[_Fix]:
+    """[(fixed url, reason, identity, pattern, note)] for the repairs, in order: git+ssh:// or ssh+git://
+    written as ssh://, then (on that url) userinfo removed, missing user added, port removed. First
+    repair that makes some identity match wins. When the fixed url would point at the wrong place (a
+    non-default port removed), fixed is None and note is (message tail, fix text) instead."""
+    users = list(dict.fromkeys(i.ssh_user for i in cfg.identities)) or ["git"]
+    tries: List[Tuple[str, str, Optional[Tuple[str, int]]]] = []
+    m = re.match(r"^(git\+ssh|ssh\+git)://(.*)$", url)
+    if m:
+        pre = f"ssh:// instead of {m[1]}://"
+        tries.append((f"ssh://{m[2]}", pre, None))
+        tries += [(f, f"{pre}, {r}", p) for f, r, p in _repairs(f"ssh://{m[2]}", users)]
+    tries += _repairs(url, users)
     for fixed, reason, port in tries:
         i, pat = match_url(fixed, cfg)
         if i is None:
