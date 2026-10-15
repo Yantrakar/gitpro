@@ -45,6 +45,11 @@ Docs: https://github.com/Yantrakar/gitpro/blob/main/docs/guide.md
 - Never pass `--online`, `--history` or `--send-repo-names` unless the user
   asks. Before an online command, tell the user what its first `online:` line
   (or its "needs the network" message) says will be sent.
+- When gitpro crashes (`✗ internal error (…): this is a gitpro bug`) or blocks
+  a commit or push the user thinks it should not, offer `gitpro report`
+  (`--crash`, `--denial`; `--security` for a vulnerability). Show the user
+  `gitpro report --print` and never open or file it without their yes in
+  this conversation.
 - `gitpro env` prints the commands that fetch tokens, never the tokens. Do
   not try to obtain token values, and never read `gh`/`glab` config files,
   `.netrc` or `.git-credentials`.
@@ -236,6 +241,7 @@ grants approval. `run` without execution consent returns preflight, while
 | `change approve` | only with `--write`: immutable approval and backup journal | **yes**, human reviews in their own terminal; no `-y` | no |
 | `change apply`, `change recover` | yes: authorized exact files or conflict-safe restoration | **yes**, then `-y`, plus human approval or an operator-scoped grant; recovery retains original rollback permission | no |
 | `which`, `why`, `doctor`, `prompt`, `completion`, `check`, `plan`, `scan`, `scan --roots`, `scan --suggest`, `lost`, `audit`, `keys`, `keys --health`, `guard status`, `guard test`, `agent status`, `devcontainer`, `devcontainer status`, `policy show`, `policy lint`, `team`, `env`, `discover`, `clone --dry-run` | no | no | no (`--online` is opt-in where present: ask first) |
+| `report` | no | **yes**, to open the form or send; `-y` answers it | with `--online` (`gh`): say so |
 | `guard check`, `agent-check`, `mcp` | no; git hooks, the agent hook and the MCP client call these | do not run them yourself | no |
 | `auth`, `forge repos`, `forge forks`, `forge email` | no | no, but say it goes online | **yes**, say so |
 | `discover --history`, `init --discover --history` | reads shell history (`init` also writes the config) | **yes** | no |
@@ -270,7 +276,7 @@ Notes:
 The gitpro plugin (or `gitpro mcp install`) gives you an MCP server with
 these tools: `which_identity`, `why`, `check_commit`, `scan`,
 `identities`, `env_for`, `lost`, `audit`, `preflight`, `operation_status`, `reconcile_operation`,
-`propose_change`, `change_status`.
+`propose_change`, `change_status`, `draft_report`.
 The explicitly enabled execution server additionally exposes `run_operation`,
 `apply_change` and `recover_change`. There is no approval tool or client-selectable
 policy. The operator can configure `gitpro mcp --allow-execution --approval-policy PATH`.
@@ -306,3 +312,5 @@ policy. The operator can configure `gitpro mcp --allow-execution --approval-poli
   commit went through. Run `gitpro doctor`.
 - The agent hook does nothing: it runs `gitpro` from a plain `sh`, so gitpro
   must be on that `PATH` (`command -v gitpro`).
+- Something else, or a gitpro bug: `gitpro report --print` drafts a redacted
+  issue (versions and `why`); the user decides whether to open it.

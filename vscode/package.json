@@ -7,6 +7,7 @@
   "publisher": "yantrakar",
   "license": "MIT",
   "homepage": "https://gitpro.dev",
+  "qna": "https://github.com/Yantrakar/gitpro/issues",
   "bugs": {
     "url": "https://github.com/Yantrakar/gitpro/issues"
   },
@@ -144,6 +145,11 @@
       {
         "command": "gitpro.doctor",
         "title": "Doctor",
+        "category": "gitpro"
+      },
+      {
+        "command": "gitpro.reportIssue",
+        "title": "Report an Issue",
         "category": "gitpro"
       }
     ],

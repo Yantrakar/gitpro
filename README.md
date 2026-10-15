@@ -80,6 +80,15 @@ optional operator-scoped preauthorization, and recoverable apply. MCP execution 
 The detailed TOML, YAML and command examples live in the guide, not on the
 getting-started path.
 
+## Problems and questions
+
+Run `gitpro report` to draft an issue with the versions and a redacted
+`gitpro why`; it shows you the draft and opens nothing until you say yes.
+Or open an issue at [github.com/Yantrakar/gitpro/issues](https://github.com/Yantrakar/gitpro/issues).
+Report a security problem privately with `gitpro report --security`, as the
+[security policy](https://github.com/Yantrakar/gitpro/security/policy) describes,
+not in a public issue.
+
 ## License
 
 [MIT](LICENSE)

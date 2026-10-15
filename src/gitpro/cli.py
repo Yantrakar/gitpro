@@ -14,6 +14,10 @@ first run on a new machine:
   gitpro keys              # public keys to register with each account
   gitpro scan              # every repo and the identity git uses there
 
+problems and questions:
+  gitpro report --print    # a redacted draft of a bug report; nothing is sent unless you say so
+  https://github.com/Yantrakar/gitpro/issues
+
 -- for developers (not part of --help) --
 CALLER_UMASK is the umask gitpro was started with. It is None until main() runs; main() saves it and
 then tightens the process umask to 077, so every file gitpro writes is private. A command that creates
@@ -58,6 +62,7 @@ EXTENSIONS = [
     "gitpro.operations",    # versioned agent preflight and scoped execution
     "gitpro.policy",        # 14: policy, team, check --policy
     "gitpro.prompt",        # 16: prompt
+    "gitpro.report",        # 19: report
     "gitpro.resolve",       # 01: why
     "gitpro.scanroots",     # 02: scan -c/--roots
     "gitpro.setup",         # guided configuration

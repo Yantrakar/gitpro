@@ -333,6 +333,7 @@ be owned by you and not group/world-writable. Unknown keys are errors.
 | `devcontainer [status] [DIR]` | Print (or `--write`) the `devcontainer.json` entry that runs `gitpro pin` on the host. |
 | `team` | Does this machine meet each identity's team policy? |
 | `policy show [DIR]`, `policy lint FILE` | Show the policy rules for a repo; validate a policy file. |
+| `report [--crash\|--denial\|--security]` | A redacted draft of a bug report, opened as a prefilled GitHub issue form only when you say yes. |
 
 Every command has `--help`. Commands that read have `--json` for scripts
 (see [Exit codes and JSON](#exit-codes-and-json)).
@@ -899,7 +900,7 @@ does nothing.
 `gitpro mcp` is a stdio MCP server with read-only tools by default:
 `which_identity`, `why`, `check_commit`, `scan`, `identities`, plus
 `lost`, `audit`, `env_for` when installed, and the structured `preflight`,
-`operation_status`, `reconcile_operation`, `propose_change` and `change_status` tools. Register it with `gitpro mcp
+`operation_status`, `reconcile_operation`, `propose_change`, `change_status` and `draft_report` tools. Register it with `gitpro mcp
 install --agent claude|cursor|gemini|opencode` or by installing the
 gitpro plugin. The default tools do not write target files. An operator can
 explicitly enable `run_operation`, `apply_change` and `recover_change` with
@@ -1425,6 +1426,65 @@ comparing version numbers.
 - **CI ignores the policy change in my pull request**: in `--range` mode the
   policy is read from the base commit. Your change takes effect once it is
   merged ([Check a pull request in CI](#check-a-pull-request-in-ci)).
+- **Something else**: run `gitpro report` in the repo where it happened
+  ([Reporting a problem](#reporting-a-problem)), or open an issue at
+  <https://github.com/Yantrakar/gitpro/issues> yourself. Report a security
+  problem privately with `gitpro report --security`, as
+  [SECURITY.md](../SECURITY.md) describes.
+
+### Reporting a problem
+
+`gitpro report` drafts a GitHub issue for you, shows you the draft and asks
+before it does anything with it:
+
+```sh
+gitpro report -m "scan missed a repo"   # a bug, with the why of this repo
+gitpro report --crash                   # the last internal error
+gitpro report --denial                  # the last commit or push gitpro blocked
+gitpro report --security                # the private security advisory form
+```
+
+On yes it opens the prefilled issue form in your browser (with no browser,
+it prints the URL); you read it again and submit it there. `--print` only
+prints the draft and the URL, and so does a run with no terminal and no
+`-y`. `--online` instead files the issue with `gh issue create`, as one of
+your own `gh` logins, when you say yes (`--as ID` picks the identity). `--security`
+opens GitHub's private advisory form with nothing filled in, and never
+works with `--online`.
+
+What goes in:
+- the versions of gitpro, Python, the OS, git and ssh, and how gitpro was
+  installed;
+- a redacted `gitpro why` for the repo (`--repo PATH`, default the current
+  directory): the URL form of each remote, the rule that matched, which
+  config scope set each value;
+- for `--crash`: the exception type, the command and the file, line and
+  function of each frame inside gitpro;
+- for `--denial`: the agent, the action, the reason and the problem codes;
+- your `-m` text.
+
+What never goes in: emails, names, identity ids, hosts other than the big
+public forges, owners, repo names, key and file paths, logins, your machine
+and user name, tokens and keys. Each becomes a placeholder such as `email-1`
+or `owner-1`, so the draft still shows that two values differ. If the
+finished draft still contains one of your config's values, a path under your
+home folder, an email, a token or a key, gitpro sends and opens nothing,
+exits 2 and names only the kind of value and the section. Text you add in
+the browser is yours to check.
+
+gitpro keeps two small files for this in its state directory
+(`$XDG_STATE_HOME/gitpro`, or `~/.local/state/gitpro`), readable only by
+you:
+- `last-crash.json`: the last internal error: its time, gitpro version,
+  command, exception type and the frames inside gitpro. Never the error
+  message, arguments, variables or other paths.
+- `denials.jsonl`: the last 20 commits or pushes gitpro blocked: time,
+  version, hook or agent, action, reason and problem codes. Never the
+  emails, ids, paths or the repo.
+
+Neither file is sent anywhere unless you run `gitpro report` and say yes.
+An internal error prints `✗ internal error (<Type>): this is a gitpro bug`
+and exits 2; set `GITPRO_DEBUG=1` to also see the traceback.
 
 ## VS Code and Claude Code
 
@@ -1454,7 +1514,7 @@ comparing version numbers.
 ## Development
 
 ```sh
-python -m venv .venv && .venv/bin/pip install -e . pytest && .venv/bin/pytest
+python -m venv .venv && .venv/bin/pip install -e . pytest pytest-xdist && .venv/bin/pytest -n auto
 .venv/bin/python -m pip wheel --no-deps --wheel-dir dist .
 .venv/bin/python tests/smoke_wheel.py dist/gitpro-0.3.3-py3-none-any.whl
 .venv/bin/python tests/smoke_providers.py      # remote URL forms of common git hosts (-v: every case)
@@ -1463,7 +1523,8 @@ xvfb-run -a npm run test:integration             # starts VS Code; drop xvfb-run
 ```
 
 `.venv/bin/pytest -q -rs` lists skipped tests; with every module present,
-only platform-specific tests may skip.
+only platform-specific tests may skip. `-n auto` (pytest-xdist) runs the
+tests in parallel, one worker per CPU; CI does the same.
 The shared `home` fixture also starts in its isolated home and sets a Git
 discovery ceiling, so scratch directories inside a checkout cannot accidentally
 install project settings into that checkout.
