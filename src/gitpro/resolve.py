@@ -607,28 +607,45 @@ def _p(code: str, message: str, argv: Optional[Sequence[str]], fix: Optional[str
                    tuple(argv) if argv else None)
 
 
-def _url_fixes(url: str, cfg: Config) -> List[Tuple[str, str, Identity, str]]:
-    """[(fixed url, reason, identity, pattern)] for the three repairs, in order: userinfo removed,
-    missing user added, port removed. First repair that makes some identity match wins."""
-    tries: List[Tuple[str, str]] = []
+_DEFAULT_PORT = {"ssh": 22, "https": 443, "http": 80}
+_Fix = Tuple[Optional[str], str, Identity, str, Optional[Tuple[str, str]]]
+
+
+def _url_fixes(url: str, cfg: Config, label: str = "the remote") -> List[_Fix]:
+    """[(fixed url, reason, identity, pattern, note)] for the three repairs, in order: userinfo removed,
+    missing user added, port removed. First repair that makes some identity match wins. When the fixed
+    url would point at the wrong place (a non-default port removed), fixed is None and note is
+    (message tail, fix text) instead."""
+    tries: List[Tuple[str, str, Optional[Tuple[str, int]]]] = []
     m = re.match(r"^(https?://)[^@/]+@(.*)$", url)
     if m:
-        tries.append((m[1] + m[2], "no user in the URL"))
+        tries.append((m[1] + m[2], "no user in the URL", None))
     users = list(dict.fromkeys(i.ssh_user for i in cfg.identities)) or ["git"]
     m = re.match(r"^ssh://([^@/]+)(/.*)$", url)
     if m:
-        tries += [(f"ssh://{u}@{m[1]}{m[2]}", f"user {u}@ in the URL") for u in users]
+        tries += [(f"ssh://{u}@{m[1]}{m[2]}", f"user {u}@ in the URL", None) for u in users]
     elif "://" not in url:
         m = _SCP_RE.match(url)
         if m and m[1] is None and "/" not in url.split(":", 1)[0]:
-            tries += [(f"{u}@{url}", f"user {u}@ in the URL") for u in users]
-    m = re.match(r"^((?:ssh|https?)://[^/]*?):\d+(/.*)$", url)
+            tries += [(f"{u}@{url}", f"user {u}@ in the URL", None) for u in users]
+    m = re.match(r"^((ssh|https?)://[^/]*?):(\d+)(/.*)$", url)
     if m:
-        tries.append((m[1] + m[2], "no port in the URL"))
-    for fixed, reason in tries:
+        tries.append((m[1] + m[4], "no port in the URL", (m[2], int(m[3]))))
+    for fixed, reason, port in tries:
         i, pat = match_url(fixed, cfg)
-        if i is not None:
-            return [(fixed, reason, i, pat)]
+        if i is None:
+            continue
+        if port and port[1] != _DEFAULT_PORT[port[0]]:
+            if port[0] == "ssh":
+                tail = f"it looks like {i.id}, whose patterns have no port {port[1]}"
+                fix = f"set ssh_port = {port[1]} on identity {i.id} in the gitpro config, then run: gitpro apply"
+                if i.ssh_port:
+                    fix += f" (it is {i.ssh_port} now; an identity has one ssh_port)"
+            else:
+                tail = f"it looks like {i.id}, but gitpro's https patterns never carry a port"
+                fix = f"switch {label} to an ssh URL for {i.id}"
+            return [(None, reason, i, pat, (tail, fix))]
+        return [(fixed, reason, i, pat, None)]
     return []
 
 
@@ -686,9 +703,12 @@ def compare(repo: Path, cfg: Config, *, remote: Optional[str] = None,
 
     if exp.match.identity is None:
         for name, url in candidates:
-            fixes = _url_fixes(url, cfg)
+            fixes = _url_fixes(url, cfg, name or "the remote")
             if fixes:
-                fixed, reason, i, pat = fixes[0]
+                fixed, reason, i, pat, note = fixes[0]
+                if note:
+                    out.append(_p("url_form", f"{name or 'the remote'} is {redact_url(url)}; {note[0]}", None, note[1]))
+                    break
                 argv = ["git", "-C", str(top), "remote", "set-url", name, fixed] \
                     if name and remote_url is None else None
                 need = pat.replace("**", "…")
