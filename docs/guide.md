@@ -1425,6 +1425,9 @@ comparing version numbers.
 - **CI ignores the policy change in my pull request**: in `--range` mode the
   policy is read from the base commit. Your change takes effect once it is
   merged ([Check a pull request in CI](#check-a-pull-request-in-ci)).
+- **Something else**: open an issue at <https://github.com/Yantrakar/gitpro/issues> with the output of
+  `gitpro why --json` and `gitpro --version`. Report a security problem
+  privately, as [SECURITY.md](../SECURITY.md) describes.
 
 ## VS Code and Claude Code
 

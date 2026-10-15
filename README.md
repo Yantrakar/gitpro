@@ -80,6 +80,13 @@ optional operator-scoped preauthorization, and recoverable apply. MCP execution 
 The detailed TOML, YAML and command examples live in the guide, not on the
 getting-started path.
 
+## Problems and questions
+
+Open an issue at [github.com/Yantrakar/gitpro/issues](https://github.com/Yantrakar/gitpro/issues).
+Report a security problem privately, as the
+[security policy](https://github.com/Yantrakar/gitpro/security/policy) describes,
+not in a public issue.
+
 ## License
 
 [MIT](LICENSE)

@@ -377,6 +377,18 @@ def _json(rel: str):
     return json.loads((ROOT / rel).read_text(encoding="utf-8"))
 
 
+ISSUES = "https://github.com/Yantrakar/gitpro/issues"
+
+
+def test_users_are_told_where_to_report_problems():
+    top, _ = cli.build_parser()
+    assert ISSUES in top.format_help()
+    assert ISSUES in (ROOT / "README.md").read_text(encoding="utf-8") and ISSUES in GUIDE
+    assert f'Issues = "{ISSUES}"' in (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    vsc = _json("vscode/package.json")
+    assert vsc["bugs"]["url"] == ISSUES and vsc["qna"] == ISSUES
+
+
 def test_manifests_parse():
     plugin = _json(".claude-plugin/plugin.json")
     assert plugin["name"] == "gitpro"

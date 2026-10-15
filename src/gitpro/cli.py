@@ -14,6 +14,9 @@ first run on a new machine:
   gitpro keys              # public keys to register with each account
   gitpro scan              # every repo and the identity git uses there
 
+problems and questions:
+  https://github.com/Yantrakar/gitpro/issues
+
 -- for developers (not part of --help) --
 CALLER_UMASK is the umask gitpro was started with. It is None until main() runs; main() saves it and
 then tightens the process umask to 077, so every file gitpro writes is private. A command that creates

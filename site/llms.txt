@@ -17,7 +17,7 @@ gitpro why               # inside a repository: expected identity, actual identi
 ## For AI agents
 
 - Before a commit, push or pull request for the user, run `gitpro why --json` in the repository. It returns the expected and the actual identity and a list of problems, each with a `fix` command. Show the fix to the user; do not run it unasked.
-- MCP server: `gitpro mcp` (stdio), or `uvx gitpro mcp` without installing. Read-only by default. Tools: `which_identity`, `why`, `check_commit`, `scan`, `identities`, `audit`, `lost`, `env_for`, `preflight`, `operation_status`, `reconcile_operation`, `propose_change`, `change_status`. Register it with `gitpro mcp install --agent claude|cursor|gemini|opencode`.
+- MCP server: `gitpro mcp` (stdio), or `uvx gitpro mcp` without installing. Read-only by default. Tools: `which_identity`, `why`, `check_commit`, `scan`, `identities`, `audit`, `lost`, `env_for`, `preflight`, `operation_status`, `reconcile_operation`, `propose_change`, `change_status`. Register it with `gitpro mcp install --agent claude|cursor|gemini|opencode`. It is listed in the official MCP Registry (registry.modelcontextprotocol.io) as `io.github.Yantrakar/gitpro`.
 - Claude Code plugin (hook, MCP server and skill): `/plugin marketplace add Yantrakar/gitpro`, then `/plugin install gitpro@gitpro`.
 - Claude Code hook alone: `gitpro agent install`. It denies `git commit`, `git push` and `gh pr create` calls that would use the wrong identity, with a reason.
 - Every command that reads has `--json`.
