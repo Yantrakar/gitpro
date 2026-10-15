@@ -271,6 +271,7 @@ button.btn{font-family:"IBM Plex Mono",ui-monospace,"SFMono-Regular",Menlo,Conso
 .work-item{display:flex;flex-direction:column;align-items:flex-start;gap:12px;padding:24px;min-width:0}
 .work-item > *{min-width:0}
 .work-item .chips{margin-top:auto}
+.hosts-note{margin-top:1.25rem}
 .item-link{padding-top:4px}
 .note{color:var(--ink-2);font-size:.9375rem}
 

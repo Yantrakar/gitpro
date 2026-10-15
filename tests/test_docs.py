@@ -462,3 +462,35 @@ def test_documentation_relative_links_and_anchors(name):
             headings = re.findall(r"^#{1,6} (.+)$", target.read_text(encoding="utf-8"), re.M)
             anchors = {re.sub(r"[^\w -]", "", h.lower()).replace(" ", "-") for h in headings}
             assert anchor in anchors, f"{name}: missing anchor {link}"
+
+
+# ---------------------------------------------------------------- gitpro.dev for search engines and agents
+
+SITE = (ROOT / "site/index.html").read_text(encoding="utf-8")
+LLMS = (ROOT / "site/llms.txt").read_text(encoding="utf-8")
+
+
+def test_site_title_and_description_fit_search_results():
+    title = re.search(r"<title>(.+?)</title>", SITE)[1]
+    description = re.search(r'<meta name="description" content="([^"]+)">', SITE)[1]
+    assert title.startswith("gitpro") and len(title) <= 60, title
+    assert 140 <= len(description) <= 155, len(description)
+    assert f'<meta name="twitter:title" content="{title}">' in SITE
+
+
+def test_site_structured_data_is_the_release():
+    data = json.loads(re.search(r'<script type="application/ld\+json">(.+?)</script>', SITE, re.S)[1])
+    app = next(n for n in data["@graph"] if n["@type"] == "SoftwareApplication")
+    assert app["softwareVersion"] == VERSION and f"v{VERSION}" in SITE
+    assert not {"aggregateRating", "review"} & set(app), "gitpro has no ratings or reviews"
+    assert "FAQPage" not in {n["@type"] for n in data["@graph"]}
+
+
+def test_llms_txt_lists_the_default_mcp_tools_and_real_docs():
+    from gitpro import mcp
+    assert LLMS.startswith("# gitpro\n\n> ")
+    listed = set(re.search(r"Tools: (.+?)\. Register", LLMS)[1].replace("`", "").split(", "))
+    assert listed == {name for name, tool in mcp.TOOLS.items() if not tool.execution}
+    for rel in re.findall(r"raw\.githubusercontent\.com/Yantrakar/gitpro/main/([^)]+)\)", LLMS):
+        assert (ROOT / rel).exists(), rel
+    assert INSTALL in LLMS and 'href="/llms.txt"' in SITE
