@@ -60,7 +60,7 @@
       "image": "https://gitpro.dev/icon.png",
       "applicationCategory": "DeveloperApplication",
       "operatingSystem": "Linux, macOS",
-      "softwareVersion": "0.3.3",
+      "softwareVersion": "0.3.4",
       "softwareRequirements": "Git 2.36 or newer, Python 3.9 or newer, OpenSSH",
       "license": "https://opensource.org/licenses/MIT",
       "isAccessibleForFree": true,
@@ -115,7 +115,7 @@
 <section class="hero hero-home" aria-labelledby="hero-h">
 <div class="wrap hero-grid">
 <div class="hero-text">
-<p class="eyebrow">OPEN SOURCE · MIT · v0.3.3</p>
+<p class="eyebrow">OPEN SOURCE · MIT · v0.3.4</p>
 <h1 id="hero-h">The right git name, email and SSH key in every repository. <span class="h1-quiet">For you, and for the AI agents that commit for you.</span></h1>
 <p class="lead">gitpro picks the identity by the repository's remote URL, not by the folder you cloned it into. It writes plain git and SSH config, so nothing runs in the background.</p>
 <div class="cmd">
@@ -354,7 +354,7 @@
 <p class="prose">Coding agents run <code>git commit</code>, <code>git push</code> and <code>gh pr create</code> on their own. gitpro checks each of those calls before it runs. When the identity is wrong, the call is denied with a reason, and the agent has to ask you.</p>
 <ul class="proof">
 <li><span class="tag tag-accent">HOOK</span><p>A Claude Code PreToolUse hook, from <code>gitpro agent install</code> or the plugin. It only denies; it never grants anything.</p></li>
-<li><span class="tag">MCP</span><p>A read-only MCP server, <code>gitpro mcp</code> or <code>uvx gitpro mcp</code>, so an agent can ask which identity a repository uses and why, and whether a commit would be blocked. Tools include <code>which_identity</code>, <code>why</code>, <code>check_commit</code>, <code>audit</code> and <code>draft_report</code>.</p></li>
+<li><span class="tag">MCP</span><p>A read-only MCP server, <code>gitpro mcp</code> or <code>uvx gitpro mcp</code>, so an agent can ask which identity a repository uses and why, and whether a commit would be blocked. Tools include <code>which_identity</code>, <code>why</code>, <code>check_commit</code>, <code>audit</code> and <code>draft_report</code>. It is listed in the official MCP Registry as <code>io.github.Yantrakar/gitpro</code>.</p></li>
 <li><span class="tag">APPROVAL</span><p>Changes an agent proposes wait for your approval, and an interrupted apply can be recovered.</p></li>
 <li><span class="tag">AUDIT</span><p><code>gitpro audit</code> finds commits made as the wrong identity or by an agent; <code>--rewrite</code> fixes the unpushed ones.</p></li>
 <li><span class="tag">LLMS.TXT</span><p>Agents can read <a href="/llms.txt">gitpro.dev/llms.txt</a> for the commands, the MCP tools and the docs in plain text.</p></li>
@@ -602,6 +602,7 @@
 <div>
 <p class="label-h">Shipped</p>
 <ol class="log">
+<li><span class="tag">0.3.4 · 2026-10-15</span><p><code>gitpro report</code>: a redacted bug, crash or blocked-commit report, opened as a GitHub issue only when you say yes, and <code>--security</code> for the private form. The <code>draft_report</code> MCP tool, a Report an Issue command in VS Code, and a listing in the official MCP Registry.</p></li>
 <li><span class="tag">0.3.3 · 2026-10-15</span><p>The gitpro icon and gitpro.dev links on PyPI and the Marketplace, and metadata for the official MCP registry. SourceHut <code>~user</code> owners, and fixes from <code>gitpro why</code> for more remote URL forms.</p></li>
 <li><span class="tag">0.3.2 · 2026-10-11</span><p>VS Code Marketplace extension, with the identity in Source Control.</p></li>
 <li><span class="tag">0.3 · 2026-10-09</span><p>Guided setup. Agent operations: preflight, approved changes and recoverable apply.</p></li>
