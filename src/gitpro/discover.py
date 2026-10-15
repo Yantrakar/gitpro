@@ -1228,7 +1228,7 @@ def render_toml(d: dict) -> str:
                 notes.append(f"{where}: already in config" + (f" (identity {o['config_id']})" if o.get("config_id") else ""))
                 continue
             if not OWNER_RE.match(o["owner"]):
-                notes.append(f"{where}: owners can hold only A-Z a-z 0-9 . _ - /; add it by hand if it is yours")
+                notes.append(f"{where}: owners can hold only A-Z a-z 0-9 . _ - / and a leading ~; add it by hand if it is yours")
                 continue
             rule = o.get("rule") or {}
             email = _top(o.get("emails"), _usable_email)[0]

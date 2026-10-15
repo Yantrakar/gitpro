@@ -40,6 +40,11 @@ def test_url_patterns():
     assert "https://git.corp.test/**" in render.url_patterns(whole_host)
 
 
+def test_url_patterns_sourcehut_owner():
+    i = Identity(id="s", name="n", email="e@x.test", host="git.sr.ht", owners=["~me"])
+    assert render.url_patterns(i) == ["git@git.sr.ht:~me/**", "ssh://git@git.sr.ht/~me/**", "https://git.sr.ht/~me/**"]
+
+
 def test_gval_escapes():
     assert render.gval('a "b" \\c') == '"a \\"b\\" \\\\c"'
     assert render.gval(True) == "true"
