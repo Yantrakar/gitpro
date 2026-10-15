@@ -1,7 +1,8 @@
 name: Release
 
 # Push a tag vX.Y.Z whose version matches src/gitpro/__init__.py and
-# vscode/package.json. One build feeds GitHub, PyPI and the Marketplace.
+# vscode/package.json. One build feeds GitHub, PyPI and the Marketplace;
+# server.json goes to the MCP Registry once PyPI has the release.
 on:
   push:
     tags: ["v*"]
@@ -81,6 +82,15 @@ jobs:
   marketplace:
     needs: github
     uses: ./.github/workflows/marketplace.yml
+    with:
+      tag: ${{ github.ref_name }}
+    permissions:
+      contents: read
+      id-token: write
+
+  mcp-registry:
+    needs: pypi
+    uses: ./.github/workflows/mcp-registry.yml
     with:
       tag: ${{ github.ref_name }}
     permissions:

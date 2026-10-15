@@ -1,0 +1,92 @@
+name: MCP Registry
+
+# Publishes server.json at a release tag to the official MCP Registry
+# (registry.modelcontextprotocol.io), after the same version is on PyPI.
+# It signs in with this workflow's GitHub OIDC token, which the registry
+# maps to the io.github.Yantrakar/* namespace; no token is stored. A
+# registry version cannot be changed once published, so a version that is
+# already there is left alone. Run it by hand to publish an existing tag.
+on:
+  workflow_call:
+    inputs:
+      tag:
+        type: string
+        required: true
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag whose server.json to publish, e.g. v0.3.3
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  PUBLISHER_VERSION: "1.8.1"
+  PUBLISHER_SHA256: a06c9096dcb9727c13555b6be26c7effa707b01f06a4c561ba7a3635443cf2cc
+  REGISTRY: https://registry.modelcontextprotocol.io
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: mcp-registry
+    permissions:
+      contents: read
+      id-token: write  # registry sign-in; no token is stored
+    steps:
+      - name: Tag is a release tag
+        env:
+          TAG: ${{ inputs.tag }}
+        run: echo "$TAG" | grep -Eqx 'v[0-9]+\.[0-9]+\.[0-9]+'
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ inputs.tag }}
+          persist-credentials: false
+      - name: server.json is this release
+        id: server
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          v="${TAG#v}"
+          name=$(jq -r .name server.json)
+          jq -e --arg v "$v" '.version == $v and ([.packages[].version] | all(. == $v))' server.json
+          grep -Fqx "<!-- mcp-name: $name -->" README.md
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+      - name: Not in the registry yet
+        id: new
+        env:
+          NAME: ${{ steps.server.outputs.name }}
+          VERSION: ${{ steps.server.outputs.version }}
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' "$REGISTRY/v0.1/servers/$(jq -rn --arg n "$NAME" '$n|@uri')/versions/$VERSION")
+          case "$code" in
+            404) echo "publish=true" >> "$GITHUB_OUTPUT" ;;
+            200) echo "::notice::$NAME $VERSION is already in the registry; nothing to do" ;;
+            *) echo "registry answered $code"; exit 1 ;;
+          esac
+      - name: Wait for the PyPI release
+        if: steps.new.outputs.publish
+        env:
+          VERSION: ${{ steps.server.outputs.version }}
+        run: |
+          for i in $(seq 30); do
+            curl -sf -o /dev/null "https://pypi.org/pypi/gitpro/$VERSION/json" && exit 0
+            sleep 10
+          done
+          echo "gitpro $VERSION is not on PyPI"; exit 1
+      - name: Install mcp-publisher
+        if: steps.new.outputs.publish
+        run: |
+          curl -sfL -o publisher.tar.gz "https://github.com/modelcontextprotocol/registry/releases/download/v$PUBLISHER_VERSION/mcp-publisher_linux_amd64.tar.gz"
+          echo "$PUBLISHER_SHA256  publisher.tar.gz" | sha256sum -c -
+          tar xzf publisher.tar.gz mcp-publisher
+      - name: Publish
+        if: steps.new.outputs.publish
+        run: |
+          ./mcp-publisher validate
+          ./mcp-publisher login github-oidc
+          ./mcp-publisher publish
+          ./mcp-publisher logout

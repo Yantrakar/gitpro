@@ -395,6 +395,15 @@ def test_versions_are_the_release():
     assert [p["version"] for p in _json(".claude-plugin/marketplace.json")["plugins"]] == [VERSION]
     lock = _json("vscode/package-lock.json")
     assert lock["version"] == VERSION and lock["packages"][""]["version"] == VERSION
+    server = _json("server.json")
+    assert server["version"] == VERSION and [p["version"] for p in server["packages"]] == [VERSION]
+
+
+def test_server_json_names_the_pypi_package():
+    # the registry accepts a PyPI package only when its README carries the server name
+    server = _json("server.json")
+    assert [(p["registryType"], p["identifier"]) for p in server["packages"]] == [("pypi", "gitpro")]
+    assert f"<!-- mcp-name: {server['name']} -->" in (ROOT / "README.md").read_text(encoding="utf-8")
 
 
 def test_version_json_reports_the_release(home, capsys):
