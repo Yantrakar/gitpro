@@ -637,9 +637,9 @@ def _repairs(url: str, users: List[str]) -> List[Tuple[str, str, Optional[Tuple[
 def _url_fixes(url: str, cfg: Config, label: str = "the remote") -> List[_Fix]:
     """[(fixed url, reason, identity, pattern, note)] for the repairs, in order: git+ssh:// or ssh+git://
     written as ssh://, then (on that url) userinfo removed, missing user added, port removed, then
-    letter case changed to an identity's. First
-    repair that makes some identity match wins. When the fixed url would point at the wrong place (a
-    non-default port removed, user git on CodeCommit), fixed is None and note is (message tail, fix text) instead."""
+    letter case changed to an identity's. First repair that makes some identity match wins. When the
+    fixed url would point at the wrong place (a non-default port removed, user git on CodeCommit),
+    fixed is None and note is (message tail, fix text) instead."""
     users = list(dict.fromkeys(i.ssh_user for i in cfg.identities)) or ["git"]
     tries: List[Tuple[str, str, Optional[Tuple[str, int]]]] = []
     m = re.match(r"^(git\+ssh|ssh\+git)://(.*)$", url)
