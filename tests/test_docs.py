@@ -6,6 +6,8 @@ import json
 import os
 import re
 import shlex
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -437,9 +439,11 @@ RELEASED_CAPABILITIES = frozenset({
 })
 
 
-def test_capabilities_only_grow_and_the_changelog_names_the_new_ones(home, capsys):
-    assert cli.main(["--version", "--json"]) == 0
-    caps = set(json.loads(capsys.readouterr().out)["capabilities"])
+def test_capabilities_only_grow_and_the_changelog_names_the_new_ones(tmp_path):
+    # A fresh interpreter, as a user runs it: other tests add capabilities to this process and never take them away.
+    out = subprocess.run([sys.executable, "-m", "gitpro", "--version", "--json"], capture_output=True, text=True,
+                         check=True, timeout=60, env=dict(os.environ, HOME=str(tmp_path)))
+    caps = set(json.loads(out.stdout)["capabilities"])
     assert RELEASED_CAPABILITIES <= caps, f"capabilities taken away: {sorted(RELEASED_CAPABILITIES - caps)}"
     changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
     unnamed = sorted(c for c in caps - RELEASED_CAPABILITIES if f"`{c}`" not in changelog)
