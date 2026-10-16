@@ -1,11 +1,19 @@
 name: CI
 
+# One run per change: a PR is tested by its pull_request run, main after each
+# merge. A release tag is tested by release.yml's build. A newer push to a PR
+# cancels its older run.
 on:
   push:
+    branches: [main]
   pull_request:
 
 permissions:
   contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   test:
@@ -37,6 +45,7 @@ jobs:
           name: wheel-${{ matrix.os }}-py${{ matrix.python }}
           path: dist/*.whl
           if-no-files-found: error
+          retention-days: 7
 
   vscode:
     runs-on: ubuntu-latest
@@ -66,3 +75,4 @@ jobs:
           name: vscode-extension
           path: vscode/*.vsix
           if-no-files-found: error
+          retention-days: 7
