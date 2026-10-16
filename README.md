@@ -25,12 +25,10 @@ pipx install gitpro
 gitpro setup
 ```
 
-Setup offers to look through your repos to find your identities, and proposes
-them: a name, an email, a host and the owners under it. You can accept, edit or
-answer the questions yourself. **No TOML editing is needed.** Setup then shows
-everything it will set up: the config, the missing SSH keys, the Git and SSH
-files, the commit guard and, when Claude Code is installed, its hook and MCP
-server. One yes applies all of it. Setup never changes your repos.
+Setup offers to look through your repos and proposes your identities. Accept,
+edit or answer the questions yourself; **no TOML editing is needed.** One
+preview shows everything, including the commit guard and, with Claude Code, its
+hook and MCP server. One yes applies it all. Setup never changes your repos.
 
 ```mermaid
 flowchart LR
@@ -87,9 +85,6 @@ see [agent workflows](docs/agent-workflows.md).
 | Configure team policy, CI or AI assistants | [Teams and CI](docs/guide.md#teams) · [AI assistants](docs/guide.md#ai-assistants) |
 | Look up a command or undo changes | [Command reference](docs/guide.md#commands) · [Undo](docs/guide.md#undo-everything) |
 | Troubleshoot or contribute | [Troubleshooting](docs/guide.md#troubleshooting) · [Development](docs/guide.md#development) |
-
-The detailed TOML, YAML and command examples live in the guide, not on the
-getting-started path.
 
 ## Problems and questions
 
