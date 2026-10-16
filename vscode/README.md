@@ -17,15 +17,12 @@ Set `gitpro.path` if it is not on `PATH`.
 
 ## Set up your identities
 
-Run **gitpro: Set Up Identities** from the Command Palette. It opens
-`gitpro setup` in a terminal: choose names/emails, hosts and owners, existing
-SSH keys and optional signing without editing TOML. Review before saving, then
-run **Plan** and **Apply** separately.
-
-The wizard keeps existing settings and comments when adding identities, and
-backs up existing configs. It never creates keys or applies Git/SSH changes.
-**Open Config** offers guided setup when no config exists; discovery and example
-creation remain available. With an older CLI, unsupported setup shows update
+Run **gitpro: Set Up** from the Command Palette. It opens `gitpro setup` in
+a terminal and asks its questions there: it can scan your repos, shows what it
+found, and writes the identities after you confirm. It is the one step that
+sets up a machine; run it again any time. When no config exists, **Open
+Config** offers **Set Up**, **Create with Discovery** (`gitpro init --discover`,
+in a terminal) and **Create from Example** (`gitpro init`). With an older CLI, unsupported setup shows update
 instructions rather than trying to run an unknown command.
 
 ## Status bar
@@ -49,15 +46,15 @@ a timer.
 
 Click it for a menu:
 
-- One fix per problem, as gitpro proposed it: **Apply config**, **Re-pin this
+- One fix per problem, as gitpro proposed it: **Re-pin this
   repo**, **Unset user.email in .git/config**, **Set origin URL to …**,
-  **Run …** or **Suggest an identity…**. Each one asks "Run this command?"
+  **Run …** or **Set up…** (opens Set Up). Each one asks "Run this command?"
   with the exact command first. When the fix leaves an undo script, the
   notification offers **Undo**.
 - **Explain (gitpro why)**: the full explanation in the log.
 - **Copy env for terminal**: `gitpro env` for this repo, to paste into a
   terminal. It copies the commands that fetch tokens, never a token.
-- **Run doctor**, **Open config**, **Show Log**.
+- **Open config**, **Show Log**.
 
 The same menu is in the Source Control view: the person-icon button in its
 title bar, and on each repository's row when several are open, offers the
@@ -73,20 +70,17 @@ Command Palette, "gitpro":
 
 | command | runs |
 |---|---|
-| Set Up Identities | `gitpro setup` in an interactive terminal |
-| Show Identity for This Repo | `gitpro which` |
-| Plan | `gitpro plan` |
-| Apply | `plan`, then `apply --yes` after you confirm |
-| Pin Identity to This Repo / Unpin Identity from This Repo | `gitpro pin` / `unpin` for the current repo |
+| Set Up | `gitpro setup` in an interactive terminal |
+| Show Identity for This Repo | `gitpro why --json` (`which --json` with gitpro 0.3) |
+| Pin Identity to This Repo / Unpin Identity from This Repo | `gitpro pin` / `pin --remove` (`unpin` with gitpro 0.3) for the current repo |
 | Open Config | opens `$GITPRO_CONFIG` or `~/.config/gitpro.toml`; offers to create it |
 | Refresh Status | refreshes the status bar |
-| Scan Repos for Overrides, Fix Checked, Review One by One, Suggest Identities | the [Repo Overrides](#repo-overrides) view |
+| Scan Repos for Overrides, Fix Checked | the [Repo Overrides](#repo-overrides) view |
 | Choose Scan Roots… | the [scan roots](#scan-roots) picker |
-| Find Lost Work | fills the [Lost Work](#lost-work) view |
+| Find Lost Work | fills the [Lost Work](#lost-work) view (`gitpro scan --lost`; `lost --offline` with gitpro 0.3) |
 | Clone… | [`gitpro clone`](#clone) |
 | Copy env for terminal | `gitpro env --shell sh` for this repo, copied to the clipboard |
-| Set up devcontainer pin | [`gitpro devcontainer`](#dev-containers) |
-| Doctor | `gitpro doctor` into the log |
+| Set up devcontainer pin | [adds the `initializeCommand` line](#dev-containers) to `devcontainer.json` itself |
 
 ## Repo Overrides
 
@@ -97,17 +91,10 @@ Scan or Refresh, under your [scan roots](#scan-roots).
 
 - Click a repo to open its `.git/config`; hover for each setting and what
   replaces it.
-- Review One by One steps through the fixable repos ("Review app (3/15)"):
-  Fix, Skip, Back, or fix or skip all the rest. Your answers set the
-  checkboxes, and nothing changes until the last step's confirmation. Escape
-  puts the checkboxes back as they were.
 - Fix Checked removes the settings of the checked repos in one go
   (`gitpro scan --fix --repo ...`) after you confirm. The notification names
   the undo script and offers Undo. Repos where nothing else sets an identity
   have no checkbox: the fix keeps them.
-- Suggest Identities opens the `[[identity]]` blocks that would keep a repo's
-  current identity instead. Paste the ones you want into your config, run
-  Apply, then Fix.
 
 A malformed scan response is reported as a failed scan, with no fixable
 results; restoring the CLI and scanning again recovers without reloading VS Code.
@@ -135,7 +122,7 @@ outside the scan roots" and offers **Add Them for This Session**.
 ## Lost Work
 
 The Lost Work view lists work that exists only on this machine, from
-`gitpro lost --json --offline`: unpushed branches, branches whose upstream is
+`gitpro scan --lost --json` (`gitpro lost --json --offline` with gitpro 0.3): unpushed branches, branches whose upstream is
 gone, stashes, dirty trees, repos with no remote and diverged duplicate
 clones, grouped by kind and repo. It never goes online, whatever
 `[forge] online` says, and never pushes or deletes anything.
@@ -172,18 +159,19 @@ initializeCommand so the container keeps your identity", with **Show** and
 **Don't ask again**.
 
 **Show** (or the command **Set up devcontainer pin**) shows the
-`initializeCommand` entry from `gitpro devcontainer` and offers **Write** or
-**Copy**. `devcontainer.json` is usually committed and shared with your team,
-so **Write** asks again and explains that teammates need gitpro on their host
-for the entry to do anything. If the file has comments, writing would lose
-them, so only **Copy** is offered. Writing goes through
-`gitpro devcontainer --write -y`, which keeps a backup and an undo script.
+`initializeCommand` entry and offers **Write** or **Copy**. `devcontainer.json` is usually committed and shared with your team:
+when git tracks it, **Write** asks again and explains that teammates need gitpro on their host
+for the entry to do anything. If the file has comments (JSONC), writing
+would lose them, so only **Copy** is offered. **Write** adds just the
+`initializeCommand` key (or merges your existing command next to it) and
+leaves the rest of the file as it was. To undo it, run `git checkout` on the
+file, or remove the `initializeCommand` key.
 
 ## Which gitpro is installed
 
 The extension runs `gitpro --version --json` once and turns on each feature
-when the CLI lists its capability (`why`, `lost`, `clone`, `devcontainer`,
-`env`, `doctor`, `scan.roots` and so on). There is no minimum version: with
+when the CLI lists its capability (`why.commit`, `scan.lost`, `pin.remove`,
+`clone`, `env`, `scan.roots` and so on). There is no minimum version: with
 an older gitpro, the features it lacks say "gitpro X has no 'cap'; update:"
 followed by the install command, and the rest keeps working.
 

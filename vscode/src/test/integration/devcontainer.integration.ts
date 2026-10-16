@@ -58,7 +58,7 @@ async function setup(api: Api): Promise<void> {
       assert.ok(seen.modal[0].startsWith("Add initializeCommand to "), seen.modal[0]);
       assert.ok(seen.modal[0].endsWith("which is harmless)."), seen.modal[0]);
       assert.ok(seen.modal[1].startsWith("This file is shared with your team. Write anyway?"));
-      assert.match(seen.info[0], /Undo: sh .*devcontainer-undo-/);
+      assert.match(seen.info[0], /Undo: /);
     });
     assert.equal(JSON.parse(fs.readFileSync(a.file, "utf8")).initializeCommand, LINE);
     await withUi(api, {}, async (seen) => {

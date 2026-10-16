@@ -30,10 +30,11 @@ def test_init_and_discovery_preview_without_creating_parents(home: Path) -> None
     assert (home / ".config/gitpro.toml").is_file()
 
 
-def test_setup_default_never_asks_to_save(home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    remaining = interact(monkeypatch, ["Fixture", "fixture@local.test"], [True, False])
+def test_setup_declined_changes_nothing(home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """setup asks once (spec 21); a no leaves every file as it was."""
+    remaining = interact(monkeypatch, ["Fixture", "fixture@local.test"], [True, False, False])
     before = snapshot(home)
-    assert run("setup") == 0
+    assert run("setup") == 1
     assert snapshot(home) == before
     assert all(not answers for answers in remaining)
 

@@ -1,11 +1,11 @@
-// The Lost Work view (spec 03 §5): `gitpro lost --json` in the home dir (the TOML picks the roots), shown as
+// The Lost Work view (spec 03 §5): `gitpro scan --lost --json` (0.3: `lost --json --offline`) in the home dir (the TOML picks the roots), shown as
 // kind → repo → item. Read-only: the extension never pushes; lostCopyFix only copies the CLI's suggested command.
 // features.ts calls registerLost(context, cli, caps) (three arguments: caps decides the startup search).
 // The view never goes online (always --offline, whatever [forge] online says). Copied fixes are quoted for a
 // POSIX shell (sh, bash, zsh), not PowerShell or cmd.
 import * as os from "node:os";
 import * as vscode from "vscode";
-import type { Capabilities } from "./capabilities";
+import { Capabilities, lostBody, lostCall } from "./capabilities";
 import { Cli, ui } from "./cli";
 import { KindNode, LostJson, LostNode, lostSummary, lostTree } from "./lostTree";
 import { tilde } from "./scan";
@@ -32,8 +32,9 @@ export function registerLost(context: vscode.ExtensionContext, cli: Cli, caps: C
   async function search(quiet: boolean): Promise<KindNode[] | undefined> {
     await state("scanning");
     const home = os.homedir();
-    const json = await vscode.window.withProgress({ location: { viewId: "gitpro.lost" } }, () =>
-      cli.json<LostJson>(["lost", "--json", "--offline"], { cwd: home, timeout: TIMEOUT, accept: [0, 1], quiet }));
+    const raw = await vscode.window.withProgress({ location: { viewId: "gitpro.lost" } }, () =>
+      cli.json<unknown>(lostCall(cli.caps), { cwd: home, timeout: TIMEOUT, accept: [0, 1], quiet }));
+    const json = raw === undefined ? undefined : lostBody<LostJson>(cli.caps, raw);
     if (!json) {
       nodes = []; // drop the last result so the "search failed" welcome text shows
       view.description = undefined;
@@ -72,12 +73,12 @@ export function registerLost(context: vscode.ExtensionContext, cli: Cli, caps: C
 
   context.subscriptions.push(
     // Returns the tree (the integration test reads it); undefined when the CLI lacks `lost` or the search failed.
-    vscode.commands.registerCommand("gitpro.lostRefresh", () => (cli.require("lost") ? refresh() : undefined)),
+    vscode.commands.registerCommand("gitpro.lostRefresh", () => (cli.caps.has("scan.lost") || cli.require("lost") ? refresh() : undefined)),
     vscode.commands.registerCommand("gitpro.lostOpenRepo", (n?: LostNode) => openRepo(n)),
     vscode.commands.registerCommand("gitpro.lostCopyFix", (n?: LostNode) => copyFix(n)),
   );
 
-  if (vscode.workspace.getConfiguration("gitpro").get<boolean>("lost.showOnStartup") && caps.has("lost")) {
+  if (vscode.workspace.getConfiguration("gitpro").get<boolean>("lost.showOnStartup") && (caps.has("scan.lost") || caps.has("lost"))) {
     void refresh(true).then((found) => {
       if (found?.length) {
         void vscode.commands.executeCommand("gitpro.lost.focus");

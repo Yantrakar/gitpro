@@ -180,16 +180,25 @@ def edit_json(path: Path, mutate: Callable[[object], object], *, command: str, j
     if _current(path) != old:
         raise ConfigError(f"{path} changed while gitpro was running; nothing written")
     backup = _backup(path, old) if old is not None else None
+    made = None
     target = shlex.quote(str(path))
-    # The backup is 0600; the undo restores the file's own mode, not the backup's.
-    lines = [f"cp {shlex.quote(str(backup))} {target}", f"chmod {old_mode:04o} {target}"] if backup \
-        else [f"rm -f {target}"]
+    if backup:
+        # The backup is 0600; the undo restores the file's own mode, not the backup's.
+        lines = [f"cp {shlex.quote(str(backup))} {target}", f"chmod {old_mode:04o} {target}"]
+    else:
+        # A file gitpro created is removed only while it holds what gitpro wrote: another step (e.g. the
+        # Gemini MCP entry after its hook) or the user may have added to it since.
+        made = _backup(path, text)
+        lines = [f'if [ ! -e {target} ] || [ "$(cat {shlex.quote(str(made))})" = "$(cat {target})" ]; then '
+                 f"rm -f {target}; else "
+                 + shlex.quote(f"gitpro: kept {undo.tilde(path)}: it changed after gitpro created it; "
+                               "remove gitpro's entry by hand").join(["echo ", " >&2"]) + "; fi"]
     script = undo.write(command, lines, what=f"edited {undo.tilde(path)}")
     if old is None and mkdir:
         path.parent.mkdir(parents=True, exist_ok=True)
     try:
         files.atomic_write(path, text, _mode_for(path, old_mode))
     except BaseException:
-        _discard(backup, script)  # nothing changed: leave no backup or undo script behind
+        _discard(backup, made, script)  # nothing changed: leave no backup or undo script behind
         raise
     return Result(path, True, diff, backup, script, text)

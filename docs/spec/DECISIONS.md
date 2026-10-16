@@ -9,7 +9,7 @@ spec follows these until the product owner says otherwise.
 | Q1 paid tier | Everything in this repo stays MIT and free, including 14 (policy, `check --policy`, the Action). Paid ideas (hosted GitHub App, team dashboard) stay in 14's "future, needs hosting" section only. | The owner asked for ideas on a paid tier, not for a licence change. Nothing built now is lost if a paid tier comes later. |
 | Q2 `forge similar` | Keep. Off by default; needs `--send-repo-names` on every run (or `[forge] similar = true`), and the first line says exactly what is sent to which service. | The owner asked for "discovery of similar work on github public". |
 | Q3 shell history in `discover` | Opt-in: `--history`. Without it, discover reads editor recents, ssh config host aliases, includeIf rules and repos on disk only. Output never echoes history lines, only the clone URLs found. | History can hold secrets; local-only still deserves consent. |
-| Q4 guard defaults | Nothing installs until the user runs `guard install` (or sets `[guard] hooks = true`). Once installed: `on_mismatch = "block"`, pre-commit and pre-push both on, global mode (core.hooksPath) with chaining fixed per review R-001/R-003; per-repo mode available. The guard judges the committer (the user's own identity), per R-005. Any gitpro failure fails open. | The owner asked for a guard; an installed guard that only warns is easy to ignore. Opt-in install keeps it safe. |
+| Q4 guard defaults | **Reversed on 2026-10-15 (spec 21 D4): `gitpro setup` installs the guard; `[guard] hooks = false` opts out.** Before that: nothing installs until the user runs `guard install` (or sets `[guard] hooks = true`). Once installed: `on_mismatch = "block"`, pre-commit and pre-push both on, global mode (core.hooksPath) with chaining fixed per review R-001/R-003; per-repo mode available. The guard judges the committer (the user's own identity), per R-005. Any gitpro failure fails open. | The owner asked for a guard; an installed guard that only warns is easy to ignore. Opt-in install keeps it safe. |
 | Q5 tracked team files | gitpro never writes tracked files (devcontainer.json, `.husky/*`, `.claude/settings.json` in a repo, `.mcp.json` in a repo) by default; it prints the snippet. An explicit `--write` exists only for devcontainer.json and project `.mcp.json`, with backup and undo. User-level files (`~/.claude/settings.json`) follow the normal preview/confirm/backup/undo rules. | Writing files a whole team commits is a team decision. |
 | Q6 agent hook bypass | The agent is told to ask the user; the message does not teach a bypass. The user bypasses with `GITPRO_SKIP=1` in their own shell, `[agents] hook = "warn"` or `"off"`. Warn mode emits no permission decision (the normal permission prompt still happens) plus a visible message. "block" emits deny. Never emit allow. | R-006: allow would skip the user's own permission prompt. |
 | Q7 PyPI | Not assumed. Install docs keep `pipx install git+https://github.com/Yantrakar/gitpro.git`; the Action installs from its own checkout (`pip install "$GITHUB_ACTION_PATH"`). | Owner has not claimed the PyPI name. |
@@ -52,3 +52,37 @@ from a package file, this table wins; the package files were not rewritten.
 | follow-ups (VS Code exec) | In VS Code, cancel (abort) sends SIGTERM only, never SIGKILL, so `gitpro clone` can stop git and ssh and remove its partial directory. A timeout or an output overflow sends SIGTERM and escalates to SIGKILL after 3 s (`KILL_GRACE`). `deactivate` sends SIGTERM to every live child's process group, waits 2 s, then sends SIGKILL. On POSIX each child leads its own process group, and kills go to the group. | A hard kill on cancel would leave a half-cloned directory behind. A stuck child must not hang the extension. A group kill reaches git's ssh, which would otherwise be orphaned. |
 | 17 | The plugin manifest carries no `hooks` or `mcpServers` keys. `hooks/hooks.json` and `.mcp.json` sit at the plugin root, where Claude Code finds them by default. | Checked against the plugin layout as documented at release time. The docs were not fetched (the build runs offline), so recheck if the plugin does not load the hook. |
 | 17 | `gitpro uninstall` removes the global guard files along with everything `apply` wrote (README "Undo everything"). It leaves per-repo guard blocks, agent hooks, MCP registrations, devcontainer edits, pins, `scan --fix` and `audit --rewrite` alone; each has its own undo. | This is how `plan.teardown` was built (01/06). The docs follow the code, not the earlier wording that the guard is not part of `uninstall`. |
+
+# Decisions for 0.4.0 (spec 22), 2026-10-16
+
+"Owner" marks a decision the product owner made. "Claude" marks a choice made
+while writing the spec, which the owner has not confirmed. The 0.5.0 rows marked
+"proposed, not decided" are not decisions.
+
+| Topic | Decision | Who | Why |
+|---|---|---|---|
+| One surface | The terminal, VS Code and MCP use one command surface. A job has one command (spec 22 R1, R2). | Owner | The same job had different names in each place. |
+| `setup` learns identities | `setup` offers to look through the user's repos and proposes identities. It reads local repos, the SSH config, `includeIf` rules and VS Code and JetBrains recents. It never reads private keys, shell history or forge accounts. | Owner | Typing hosts, owners and emails by hand is the slow part of setup. |
+| Commit identity from the reflog | The commit identity of a repo comes from the `commit*` lines in the last 1 MiB of `logs/HEAD`. | Owner | The reflog records who actually committed. |
+| Grouping | Identities are grouped by host, then owner. The most-used email is kept and the others show as "also seen". An owner with no email joins the host's identity if the host has exactly one, otherwise it is "not assigned". | Claude | Keeps the proposal short without guessing between emails. |
+| `lost` folded in | `lost` becomes `scan --lost`. `--lost` with `--fix` is refused. | Owner | Lost work is a check on the repos `scan` already walks. |
+| `unpin` folded in | `unpin` becomes `pin --remove`. `--remove` with `--remote` is refused. | Owner (merge), Claude (the refusal) | One command for the pin and its undo. |
+| `audit --rewrite` | `audit --rewrite` becomes `audit --fix`. | Owner | Every check uses `--fix` for its fix (R5). |
+| Consent in 0.4.x | `setup` follows R4. `pin`, `scan --fix` and `audit --fix` keep their 0.3 behavior in 0.4.x (a preview without `-y`) and also accept `-n`, which shows the same preview with the same exit code (`-n -y` is refused). `scan --fix --json` still writes without `-y` (00-existing, known issue 2). | Claude | Changing the consent of existing writers is a separate decision. |
+| Operation protocol | The agent operation protocol (preflight, run, change workflows) is deprecated. | Owner | Nothing used it. |
+| Deprecate, then remove | Deprecated commands and MCP tools work in 0.4.0 with a warning, and are removed in 0.5.0. `GITPRO_NO_DEPRECATION=1` turns the warning off. | Owner | Gives users one release to move. |
+| Team `check` stays | Only `check` without `--policy`, `--repo` or `--range` (the file drift check) is deprecated, for `setup -n`. The team policy check stays and is listed under "more". | Claude (open) | It is a feature CI runs, not a duplicate, and nothing replaces it. The owner may fold it elsewhere in 0.5.0. |
+| No terminal | `setup` without a terminal and without `-y`/`-n` exits 2 and names both (0.3 printed a preview and exited 0). | Owner (rule), Claude (applied to setup) | "Never silently do nothing with exit 0" (cli-design skill §4). |
+| `why --json` without a config | Still exit 2 with the error; the object also has the repo's `settings` and `remotes`. | Claude | The VS Code status bar falls back to them, as it did with `which --json`. |
+| Devcontainer pin | The VS Code extension writes `initializeCommand` itself, after a modal that shows the line; for JSONC, unparseable or read-only files it offers Copy only. No backup or undo script in the repo. | Claude | `devcontainer` is deprecated; the extension is its only caller. |
+| 0.3 pins | A pin without the `# gitpro pin: identity` marker (0.3) does not settle a repo whose remotes belong to different identities: the repo is `ambiguous` until `pin --remote`, and the message says the pin is from 0.3. Before this, such a pin counted when its email matched exactly one remote's identity. Repos with one identity are unaffected. | Owner ("force re-pin", 2026-10-16) | 0.3 pinned whatever git applied, the later include, which is the silent guess 0.4.0 refuses. Trusting it would keep wrong-identity commits going without a word. |
+| 0.5.0 aliases and tombstones | Proposed, not decided: keep `unpin`, `lost`, `audit --rewrite`, `check` and `apply` as aliases for a time, or leave tombstones that name the new command. | none yet | Spec 22 §10.4 leaves it open. |
+
+## Open (for the owner before 0.5.0)
+
+- Team `check`: keep it under "more", or fold it into another command.
+- 0.5.0 aliases and tombstones (spec 22 §10.4).
+- `keys`, `auth`, `forge`, `team`, `policy`: fold into `setup -n --online`
+  and `why`, or keep. Needs usage data.
+- VS Code Open Config still offers `init` when there is no config.
+- The devcontainer write keeps no backup.

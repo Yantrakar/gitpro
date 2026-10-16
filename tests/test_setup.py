@@ -4,6 +4,7 @@ import json
 import os
 import pty
 import select
+import shutil
 import stat
 import subprocess
 import sys
@@ -16,10 +17,24 @@ import pytest
 from rich.prompt import Confirm, Prompt
 
 from conftest import DEFAULT_CONFIG, TIMEOUT, git, repo_with_remote, run, write_config
-from gitpro import config, files
+from gitpro import agents, config, files, mcp, plan, resolve, setup
 
 
-def interact(monkeypatch, answers=(), confirms=(), on_save=None):
+@pytest.fixture(autouse=True)
+def no_agents(monkeypatch, tmp_path):
+    """PATH without claude; ssh-keygen stays (key creation)."""
+    bin_ = tmp_path / "bin-no-agents"
+    bin_.mkdir()
+    for tool in ("git", "sh", "ssh-keygen"):
+        found = shutil.which(tool)
+        if found:
+            (bin_ / tool).symlink_to(found)
+    monkeypatch.setenv("PATH", str(bin_))
+
+
+def interact(monkeypatch, answers=(), confirms=(), on_save=None, learn=False):
+    """Mock the prompts. The "look through your repos?" question is answered `learn` without taking a
+    confirm, so the 0.3 tests keep their answers."""
     values, choices = deque(answers), deque(confirms)
     monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
     monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
@@ -31,7 +46,9 @@ def interact(monkeypatch, answers=(), confirms=(), on_save=None):
         return value
 
     def confirm(label, **kwargs):
-        if label == "Save this configuration?" and on_save:
+        if label == setup.LEARN and not learn:
+            return False
+        if label == setup.QUESTION and on_save:
             on_save()
         return choices.popleft()
 
@@ -45,7 +62,7 @@ IDENTITY = ["work", 'Jane "JJ" Doe', "jane@corp.test", "github.com", "my-org", "
 
 def test_setup_creates_minimal_private_config_without_applying(home, monkeypatch, capsys):
     remaining = interact(monkeypatch, IDENTITY, [False, True, False, True])
-    assert run("setup", "--write") == 0
+    assert run("setup") == 0
     target = home / config.USER_CONFIG
     cfg = config.load_all(target)
     assert cfg.default.email is None
@@ -54,15 +71,16 @@ def test_setup_creates_minimal_private_config_without_applying(home, monkeypatch
     assert cfg.identities[0].sign is False
     assert stat.S_IMODE(target.stat().st_mode) == 0o600
     assert all(not q for q in remaining)
-    assert not (home / ".gitconfig").exists()
-    assert not (home / ".ssh").exists()
-    assert not (home / ".gitconfig-work").exists()
-    assert "gitpro plan" in capsys.readouterr().out
+    assert (home / ".gitconfig").exists() and plan.guard_installed(plan.Env(home))
+    assert not (home / ".ssh" / "id_work").exists()                    # no key asked for, none created
+    out = capsys.readouterr().out
+    assert "Setup will:" in out and "gitpro scan" in out
+    assert run("check") == 0                                             # nothing left for apply
 
 
 def test_setup_allows_fallback_only(home, monkeypatch):
     interact(monkeypatch, ["Personal Me", "me@personal.test"], [True, False, True])
-    assert run("setup", "--write") == 0
+    assert run("setup") == 0
     cfg = config.load_all(home / config.USER_CONFIG)
     assert cfg.default.email == "me@personal.test" and not cfg.identities
 
@@ -73,7 +91,7 @@ def test_setup_preserves_existing_bytes_and_makes_backup(home, monkeypatch, appr
     before = target.read_bytes()
     interact(monkeypatch, ["extra", "Me", "me@other.test", "gitlab.com", "team/sub", ""],
              [True, False, approve])
-    assert run("setup", "--write") == (0 if approve else 1)
+    assert run("setup", "--add") == (0 if approve else 1)
     if approve:
         assert target.read_bytes().startswith(before)
         assert list(target.parent.glob("gitpro.toml.bak.*"))[0].read_bytes() == before
@@ -83,19 +101,20 @@ def test_setup_preserves_existing_bytes_and_makes_backup(home, monkeypatch, appr
         assert not list(target.parent.glob("gitpro.toml.bak.*"))
 
 
-def test_setup_existing_no_changes_is_a_noop(home, monkeypatch):
+def test_setup_existing_config_declined_writes_nothing(home, monkeypatch):
     target = write_config(home, DEFAULT_CONFIG)
     before = target.read_bytes()
-    interact(monkeypatch, confirms=[False])
-    assert run("setup", "--write") == 0
+    interact(monkeypatch, confirms=[False])                           # no questions, only the one yes
+    assert run("setup") == 1
     assert target.read_bytes() == before
     assert not list(target.parent.glob("*.bak.*"))
+    assert not (home / ".gitconfig").exists() and not (home / ".config" / "gitpro").exists()
 
 
 def test_setup_adds_multiple_identities(home, monkeypatch):
     other = ["personal", "Personal Me", "me@personal.test", "gitlab.com", "my-group/sub", ""]
     interact(monkeypatch, IDENTITY + other, [False, True, True, False, True])
-    assert run("setup", "--write") == 0
+    assert run("setup") == 0
     cfg = config.load_all(home / config.USER_CONFIG)
     assert [i.id for i in cfg.identities] == ["work", "personal"]
 
@@ -103,26 +122,26 @@ def test_setup_adds_multiple_identities(home, monkeypatch):
 def test_setup_existing_empty_config_can_be_left_unchanged(home, monkeypatch):
     target = write_config(home, "[default]\n")
     interact(monkeypatch, confirms=[False])
-    assert run("setup", "--write") == 0
+    assert run("setup") == 0
     assert target.read_text() == "[default]\n"
 
 
 @pytest.mark.parametrize("interrupt", [EOFError(), KeyboardInterrupt()])
 def test_setup_interrupt_writes_nothing(home, monkeypatch, interrupt):
     interact(monkeypatch, [interrupt], [True])
-    assert run("setup", "--write") == 130
+    assert run("setup") == 130
     assert not (home / config.USER_CONFIG).exists()
     assert not (home / ".config").exists()
 
 
 def test_setup_declined_save_creates_no_files(home, monkeypatch):
     interact(monkeypatch, IDENTITY, [False, True, False, False])
-    assert run("setup", "--write") == 1
+    assert run("setup") == 1
     assert not (home / ".config").exists()
 
 
 def test_setup_refuses_noninteractive_input(home, capsys):
-    assert run("setup", "--write") == 2
+    assert run("setup") == 2
     assert "interactive terminal" in capsys.readouterr().err
     assert not (home / config.USER_CONFIG).exists()
 
@@ -131,7 +150,7 @@ def test_setup_reprompts_invalid_input(home, monkeypatch):
     values = ["bad label", "work", "<bad>", "Jane", "bad email", "jane@corp.example", "jane@corp.test",
               "-host", "github.com", "bad owner", "org", ""]
     remaining = interact(monkeypatch, values, [False, True, False, True])
-    assert run("setup", "--write") == 0
+    assert run("setup") == 0
     assert all(not q for q in remaining)
     assert config.load_all(home / config.USER_CONFIG).identities[0].host == "github.com"
 
@@ -139,7 +158,7 @@ def test_setup_reprompts_invalid_input(home, monkeypatch):
 def test_setup_requires_confirmation_for_whole_host(home, monkeypatch):
     values = IDENTITY[:4] + ["", "org", ""]
     interact(monkeypatch, values, [False, True, False, False, True])
-    assert run("setup", "--write") == 0
+    assert run("setup") == 0
     assert config.load_all(home / config.USER_CONFIG).identities[0].owners == ["org"]
 
 
@@ -150,6 +169,7 @@ def test_setup_uses_existing_key_without_reading_private_contents(home, monkeypa
     (key.parent / "id_work.pub").write_text("ssh-ed25519 AAAA test\n")
     interact(monkeypatch, IDENTITY[:-1] + ["~/.ssh/id_work", "gitpro-work"],
              [False, True, True, False, True])
+    monkeypatch.setattr(subprocess, "run", subprocess.run)
     original_open = Path.open
 
     def forbid_private_read(path, *args, **kwargs):
@@ -158,18 +178,18 @@ def test_setup_uses_existing_key_without_reading_private_contents(home, monkeypa
 
     with monkeypatch.context() as m:
         m.setattr(Path, "open", forbid_private_read)
-        assert run("setup", "--write") == 0
+        assert run("setup") == 0
     identity = config.load_all(home / config.USER_CONFIG).identities[0]
     assert identity.ssh_alias == "gitpro-work" and identity.sign is True
     assert key.read_bytes() == b"not a real private key"
-    assert not (home / ".ssh" / "config").exists()
+    assert "id_work" in (home / ".ssh" / "config.d" / "git-identities").read_text()
 
 
 def test_setup_replaces_only_the_unchanged_example(home, monkeypatch):
     target = write_config(home, resources.files("gitpro").joinpath("example.toml").read_text())
     old = target.read_bytes()
     interact(monkeypatch, IDENTITY, [False, True, False, True])
-    assert run("setup", "--write") == 0
+    assert run("setup") == 0
     assert config.load_all(target).identities[0].email == "jane@corp.test"
     assert list(target.parent.glob("*.bak.*"))[0].read_bytes() == old
 
@@ -178,7 +198,7 @@ def test_setup_keeps_invalid_existing_config(home, monkeypatch):
     target = write_config(home, "[default]\nunknown = true\n")
     before = target.read_bytes()
     interact(monkeypatch)
-    assert run("setup", "--write") == 2
+    assert run("setup") == 2
     assert target.read_bytes() == before
 
 
@@ -198,7 +218,7 @@ def test_setup_refuses_unsafe_destinations(home, monkeypatch, kind):
         target.write_text(DEFAULT_CONFIG)
         target.chmod(0o666)
     interact(monkeypatch)
-    assert run("setup", "--write", "-c", str(target)) == 2
+    assert run("setup", "-c", str(target)) == 2
     if kind == "symlink":
         assert other.read_text() == DEFAULT_CONFIG
 
@@ -215,7 +235,7 @@ def test_setup_refuses_concurrent_edits(home, monkeypatch, capsys, exists):
 
     values = ["extra", *IDENTITY[1:]] if exists else IDENTITY
     interact(monkeypatch, values, ([True, False, True] if exists else [False, True, False, True]), change)
-    assert run("setup", "--write") == 2
+    assert run("setup", *(["--add"] if exists else [])) == 2
     assert "changed during setup" in capsys.readouterr().err
     assert target.read_text() == "# concurrent edit\n[default]\n"
     assert not target.with_name(target.name + ".setup.lock").exists()
@@ -225,7 +245,7 @@ def test_setup_custom_path_overrides_environment(home, monkeypatch):
     target = home / "with spaces" / "custom.toml"
     monkeypatch.setenv("GITPRO_CONFIG", str(home / "ignored.toml"))
     interact(monkeypatch, IDENTITY, [False, True, False, True])
-    assert run("setup", "--write", "-c", str(target)) == 0
+    assert run("setup", "-c", str(target)) == 0
     assert config.load_all(target).identities
     assert not (home / "ignored.toml").exists()
 
@@ -234,7 +254,7 @@ def test_setup_uses_environment_config_path(home, monkeypatch):
     target = home / "from-env.toml"
     monkeypatch.setenv("GITPRO_CONFIG", str(target))
     interact(monkeypatch, IDENTITY, [False, True, False, True])
-    assert run("setup", "--write") == 0
+    assert run("setup") == 0
     assert config.load_all(target).identities
     assert not (home / config.USER_CONFIG).exists()
 
@@ -244,14 +264,14 @@ def test_setup_uses_environment_config_path(home, monkeypatch):
                                  ".ssh/config.d/git-identities", ".gitconfig/child.toml"])
 def test_setup_validates_managed_output_collisions_before_saving(home, monkeypatch, capsys, rel):
     interact(monkeypatch, ["Me", "me@personal.test"], [True, False])
-    assert run("setup", "--write", "-c", str(home / rel)) == 2
+    assert run("setup", "-c", str(home / rel)) == 2
     assert "conflicts with managed output" in capsys.readouterr().err
     assert not (home / rel).exists()
 
 
 def test_setup_retries_a_reserved_identity_label(home, monkeypatch):
     interact(monkeypatch, ["identities", *IDENTITY[1:]] + IDENTITY, [False, True, False, True])
-    assert run("setup", "--write") == 0
+    assert run("setup") == 0
     assert config.load_all(home / config.USER_CONFIG).identities[0].id == "work"
 
 
@@ -261,7 +281,7 @@ def test_setup_respects_an_existing_save_lock(home, monkeypatch, capsys):
     lock.write_text("another wizard")
     before = target.read_bytes()
     interact(monkeypatch, ["extra", *IDENTITY[1:]], [True, False, True])
-    assert run("setup", "--write") == 2
+    assert run("setup", "--add") == 2
     assert "another setup" in capsys.readouterr().err
     assert target.read_bytes() == before
     assert lock.read_text() == "another wizard"
@@ -282,7 +302,7 @@ def test_setup_detects_symlink_replacement_after_backup(home, monkeypatch):
 
     monkeypatch.setattr(files, "_backup", replace_with_link)
     interact(monkeypatch, ["extra", *IDENTITY[1:]], [True, False, True])
-    assert run("setup", "--write") == 2
+    assert run("setup", "--add") == 2
     assert target.is_symlink()
     assert other.read_bytes() == b"must not read or overwrite"
     assert list(target.parent.glob("*.bak.*"))[0].read_text() == DEFAULT_CONFIG
@@ -298,7 +318,7 @@ def test_setup_exclusive_create_protects_last_moment_race(home, monkeypatch):
 
     monkeypatch.setattr(os, "link", create_first)
     interact(monkeypatch, IDENTITY, [False, True, False, True])
-    assert run("setup", "--write") == 2
+    assert run("setup") == 2
     assert target.read_bytes() == b"a concurrent creator"
     assert not target.with_name(target.name + ".setup.lock").exists()
 
@@ -312,7 +332,7 @@ def test_setup_failed_write_preserves_config_and_backup(home, monkeypatch):
         raise OSError("disk full")
 
     monkeypatch.setattr(files, "atomic_write", fail)
-    assert run("setup", "--write") == 2
+    assert run("setup", "--add") == 2
     assert target.read_bytes() == before
     assert list(target.parent.glob("*.bak.*"))[0].read_bytes() == before
     assert not target.with_name(target.name + ".setup.lock").exists()
@@ -331,11 +351,11 @@ def test_real_terminal_setup_and_git_identity_selection(home, tmp_path, finish, 
     proc = None
     output = bytearray()
     try:
-        proc = subprocess.Popen([sys.executable, "-m", "gitpro", "setup", "--write"], cwd=home,
+        proc = subprocess.Popen([sys.executable, "-m", "gitpro", "setup"], cwd=home,
                                 stdin=slave, stdout=slave, stderr=slave)
         os.close(slave)
         slave = None
-        answers = ["n", "y", "work", "Jane Doe", "jane@corp.test", "github.com", "my-org", "", "n", finish]
+        answers = ["n", "n", "y", "work", "Jane Doe", "jane@corp.test", "github.com", "my-org", "", "n", finish]
         os.write(master, b"\x04" if finish == "eof" else ("\n".join(answers) + "\n").encode())
         deadline = time.monotonic() + TIMEOUT
         while time.monotonic() < deadline:
@@ -359,14 +379,11 @@ def test_real_terminal_setup_and_git_identity_selection(home, tmp_path, finish, 
         os.close(master)
         if slave is not None:
             os.close(slave)
-    assert not (home / ".gitconfig").exists()
     if finish != "y":
-        assert not (home / ".config").exists()
+        assert not (home / ".gitconfig").exists() and not (home / ".config").exists()
         return
     assert "Review your configuration" in output.decode()
-    assert run("plan") == 0
-    assert not (home / ".gitconfig").exists()
-    assert run("apply", "-y") == 0
+    assert (home / ".gitconfig").is_file()        # set up in the same run (hook paths name that interpreter)
     work = repo_with_remote(tmp_path, "work", "git@github.com:my-org/app.git")
     personal = repo_with_remote(tmp_path, "personal", "git@github.com:someone-else/app.git")
     assert git(work, "config", "user.email") == "jane@corp.test"
@@ -395,3 +412,102 @@ def test_exclusive_atomic_write_never_overwrites_an_entry(tmp_path, kind):
         else:
             assert other.read_bytes() == b"old"
     assert not list(tmp_path.glob(".target.*"))
+
+
+# ---------------------------------------------------------------- the machine (spec 21)
+
+
+def test_setup_compat_write_flag_still_accepted(home, monkeypatch):
+    interact(monkeypatch, IDENTITY, [False, True, False, True])
+    assert run("setup", "--write") == 0
+    assert config.load_all(home / config.USER_CONFIG).identities
+
+
+def test_setup_existing_config_converges_unattended(home, capsys):
+    write_config(home, DEFAULT_CONFIG)
+    for k in ("id_work", "id_personal"):
+        (home / ".ssh").mkdir(exist_ok=True)
+        (home / ".ssh" / k).write_text("x")
+    assert run("setup") == 2                                         # no terminal, no -y: refused
+    assert "gitpro setup -y" in capsys.readouterr().err
+    assert run("setup", "-n") == 1                                   # -n: what it would do
+    assert "Setup will:" in capsys.readouterr().out
+    assert not (home / ".gitconfig").exists()
+    assert run("setup", "-y") == 0
+    assert run("check") == 0 and plan.guard_installed(plan.Env(home))
+    assert run("setup", "-n") == 0
+    capsys.readouterr()
+    assert run("setup", "-y") == 0
+    assert "nothing to change" in capsys.readouterr().out
+
+
+def test_setup_creates_missing_keys(home, capsys):
+    write_config(home, DEFAULT_CONFIG)
+    assert run("setup", "-y") == 2                                   # a passphrase needs a terminal
+    assert "--no-passphrase" in capsys.readouterr().err
+    assert not (home / ".gitconfig").exists()
+    assert run("setup", "-y", "--no-passphrase") == 0
+    assert (home / ".ssh" / "id_work.pub").is_file() and (home / ".ssh" / "id_personal.pub").is_file()
+    assert run("check") == 0
+
+
+def test_setup_respects_guard_off(home):
+    write_config(home, DEFAULT_CONFIG + "\n[guard]\nhooks = false\n")
+    assert run("setup", "-y", "--no-passphrase") == 0
+    assert not plan.guard_installed(plan.Env(home)) and run("check") == 0
+
+
+def test_setup_leaves_a_foreign_hooks_path(home, capsys):
+    write_config(home, DEFAULT_CONFIG)
+    subprocess.run(["git", "config", "--global", "core.hooksPath", str(home / "other-hooks")], check=True)
+    assert run("setup", "-y", "--no-passphrase") == 0
+    assert "commit guard not set up" in capsys.readouterr().out
+    assert not plan.guard_installed(plan.Env(home))
+
+
+def test_setup_never_edits_a_repo(home, tmp_path):
+    write_config(home, DEFAULT_CONFIG)
+    repo = repo_with_remote(tmp_path, "app", "git@github.com:corp-org/app.git")
+    git(repo, "config", "user.email", "own@example.test")
+    before = (repo / ".git" / "config").read_bytes()
+    assert run("setup", "-y", "--no-passphrase") == 0
+    assert (repo / ".git" / "config").read_bytes() == before
+    assert not (repo / ".git" / "hooks" / "pre-commit").exists()
+
+
+def test_setup_agents(home, monkeypatch, capsys):
+    write_config(home, DEFAULT_CONFIG)
+    assert run("setup", "-y", "--no-passphrase") == 0                # no Claude Code found: no agent step
+    assert not (home / ".claude").exists() and not (home / ".claude.json").exists()
+    (home / ".claude").mkdir()
+    assert run("setup", "-y") == 0
+    t = agents.target("claude", "user", home, None)
+    assert agents.installed(json.loads(t.path.read_text()), t)
+    assert "gitpro" in json.loads((home / ".claude.json").read_text())["mcpServers"]
+    capsys.readouterr()
+    assert run("setup", "-y") == 0
+    out = capsys.readouterr().out
+    assert "nothing to change" in out and "Claude Code hook" in out
+
+
+def test_setup_skips_agents_the_plugin_covers(home):
+    write_config(home, DEFAULT_CONFIG)
+    (home / ".claude").mkdir()
+    (home / ".claude" / "settings.json").write_text(json.dumps({"enabledPlugins": {"gitpro@yantrakar": True}}))
+    assert run("setup", "-y", "--no-passphrase") == 0
+    assert json.loads((home / ".claude" / "settings.json").read_text()) == {
+        "enabledPlugins": {"gitpro@yantrakar": True}}
+    assert not (home / ".claude.json").exists()
+
+
+def test_setup_agent_none_and_named(home):
+    write_config(home, DEFAULT_CONFIG)
+    (home / ".claude").mkdir()
+    assert run("setup", "-y", "--no-passphrase", "--agent", "none") == 0
+    assert not (home / ".claude" / "settings.json").exists()
+    assert run("setup", "-y", "--agent", "none", "--agent", "claude") == 2
+
+
+def test_setup_agent_choices_follow_the_modules():
+    assert set(setup.AGENTS) - {"none"} == set(agents.INSTALL_CHOICES) | set(mcp.AGENTS)
+    assert set(setup.TITLE) == set(setup.AGENTS) - {"none"}

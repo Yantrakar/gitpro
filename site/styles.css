@@ -471,11 +471,13 @@ svg .stop{stroke:none;fill:none}
   .sec{break-inside:avoid}
 }
 
-/* Theme toggle (v2.1) */
-.theme-toggle{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 10px;margin-left:16px;background:transparent;color:var(--ink-2);border:1px solid var(--rule-strong);border-radius:2px;font:400 0.75rem/1 "IBM Plex Mono",ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;text-transform:uppercase;letter-spacing:.06em;cursor:pointer;flex:none}
+/* Theme toggle (v2.2): one icon button that cycles system, light and dark (site.js) */
+.theme-toggle{display:inline-grid;place-items:center;inline-size:36px;block-size:36px;padding:0;margin-left:16px;background:transparent;color:var(--ink-2);border:1px solid var(--rule-strong);border-radius:2px;cursor:pointer;flex:none}
 .theme-toggle:hover{color:var(--ink);border-color:var(--muted)}
 .theme-toggle:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
 .theme-toggle[hidden]{display:none}
+.theme-toggle [data-icon]{display:none}
+.theme-toggle[data-current="light"] [data-icon="light"],.theme-toggle[data-current="dark"] [data-icon="dark"],.theme-toggle[data-current="system"] [data-icon="system"]{display:grid}
 @media (prefers-reduced-motion:no-preference){.theme-toggle{transition:border-color .12s,color .12s}}
 @media (max-width:719px){
   .theme-toggle{order:2;margin-left:auto}

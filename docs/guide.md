@@ -1,39 +1,14 @@
 # Gitpro user guide
 
-## Agent operations
-
-`gitpro preflight` evaluates a versioned operation request, `gitpro run` executes
-an explicitly approved operation with process-scoped identity, and
-`gitpro operation-status` reads its durable idempotency record. See
-[agent workflows](agent-workflows.md) for schemas, examples, permissions,
-atomicity guarantees and supported commit/push/GitHub PR operations.
-
-For persistent configuration and repairs, `gitpro change propose` produces an
-exact diff without applying it. The human reviews `gitpro change approve` in
-their terminal; `gitpro change apply` consumes that recorded approval.
-`gitpro change status` reads the durable result, and `gitpro change recover`
-restores recorded backups after an interrupted attempt without retrying forward
-writes. See [approved changes](agent-workflows.md#approved-persistent-changes)
-for configuration, regeneration, repository-identity repair and undo requests.
-For unattended runners, `--approval-policy` permits only explicitly scoped changes;
-the policy comes from the operator, not the agent. `gitpro operation-reconcile`
-observes recorded commit/push/PR intent without repeating writes or claiming attribution.
-
-**Preview first:** bare writing commands do not execute. Use `-y`/`--yes` for
-authorized noninteractive execution, or `--write` for interactive confirmation.
-Setup and human change approval specifically need `--write` and still require
-terminal review. Existing action flags such as `--fix`, `--rewrite`, `--generate`
-and `--upload` retain their existing semantics and safeguards. See the
-[preview/migration contract](agent-workflows.md#preview-by-default).
-
 [Back to the quick start](../README.md)
 
 Reference: [configuration](#configuration), [commands](#commands),
 [daily use](#daily-use), [SSH keys](#keys), [teams and CI](#teams),
-[troubleshooting](#troubleshooting), [development](#development).
+[troubleshooting](#troubleshooting), [development](#development). Commands
+replaced in 0.4.0 are in [Deprecated in 0.4.0, removed in 0.5.0](#deprecated-in-040-removed-in-050).
 
 Every repo gets the right git name, email, SSH key and commit signature, chosen
-by the repo's **remote URL**. You describe your identities in one TOML file.
+by the repo's **remote URL**. Your identities live in one TOML file, which `gitpro setup` writes.
 
 ```mermaid
 flowchart LR
@@ -72,58 +47,25 @@ version.
 ## Quick start
 
 ```sh
-gitpro setup --write     # answer questions and confirm before saving
-gitpro keys --generate   # optional: create SSH keys that don't exist yet
-gitpro plan              # show every change as a diff
-gitpro apply -y          # explicitly write the reviewed changes
-gitpro keys              # public keys to add to each account
-gitpro scan              # every repo under ~ and the identity git uses there
+gitpro setup             # offers to look through your repos, proposes your identities, one preview, one yes
+gitpro why               # in a repo: the identity it should use, the one it uses, and the fix
+gitpro scan              # every repo under ~, and what needs a fix
 ```
 
-If you start with `gitpro init` instead of the wizard, replace the example's
-placeholder emails and hosts before running `plan` or `apply`.
-
-On a machine that already has repos, `gitpro init --discover -y` writes the
-same example plus the identities it found on this machine, commented in, so
-you only have to check them (see [discover](#discover-identities-already-on-this-machine)).
-
-### Guided setup
-
-`gitpro setup` asks for a fallback identity (optional), host-specific identities,
-their owners/groups, and optional existing SSH keys and commit signing. It suggests
-names/emails from local Git settings and the host/owner from the current repository.
-It only lists public-key filenames; it never reads private key contents, creates
-keys, contacts accounts, or reads shell history.
-
-Review the generated TOML before confirming Save. Saving creates only the private
-config file; run `gitpro plan` and then `gitpro apply -y` separately to change Git/SSH.
-Ctrl-C before confirming Save, or declining Save, leaves the config unchanged.
-A terminal is required.
-
-Run it again to add identities without rewriting existing settings or comments.
-Existing configs get a backup before saving. The untouched `gitpro init` example
-can be replaced with a real configuration; other invalid configs must be repaired
-first. Symlink config files are refused: explicitly choose their real path instead.
-The config cannot share a path with managed Git/SSH output. Setup checks for edits
-made while prompts were open and coordinates saves with other wizard sessions.
-Avoid editing the file during the save itself. If a crashed session leaves a
-`.setup.lock` file, check that no setup is still saving before removing that lock.
-
-Use `gitpro setup --write -c PATH` to save a custom file. Otherwise `$GITPRO_CONFIG`, then
-`~/.config/gitpro.toml`, determines the path. Advanced options and edits to existing
-identities remain available in the [configuration reference](#configuration).
-Without `--write`, setup only previews and never asks to save. For a commented
-template instead of the wizard, `gitpro init` previews it; `gitpro init -y` creates it.
-When you are done, `gitpro doctor` checks everything in one go.
+`gitpro setup` is the one command for a machine. It offers to look through
+your repos and proposes your identities from what they already use. It then
+shows everything it will set up and applies it after one yes. It never changes
+a repo; `gitpro scan` shows which repos need attention. The details are under
+[setup](#setup-set-up-this-machine).
 
 ## How it works
 
-`apply` turns the TOML into plain git and ssh config. git does the matching
+`setup` turns the TOML into plain git and ssh config. git does the matching
 itself, so nothing from this tool runs when you use git.
 
 ```mermaid
 flowchart LR
-    toml["~/.config/gitpro.toml<br/><i>created by setup or edited by you</i>"] -- "gitpro apply" --> files
+    toml["~/.config/gitpro.toml<br/><i>created by setup or edited by you</i>"] -- "gitpro setup" --> files
 
     subgraph files ["what git and ssh read"]
         direction TB
@@ -142,17 +84,17 @@ flowchart LR
   that file; cleanup removes only outputs that are no longer used.
 - With `sign = true` it also writes `~/.config/git/allowed_signers`, so git can
   verify your own signatures.
-- Running `apply` again changes nothing. `uninstall` removes everything it wrote.
+- Running `setup` again changes nothing. `uninstall` removes everything it wrote.
 
-The optional guard (`gitpro guard install`) is the one exception to "nothing
-runs when you use git": it adds git hooks that call gitpro before a commit or
+The guard, which `gitpro setup` installs (`[guard] hooks = false` opts out), is
+the one exception to "nothing runs when you use git": it adds git hooks that call gitpro before a commit or
 push. See [guard](#guard-stop-a-wrong-identity-commit).
 
 > **Upgrading from 0.1: identities without `owners` now match ssh remotes.**
 > 0.1 wrote the pattern `git@<host>:**` for an identity with no `owners`.
 > git never matches that against `git@<host>:owner/repo.git`, so such an
 > identity applied only to https remotes. 0.2 writes `git@<host>:*/**` and
-> `git@<host>:*` instead. Run `gitpro plan` to see the change and `gitpro apply`
+> `git@<host>:*` instead. Run `gitpro setup -n` to see the change and `gitpro setup`
 > to rewrite the generated gitconfig. Repos on that host that used
 > `[default]` until now then get that identity.
 
@@ -160,8 +102,8 @@ push. See [guard](#guard-stop-a-wrong-identity-commit).
 
 Below is every key gitpro accepts, with a short comment each. You need only
 `[default]` and the `[[identity]]` blocks you use; every table after them is
-optional and shown with its default. `gitpro init -y` writes a commented example
-of the same file.
+optional and shown with its default. `gitpro setup` writes this file for you
+from your answers.
 
 ```toml
 [default]                          # repos that no identity matches; every key is optional
@@ -214,13 +156,13 @@ forbid_emails = ["*@users.noreply.github.com"]
 [identity.git.pull]                # extra git settings for this identity only
 ff = "only"
 
-[scan]                             # scan, lost, discover and the VS Code views
+[scan]                             # scan and the VS Code views
 roots = ["~"]                      # where your repos live; each starts with ~/ or /
 exclude = ["~/.cache", "~/go/pkg/mod"]   # globs; hidden dirs and node_modules are always skipped
-stale_days = 180                   # `lost -v`: a repo with no commit for this long is "stale"
+stale_days = 180                   # `scan --lost -v`: a repo with no commit for this long is "stale"
 
 [guard]                            # git hooks that check the identity (gitpro guard)
-hooks = false                      # true: plan/apply install and keep the global hooks
+hooks = false                      # true: setup installs and keeps the global hooks
 on_mismatch = "block"              # "block" | "warn"
 chain_to = ""                      # your previous global hooks dir, run after gitpro's hooks
 
@@ -248,7 +190,7 @@ files = []                         # policy files for every repo (an identity's 
 | `ssh_key` | Key used for `ssh_hosts`, and for signing. |
 | `ssh_hosts` | Hosts where ssh always uses `ssh_key`. |
 | `sign` | `true`: sign commits and tags with SSH keys. Default `false`. |
-| `gh_account`, `glab_account` | The `gh`/`glab` login that belongs to this identity. Used by `clone`, `env`, `forge`, `keys --upload` and `lost --online`. |
+| `gh_account`, `glab_account` | The `gh`/`glab` login that belongs to this identity. Used by `clone`, `env`, `forge` and `keys --upload`. |
 | `clone_dir` | Where `gitpro clone` puts repos of this identity. |
 
 `[[identity]]`: `id`, `name`, `email` and `host` are required.
@@ -279,10 +221,10 @@ The optional tables:
 
 | table | key | |
 |---|---|---|
-| `[scan]` | `roots` | Where your repos live. Default `["~"]`. Used by `scan`, `lost`, `discover` and the VS Code views. |
+| `[scan]` | `roots` | Where your repos live. Default `["~"]`. Used by `scan` and the VS Code views. |
 | | `exclude` | Globs to skip. A pattern without a leading `/` or `~/` matches at any depth. Hidden directories and `node_modules` are always skipped. |
-| | `stale_days` | `gitpro lost -v` calls a repo stale after this many days without a commit. Default 180. |
-| `[guard]` | `hooks` | `true`: `plan`/`apply` install the global guard hooks and keep them in sync. Default `false` (use `gitpro guard install`). |
+| | `stale_days` | `gitpro scan --lost -v` calls a repo stale after this many days without a commit. Default 180. |
+| `[guard]` | `hooks` | `true`: `setup` installs the global guard hooks and keeps them in sync. `false`: `gitpro setup` leaves the guard off. Unset (default): `gitpro setup` installs it and keeps an installed guard. |
 | | `on_mismatch` | `"block"` (default) refuses the commit or push; `"warn"` only prints the warning. |
 | | `chain_to` | A previous global `core.hooksPath` whose hooks run after gitpro's. |
 | `[clone]` | `dir` | Where `gitpro clone` puts a repo when the identity has no `clone_dir`. Default: the current directory. |
@@ -295,8 +237,7 @@ The optional tables:
 
 A repo matches an identity when any of its remotes matches. When several
 identities match, the settings of the later one win. Any other git setting can
-be added under `[default.git.<section>]` or `[identity.git.<section>]`; the
-example from `init` shows how.
+be added under `[default.git.<section>]` or `[identity.git.<section>]`.
 
 The config is read from `-c PATH`, else `$GITPRO_CONFIG`, else
 `~/.config/gitpro.toml`. Because it controls commands git runs, it must
@@ -304,45 +245,241 @@ be owned by you and not group/world-writable. Unknown keys are errors.
 
 ## Commands
 
-| command | |
-|---|---|
-| `setup [-c PATH]` | Guided, offline configuration. Preview and confirm before saving; preserves existing settings and backs up an existing file. Does not apply Git/SSH changes. |
-| `init [PATH]` | Create the commented example config. Never overwrites. `--discover` adds the identities found on this machine, commented in. |
-| `plan` | Show what `apply` would change, as diffs. |
-| `apply [-y]` | Preview by default. `--write` enables interactive confirmation; `-y` explicitly writes without another question. |
-| `check` | Exit 1 if `apply` would change anything. With `--repo`, `--policy` or `--range` it checks a [team policy](#teams) instead. |
-| `keys [--generate]` | List each SSH key, its public key and where to register it. `--generate` creates the missing ones. `--health` checks them; `--upload --online` registers them. |
-| `which [DIR]` | Show the identity git uses in a repo, and which file each setting comes from. |
-| `why [DIR]` | Explain which identity a repo should use, which it really uses, why, and the command that fixes a mismatch. |
-| `scan [--fix] [--suggest] [DIR…]` | Find the repos under each `DIR` (default: the [scan roots](#scan-roots)) and list them by the identity git uses. `--fix` removes [repo-level overrides](#repo-level-overrides); `--suggest` prints identities that would keep them. `--roots` shows where it looks. |
-| `pin [DIR]`, `unpin [DIR]` | Copy the repo's name and email into its `.git` directory, for [dev containers](#dev-containers). `unpin` removes it. |
-| `uninstall [-y]` | Remove everything `apply` wrote, and the global guard hooks. Keeps your config and SSH keys. Pinned repos stay pinned. See [Undo everything](#undo-everything). |
-| `doctor [DIR]` | Run every check and list what to fix. |
-| `prompt` | A short identity segment for your shell prompt. |
-| `completion SHELL` | Print a tab-completion script for bash, zsh or fish. |
-| `guard install`, `guard uninstall`, `guard status`, `guard test` | Git hooks that refuse a commit or push with the wrong identity. `guard check` is what the hooks call. |
-| `clone URL [DIR]` | `git clone` with the identity, SSH alias and folder the URL calls for. |
-| `env [DIR]` | Print shell lines that set `GH_TOKEN` and friends for the repo's identity. |
-| `lost [DIR…]` | Unpushed branches, stashes, dirty trees and repos without a remote across your scan roots. |
-| `discover` | Suggest identities and scan roots from what is on this machine. Prints TOML, writes nothing. |
-| `forge repos`, `forge forks`, `forge email`, `forge similar` | Read-only views of your GitHub/GitLab accounts through `gh`/`glab` (online). |
-| `auth` | Run `ssh -T` for every host and alias and show which login each one gets (online). |
-| `audit [DIR]` | Find commits made as the wrong identity or with an AI agent; `--rewrite` fixes the unpushed ones. |
-| `agent install`, `agent uninstall`, `agent status` | The hook that stops an AI assistant committing as the wrong identity. `agent-check` is what the hook calls. |
-| `mcp` | The read-only MCP server for AI assistants (stdio). `mcp install` and `mcp uninstall` register it. |
-| `devcontainer [status] [DIR]` | Print (or `--write`) the `devcontainer.json` entry that runs `gitpro pin` on the host. |
-| `team` | Does this machine meet each identity's team policy? |
-| `policy show [DIR]`, `policy lint FILE` | Show the policy rules for a repo; validate a policy file. |
-| `report [--crash\|--denial\|--security]` | A redacted draft of a bug report, opened as a prefilled GitHub issue form only when you say yes. |
+`gitpro --help` lists these, in this order. Every command has `--help`.
 
-Every command has `--help`. Commands that read have `--json` for scripts
-(see [Exit codes and JSON](#exit-codes-and-json)).
+| command | what it does |
+|---|---|
+| `setup [PATH...]` | Set up or update this machine. It learns your identities from your repos. See [setup](#setup-set-up-this-machine). |
+| `why [PATH]` | Explain one repo: the identity it should use, the one it uses, why, whether a commit is blocked, and the fix. |
+| `scan [PATH...]` | Check all repos. `--fix` fixes what needs no choice. `--lost` adds unpushed work. |
+| `pin [PATH]` | Choose the identity of a repo. `--remote R` picks the remote to follow. `--remove` removes the pin. |
+| `clone URL [DIR]` | `git clone` as the identity, SSH alias and folder the URL calls for. |
+| `audit [PATH]` | Find commits made as the wrong identity or with an AI agent. `--fix` rewrites the unpushed ones. |
+| `env [PATH]` | Print shell lines that set `GH_TOKEN` and friends for the repo's identity. |
+| `uninstall` | Remove what gitpro wrote. |
+
+Under "more" in `--help`:
+
+| command | what it does |
+|---|---|
+| `completion SHELL` | Print a tab-completion script for bash, zsh or fish. |
+| `prompt` | A short identity segment for your shell prompt. |
+| `report [--crash\|--denial\|--security]` | A redacted draft of a bug report, opened as a prefilled GitHub issue form only when you say yes. |
+| `team` | Does this machine meet each identity's team policy? |
+| `policy show [PATH]`, `policy lint FILE` | Show the policy rules for a repo; validate a policy file. |
+| `keys` | List each SSH key, its public key and where to register it. `--health` checks them; `--upload --online` registers them. |
+| `auth` | Run `ssh -T` for every host and alias and show which login each one gets (online). |
+| `forge repos`, `forge forks`, `forge email`, `forge similar` | Read-only views of your GitHub/GitLab accounts through `gh`/`glab` (online). |
+| `guard install --repo DIR`, `guard uninstall`, `guard status`, `guard test` | Git hooks that refuse a commit or push with the wrong identity. |
+
+A few commands are hidden because hooks, agents and the editor call them, not
+you: `agent-check`, `guard check`, `mcp` (the MCP server), `agent uninstall`
+and `mcp uninstall`. Commands that were replaced in 0.4.0 are hidden too; see
+[Deprecated in 0.4.0, removed in 0.5.0](#deprecated-in-040-removed-in-050).
+
+The same flags mean the same thing in every command:
+
+| flag | meaning |
+|---|---|
+| `-n`, `--dry-run` | `setup`: show what would change. Change nothing. |
+| `-y`, `--yes` | Do not ask. |
+| `--json` | One JSON object on stdout (see [Exit codes and JSON](#exit-codes-and-json)). |
+| `-v` | More detail. |
+| `PATH` | The repo or folder to look at. |
+| `-c PATH` | The config file. |
+
+On a terminal, a command that changes something shows the change and asks
+once. In 0.4.0 this is how `setup` works. `pin`, `scan --fix` and
+`audit --fix` keep their 0.3 behavior in 0.4.x: without `-y` they show a
+preview. `-n` (`--dry-run`) asks for that preview by name: it shows the same
+thing, changes nothing and exits as the command would without `-y`.
+`-n -y` is refused. `scan --fix --json` writes without `-y`, as in 0.3;
+`scan --fix --json -n` gives the preview as JSON, with `"dry_run": true`.
+
+The terminal, the VS Code extension and the MCP server use the same commands,
+options and JSON fields. The extension runs the command and asks its yes in a
+dialog. An MCP tool has the command's name, runs its read-only form and
+returns the fix command for you to run.
+
+### setup: set up this machine
+
+```
+gitpro setup [PATH...] [-n] [-y] [--add] [--agent NAME] [--no-passphrase] [--json] [-c PATH]
+```
+
+`gitpro setup` is the one command for a machine, for the first run and every
+run after.
+
+| state | what setup does |
+|---|---|
+| no config, an empty config, or `--add` | finds your identities (below), asks what it cannot decide, then shows one preview |
+| a config with identities | shows one preview only; asks no identity questions |
+| `-n` | shows the state of this machine; never asks, never writes |
+
+Finding identities needs a terminal. Without one, setup exits 2.
+
+**Finding identities from your repos.** Your repos already know who you are.
+
+1. *Where.* With `PATH` arguments, setup looks there. Without them it asks
+   `Look through your repos to find your identities? [y/n] (y)`, then
+   `Where (folders, separated by spaces) (~)`.
+   Give space-separated folders; `~` expands. Answering no skips the search.
+2. *What it reads.* Everything is local and read-only:
+   - every repo under those folders. Hidden directories, `node_modules` and
+     the usual caches are skipped. It goes to any depth under those folders,
+     stops looking after 20 seconds, then reads what it found for up to 20
+     seconds more;
+   - for each repo, the host and owner of its remote, and the name and email
+     it uses. In this order: set in the repo; set by an `includeIf` file; the
+     identity of the commits made in it on this machine;
+   - the SSH config: aliases, their host and `IdentityFile`;
+   - the `includeIf` rules in your global Git config;
+   - the recent folders of VS Code and JetBrains, to find more repos.
+3. *What it never reads.* A private key, your shell history, or a forge
+   account.
+
+Progress is one line on stderr, for example `looked at 104 repos in ~ (2.1 s)`.
+
+**The commit identity of a repo.** Git adds a line to `<git dir>/logs/HEAD`
+(the reflog) for every commit made in a worktree, with the committer's name
+and email. A repo's commit identity is the name and email that appear most
+often on the lines whose message starts with `commit` (`commit:`,
+`commit (initial):`, `commit (amend):`, `commit (merge):`). Setup reads at
+most the last 1 MiB of the file. Lines from `checkout`, `pull`, `reset` and
+other actions are not commits and are ignored. A reflog expires after 90 days
+by default, so this shows recent use.
+
+**From what it found to identities.**
+
+1. Repos are grouped by host, then by owner.
+2. Each owner gets the email that most of its repos use, and the most frequent
+   name with that email. If an owner's repos use more than one email, setup
+   keeps the most used one and shows the others, for example
+   `also seen: me@old.test in 2 repos`.
+3. Owners on one host with the same email form one identity.
+4. An owner with no email (no commits, nothing set) joins the host's identity
+   when the host has exactly one. Otherwise it is listed as "not assigned" and
+   left out. Setup does not guess.
+5. When the owners' remotes use an SSH alias whose `IdentityFile` is one file,
+   that file is the identity's SSH key. Otherwise setup asks for the key as
+   before: an existing key, a new path to create, or blank.
+6. With `--add`, owners that are already in the config are skipped.
+7. Hosts and owners the config check rejects are listed as skipped, with the
+   reason.
+
+Then setup shows what it found and asks:
+
+```text
+Found 3 identities in 52 repos under ~:
+
+  1  sandeepshelke   Sandeep <me@personal.test>   github.com   sandeepshelke, Yantrakar (+11)   ~/.ssh/id_personal
+  2  corp            Sandeep <me@corp.test>       github.com   corp-org                         no key found
+     also seen: me@personal.test in 2 corp-org repos
+  3  nanoframes      Sandeep <me@nano.test>       gitlab.com   nanoframes, xplaque              ~/.ssh/id_nano
+
+  not assigned: github.com/someone (1 repo, no commits)
+
+Use these? (e: go through them one by one) [y/n/e] (y)
+```
+
+- `y` keeps all of them. For each one without a key, setup asks the key
+  question, then the signing question.
+- `e` goes through the identities one by one: keep, edit (the usual questions,
+  with the found values as defaults), or skip.
+- `n` drops them and asks for identities by hand.
+
+Then setup offers a fallback identity (`[default]`): `Set a fallback identity? [y/n] (n)`.
+It defaults to your global `user.name` and `user.email`. If nothing was found
+(no repos, or none with a remote), setup goes straight to the questions.
+
+**One preview, one yes.** Setup shows one table of everything this machine
+still needs, grouped:
+
+| group | what setup does | undo |
+|---|---|---|
+| config | saves the TOML (an existing file is backed up first) | the backup it names |
+| SSH key | creates each missing key with `ssh-keygen -t ed25519`; it asks for a passphrase (`--no-passphrase` skips it). Where a `.pub` or a symlink is already at the key's path, it creates no key and says so | delete the new key |
+| Git and SSH files | writes the Git and SSH files for your identities | the `setup-undo-*.sh` it prints |
+| guard | installs the commit guard (see [guard](#guard-stop-a-wrong-identity-commit)); `[guard] hooks = false` keeps it off | the same script, or `gitpro guard uninstall` |
+| agents | when Claude Code is installed: the agent hook and the MCP server (skipped when the gitpro plugin is enabled) | the `agent-undo-*.sh` and `mcp-undo-*.sh` it prints |
+
+It also lists what is "Already in place" and any warnings, then asks
+`Apply these changes? [y/n] (n)`. `-y` answers yes. Ctrl-C, or no, writes nothing.
+Setup never edits a repo. It ends with the public keys to register with each
+account, and `gitpro scan`, which lists the repos that need a fix.
+`--agent NAME` sets up another agent (repeatable); `--agent none` sets up none.
+
+`gitpro setup --add` adds identities without rewriting existing settings or
+comments. An existing config gets a backup before saving. Symlink config
+files are refused: name the real path instead. The config cannot share a path
+with managed Git/SSH output. Setup checks for edits made while its questions
+were open and coordinates saves with other wizard sessions. If a crashed
+session leaves a `.setup.lock` file, check that no setup is still saving
+before removing it. Use `gitpro setup -c PATH` to save a custom file.
+Otherwise `$GITPRO_CONFIG`, then `~/.config/gitpro.toml`, sets the path.
+
+**`setup -n`: the state of this machine.** `gitpro setup -n` never asks,
+never writes and needs no terminal. It prints the identities, the keys and
+where to register them, and the same "Setup will:" table of what is still to
+do. If nothing is to do it prints `✓ this machine is set up; nothing to change`.
+It exits 0 when nothing is to do, 1 when something is, and 2 on an error.
+With `--json`:
+
+```json
+{"ok": true, "command": "setup", "dry_run": true, "config": "~/.config/gitpro.toml",
+ "identities": [{"id": "work", "name": "…", "email": "…", "host": "github.com",
+                 "owners": ["corp-org"], "ssh_alias": "…", "ssh_key": "~/.ssh/id_work",
+                 "gh_account": null, "glab_account": null, "clone_dir": null, "sign": false}],
+ "default": {"name": "…", "email": "…", "gh_account": null, "glab_account": null,
+             "clone_dir": null, "sign": false},
+ "pending": [{"group": "SSH key", "what": "create ~/.ssh/id_work (ed25519)"}],
+ "done": ["Git and SSH files, commit guard"], "notes": []}
+```
+
+`ok` is false when `pending` is not empty. With no config, `setup -n` exits 1
+and `pending` holds `{"group": "config", "what": "no identities in ~/.config/gitpro.toml yet: run gitpro setup in a terminal"}`.
+
+**Without a terminal.**
+
+| | no `-y`, no `-n` | `-y` | `-n` |
+|---|---|---|---|
+| config exists | exit 2: "no terminal to confirm on; run gitpro setup -y to apply, or gitpro setup -n to see what it would do" | applies | prints the state |
+| no config | exit 2: setup asks for your identities, so it needs a terminal | exit 2, same reason | prints the state, exit 1 |
+
+For provisioning scripts, write the config first, then run `gitpro setup -y`.
+For a commented template instead of the questions, see
+[Configuration](#configuration).
+
+### why, scan, pin, clone, audit, env, uninstall
+
+- **`why [PATH]`** is described in [why](#why-which-identity-and-how-to-fix-it).
+- **`scan [PATH...]`** lists repos by the identity git uses and what needs a
+  fix. `--fix` removes [repo-level overrides](#repo-level-overrides).
+  `--lost` adds [work that is only on this machine](#scan---lost-work-that-is-only-on-this-machine).
+  `--lost` with `--fix` is refused (exit 2): lost work needs a person.
+- **`pin [PATH]`** copies a repo's identity into its `.git` directory, for
+  [dev containers](#dev-containers). In a repo whose remotes match two
+  identities, `pin` lists the remotes and asks which to follow; without a
+  terminal it exits with an error that names `--remote`. `pin --remote R`
+  pins the identity that remote R's URL matches. `pin --remove [PATH]` removes
+  the pin. `--remove` with `--remote` is refused. `-n` shows what `pin`
+  would write and changes nothing, as without `-y`; `-n -y` is refused.
+- **`clone URL [DIR]`**: see [clone](#clone-the-right-identity-from-the-first-commit).
+- **`audit [PATH]`**: see [audit](#audit-commits-made-as-the-wrong-identity-or-by-an-agent).
+  `audit --fix` rewrites the unpushed commits (it was `audit --rewrite`).
+- **`env [PATH]`**: see [env](#env-the-right-token-for-gh-and-glab).
+- **`uninstall`**: removes what gitpro wrote. See [Undo everything](#undo-everything).
 
 ## Example: a second GitHub account
 
-1. Add an `[[identity]]` with `host = "github.com"`, the account and its orgs as
-   `owners`, its own `ssh_key` and an `ssh_alias` (as in the example above).
-2. Run `gitpro keys --generate`, then `gitpro apply`.
+1. Run `gitpro setup`. If the repos of the second account are on this machine,
+   setup finds its owners and email from them and proposes it as an identity.
+   Otherwise add the identity by hand with `gitpro setup --add`, or add an
+   `[[identity]]` to the config with `host = "github.com"`, the account and its
+   orgs as `owners`, its own `ssh_key` and an `ssh_alias` (as in the example
+   above). Setup creates the key if it is missing.
+2. Run `gitpro setup -y` if you edited the config by hand, to write the Git and
+   SSH files.
 3. Add the public key that `gitpro keys` prints to that account under
    *Settings → SSH and GPG keys*. With `sign`, add it a second time as a
    *Signing key*.
@@ -355,9 +492,9 @@ Every command has `--help`. Commands that read have `--json` for scripts
 ### why: which identity, and how to fix it
 
 `gitpro why [DIR]` explains which identity a repo uses, where each value
-comes from, and prints the command that fixes a mismatch. `gitpro which
---json`, `gitpro why --json` and `gitpro --version --json` give the same
-data to tools.
+comes from, and prints the command that fixes a mismatch. `gitpro why --json`
+and `gitpro --version --json` give the same data to tools. The `settings`
+field of `why --json` holds the identity settings git uses in the repo.
 
 ```text
 $ gitpro why
@@ -376,8 +513,20 @@ $ gitpro why
 After the fix, the last line reads `✓ identity matches`. `why` changes
 nothing; it only tells you what to run.
 
+```
+gitpro why [PATH] [--remote R] [--author EMAIL] [--committer EMAIL] [--message TEXT] [--json]
+```
+
+To ask whether the guard would block a commit, give the emails and the message
+the commit would have. `--committer` defaults to the email git would use, and
+`--author` to the committer. `--message` is checked against the `Co-Authored-By`
+rules. `why --json` then has a `commit` object:
+`{"would_block": bool, "mode": "block"|"warn"|"off", "problems": [{code, message, fix}], "reason": str|null, "fix": str|null}`.
+The MCP tool `why` takes `path`, `remote`, `author_email`, `committer_email`
+and `message` and returns the same JSON.
+
 Remote URLs can carry secrets, so gitpro masks them wherever it shows a URL
-or writes one to JSON. That includes `why`, `which`, `scan`, `doctor`,
+or writes one to JSON. That includes `why`, `scan`,
 `clone`, `env`, `check --range`, the guard and agent hook messages, the MCP
 server and the VS Code log. A password or token in the user part becomes
 `***`, and so does the value of a secret query parameter, such as
@@ -391,41 +540,13 @@ server and the VS Code log. A password or token in the user part becomes
 | `git@github.com:org/app.git` | `git@github.com:org/app.git` |
 
 The masking is for display only. Matching and every git command use the real
-URL, and a masked URL cannot be pasted back. `lost` masks a little
+URL, and a masked URL cannot be pasted back. `scan --lost` masks a little
 differently: it writes `[REDACTED]` for the user part, and it also masks
 anything that looks like a GitHub or GitLab token in its warnings. Better still, keep tokens out of
 remote URLs altogether and use `gh`, `glab` or a credential helper.
 `core.sshCommand` values are shown exactly as git has them, not redacted: if
-you put a secret inside your own `sshCommand`, `why`, `which` and the MCP
+you put a secret inside your own `sshCommand`, `why` and the MCP
 server show it too.
-
-### doctor: check everything
-
-`gitpro doctor` runs every check (versions, config, applied state, file
-order, lint, keys, ssh, guard, agent hooks, the current repo, policy,
-environment) and lists what to fix.
-
-```text
-$ gitpro doctor
-gitpro 0.3.4  python 3.12.3  git 2.43.0  linux
-config    ~/.config/gitpro.toml (user config)  1 identity         ✓
-applied   up to date                                              ✓
-files     ~/.gitconfig block last ✓  ~/.ssh/config block first ✓  ✓
-lint      no warnings                                             ✓
-keys      2 keys · 2 without passphrase                           ⚠ ~/.ssh/id_ed25519: no passphrase → ssh-keygen -p -f ~/.ssh/id_ed25519
-          ⚠ ~/.ssh/id_ed25519_work: no passphrase → ssh-keygen -p -f ~/.ssh/id_ed25519_work
-ssh       ~/.ssh 0700 ✓  config.d/git-identities 0600 ✓           ⚠ github.com not in ~/.ssh/known_hosts → connect once and compare the host key with the provider's published one
-guard     not installed → gitpro guard install                    ·
-agents    claude hook not installed (optional: gitpro agent install) · mcp not registered (optional: gitpro mcp install) ✓
-repo      ~/work/github.com/employer-org/app → work-github        ✗ user.email is set in the repo's .git/config and overrides the work-github identity → git -C ~/work/github.com/employer-org/app config --unset user.email
-policy    no policy configured                                    ✓
-env       no identity overrides in the environment                ✓
-1 problem, 2 warnings → fix the ✗ lines first
-```
-
-`-v` adds detail lines under each section. `--online` also asks `gh`/`glab`
-whether your keys and sign-ins are valid. `doctor` exits 1 when it finds a
-problem.
 
 ### prompt: your identity in the shell prompt
 
@@ -455,16 +576,22 @@ commands, options and your identity ids. Regenerate it after upgrading.
 
 ### guard: stop a wrong-identity commit
 
-`gitpro guard install` adds global `pre-commit`/`pre-push` hooks that
+`gitpro setup` adds global `pre-commit`/`pre-push` hooks that
 refuse a commit or push whose committer email is not the identity the
 remote belongs to, then run the repo's own hooks (every hook is
 forwarded, including husky-style `post-checkout`). If gitpro itself
 fails, the commit goes through. Skip the check once with `GITPRO_SKIP=1`.
-`[guard] on_mismatch = "warn"` turns the block into a warning.
+`[guard] on_mismatch = "warn"` turns the block into a warning. It also refuses a
+commit in a repo whose remotes belong to different identities until you pin one
+with `gitpro pin --remote NAME`
+([Upgrading from 0.3](#upgrading-from-03)).
 
 For pushes, the guard checks the actual destination URL Git gives the hook,
 including `remote.<name>.pushurl` and URL rewrites, rather than the fetch URL.
 Commit identity selection still uses the configured fetch URLs.
+
+`gitpro guard install` without `--repo` is deprecated; `gitpro setup` installs
+the same files. In 0.3.4 it printed:
 
 ```text
 $ gitpro guard install -y
@@ -480,8 +607,7 @@ $ gitpro guard install -y
 → 'gitpro apply' keeps these hooks; gitpro guard uninstall removes them (or set [guard] hooks = true to make the TOML the source of truth)
 ```
 
-Without `-y` it shows the same list and asks first. A blocked commit looks
-like this:
+A blocked commit looks like this:
 
 ```text
 $ git commit -m "Fix typo"
@@ -525,7 +651,7 @@ fi
 `gitpro guard status --repos` lists the repos with their own
 `core.hooksPath`. The hooks block only on exit code 3; any other failure of
 gitpro prints `⚠ gitpro guard: exited <rc>; not blocking` and lets git carry
-on. If you see that line, run `gitpro doctor`.
+on. If you see that line, run `gitpro why` in the repo and `gitpro setup -n`.
 
 ### clone: the right identity from the first commit
 
@@ -597,7 +723,7 @@ repos  identity                      from
 1 repo set their own user.name/user.email, which beats gitpro. Without it they use:
 
 Jane Doe <jane.doe@employer.com>  (1 repo)
-└── from Jane Doe <jane@personal.dev>:  app
+└── from Jane Doe <jane@personal.dev>:  ~/work/app
 
 to keep some of these identities instead: gitpro scan --suggest
 
@@ -613,15 +739,17 @@ it opens a list where you tick the repos to fix. Without the extra, or with
 override whose removal would leave the repo with no identity.
 
 To keep a repo's current identity instead, add a gitpro identity for it before
-fixing. `gitpro scan --suggest` prints a ready-to-paste `[[identity]]` block
-for each such identity (in the list: press `s`). Paste the ones you want into
-your config and run `gitpro apply`. An identity applies to every repo of its
-owners, so each block says how many other repos it would change. gitpro never
-edits your config itself.
+fixing: `gitpro setup --add PATH` learns it from the repos under `PATH` and
+shows it before saving. (The sample above is 0.3.4 output, where `scan
+--suggest` printed `[[identity]]` blocks; `scan --suggest` is deprecated.) An
+identity applies to every repo of its owners.
 
-Name directories to scan only the repos under them (`gitpro scan ~/work`),
-or `gitpro scan --repo PATH` for exactly one repo. `-v` adds full paths and
-the remote owners behind each identity. `--json` is for scripts and the
+`scan` also reports a repo whose remotes match two identities (`ambiguous`;
+commits there are blocked until you choose with `gitpro pin --remote R`) and a
+repo with its own `core.hooksPath`, where the guard does not run. Name
+directories to scan only the repos under them (`gitpro scan ~/work`),
+or `gitpro scan --repo PATH` for exactly one repo. `-v` adds the remote
+owners behind each identity. `--json` is for scripts and the
 VS Code extension.
 
 ## Dev containers
@@ -646,7 +774,8 @@ refused rather than writing through them.
 If adding the include fails, rollback restores the old pin's exact bytes and
 permissions.
 
-To have the container do this for you on every start, see
+`gitpro pin --remove` removes the pin. In VS Code, "Set up devcontainer pin"
+makes the container do this on every start; see
 [devcontainer](#devcontainer-keep-the-identity-in-a-container).
 
 ## Finding things
@@ -661,7 +790,7 @@ roots = ["~", "/mnt/d/work"]
 exclude = ["~/.cache", "~/go/pkg/mod"]
 ```
 
-`gitpro scan`, `gitpro lost` and the VS Code view use them. `gitpro scan
+`gitpro scan` and the VS Code view use them. `gitpro scan
 --roots` shows what is in effect. Exclude patterns match absolute
 directories; a pattern without a leading `/` or `~/` matches at any depth.
 
@@ -678,17 +807,23 @@ exclude:
 Directories named on the command line (`gitpro scan ~/work`) replace the
 roots for that run.
 
-### lost: work that is only on this machine
+### scan --lost: work that is only on this machine
 
-`gitpro lost` lists unpushed branches, branches whose upstream is gone,
-stashes, dirty trees, repos with no remote, diverged duplicate clones and
-(with `-v`) stale and empty repos across your scan roots. Add `--online`
-to ask GitHub/GitLab via `gh`/`glab` whether each remote still exists or
-was renamed; only `owner/repo` names are sent. It never deletes anything
-and never prints a command that would.
+`gitpro scan --lost` adds the offline checks for work that exists only on this
+machine, for the same repos: unpushed branches, branches whose upstream is
+gone, stashes, dirty trees, repos with no remote, diverged duplicate clones
+and (with `-v`) stale and empty repos. They are shown after scan's sections.
+With `--json`, scan has a `lost` object. It never deletes anything and never
+prints a command that would. `--lost` with `--fix` is refused (exit 2): lost
+work needs a person. With `--lost`, scan exits 1 when it finds lost work, as
+`gitpro lost` did. The deprecated `gitpro lost` also has `--online`, which
+asks GitHub/GitLab via `gh`/`glab` whether each remote still exists, and
+`--only`, `--repo` and `--stale-days`.
+
+The lost sections look like this:
 
 ```text
-$ gitpro lost
+$ gitpro scan --lost
 3 repos under ~/src, ~/work  (remote state as of last fetch)
 
 unpushed (3 branches in 2 repos)
@@ -705,70 +840,27 @@ remote gone: run with --online to check remotes via gh/glab
 ```
 
 It exits 1 when it found something, so you can run it before wiping or
-moving a machine. `gitpro lost --only unpushed,stash` limits the kinds,
-`gitpro lost --repo PATH` checks one repo. With `--online`, the first line
-says what is sent:
+moving a machine. `gitpro scan --repo PATH --lost` checks one repo. With the
+deprecated `gitpro lost --online`, the first line says what is sent:
 
 ```text
 $ gitpro lost --online
 online: asking github.com via gh (account janedoe, janedoe-employer) whether 2 repos exist; sends owner/repo names only
 ```
 
-If an account is not logged in, `lost` warns, marks those repos unknown and
+If an account is not logged in, `lost --online` warns, marks those repos unknown and
 carries on.
 
-`lost` is read-only and stays offline: git runs with `protocol.allow=never`
+`scan --lost` is read-only and stays offline: git runs with `protocol.allow=never`
 and without lazy fetches, so it never downloads objects of a partial clone
 (on git older than 2.44 such a branch shows "could not compare"). It runs no
 Git LFS filters while it checks for changes, but other clean filters
-configured in a repo can still run. `gitpro lost --offline` stays offline
+configured in a repo can still run. The deprecated `gitpro lost --offline` stays offline
 even when `[forge] online = true`.
 
 "Unpushed" means not reachable from your remote-tracking refs
 (`refs/remotes/*`) as of your last fetch. Run `git fetch` first for a fresh
 answer.
-
-### discover: identities already on this machine
-
-`gitpro discover` reads your editor recents, `~/.ssh/config`, existing
-`includeIf` rules and the repos on disk, and prints ready-to-paste
-`[[identity]]` blocks and scan roots. Add `--history` to also read `git
-clone` lines from your shell history (only the repo URLs are kept, with
-any credentials removed; the lines themselves are never shown). `gitpro
-init --discover` creates the config with them commented in. Add
-`--online` to include your `gh`/`glab` logins. Nothing leaves the machine
-without `--online`; tokens are never read.
-
-```text
-$ gitpro discover
-discovered from: vscode (0 recents), jetbrains (0 recents), ssh (1 alias), includeif (0 rules), repos (3)
-history: not read (add --history to read your shell history for git clone lines)
-
-hosts and owners seen:
-  github.com  employer-org (1 repo, in config)  janedoe (1)
-ssh aliases:
-  github-work → github.com  key ~/.ssh/id_ed25519_work  user git
-roots:
-  ~/src (2 repos)  ~/work (1)
-emails seen in repos:
-  jane@personal.dev  (github.com/employer-org ×1)
-
-# ---- paste into ~/.config/gitpro.toml and fill in the blanks ----
-# github.com/employer-org: already in config (identity work-github)
-
-[[identity]]
-id = "janedoe"
-name = ""                        # not seen; fill in
-email = ""                       # fill in
-host = "github.com"
-owners = ["janedoe"]             # janedoe: 1 repo, check
-
-→ then: gitpro plan
-```
-
-Fields gitpro could not find are left as `""` with a comment, so `plan`
-refuses the block until you fill them in. `gitpro discover --source
-ssh,repos` limits where it looks.
 
 ### forge: your GitHub and GitLab accounts
 
@@ -797,7 +889,7 @@ checked. `forge similar` searches GitHub only.
 ## Keys
 
 `gitpro keys` lists each key, its public key and the accounts to register it
-with. `gitpro keys --health` checks each key: type and size, passphrase, file
+with. `gitpro setup` creates the missing keys (`keys --generate` is deprecated). `gitpro keys --health` checks each key: type and size, passphrase, file
 modes, ssh-agent (a passphrase key that is not loaded will prompt on
 every push), and (with `--online`) whether it is registered on the right
 account via `gh`/`glab`.
@@ -844,21 +936,16 @@ you, and never lets them write anything without your yes.
 
 ### Agent hook
 
-`gitpro agent install` adds a Claude Code `PreToolUse` hook (plugin
-users have it already). Before the agent runs `git commit`, `git push`,
-`gh pr create` and similar, `gitpro agent-check` verifies the repo's
-identity and, on a mismatch, denies the call with a reason that asks the
-agent to check with you. It never grants anything. `[agents] hook =
-"warn"` only prints a warning. Cursor and Gemini adapters are
-experimental.
-
-```text
-$ gitpro agent install -y
-→ plugin users already have this hook (gitpro agent status shows it)
-  create  ~/.claude/settings.json   (+ hooks.PreToolUse: gitpro agent-check --agent claude)
-✓ installed; Claude Code picks it up on its next session
-↩ undo: sh ~/.local/state/gitpro/agent-undo-20261002-093144.sh   (removes ~/.claude/settings.json)
-```
+`gitpro setup` adds a Claude Code `PreToolUse` hook when Claude Code is
+installed (plugin users have it already). Use `gitpro setup --agent NAME` for
+another agent, and `gitpro setup -n` to see which hooks are in place. Before
+the agent runs `git commit`, `git push`, `gh pr create` and similar,
+`gitpro agent-check` verifies the repo's identity and, on a mismatch, denies
+the call with a reason that asks the agent to check with you. It never grants
+anything. `[agents] hook = "warn"` only prints a warning. Cursor and Gemini
+adapters are experimental, and setup installs them only when you name them with
+`--agent`. `agent install` and `agent status` are deprecated; `agent uninstall`
+(hidden) removes the hook.
 
 When the agent tries to commit as the wrong person, Claude Code shows it this
 reason and the agent stops to ask you:
@@ -867,28 +954,16 @@ reason and the agent stops to ask you:
 gitpro: this commit would be committed as jane@personal.dev but origin (git@github.com:employer-org/app.git) belongs to identity work-github <jane.doe@employer.com>. cause: user.email is set in the repo's .git/config and overrides the work-github identity. Ask the user before changing anything; the fix is `git -C ~/work/github.com/employer-org/app config --unset user.email`.
 ```
 
-`gitpro agent status` shows every assistant, and how to turn the check off if
-you need to:
-
-```text
-$ gitpro agent status
-agents:   [agents] hook = block
-  claude   hook: user ~/.claude/settings.json; plugin: not enabled
-  cursor   not installed (experimental) → gitpro agent install --agent cursor --experimental
-  gemini   not installed (experimental) → gitpro agent install --agent gemini --experimental
-  codex    no pre-tool hook; covered by the git guard (installed) and MCP
-  opencode no pre-tool hook; covered by the git guard (installed) and MCP
-  bypass:  GITPRO_SKIP=1 in the shell that starts the agent; or [agents] hook = "warn"|"off"
-→ gitpro uninstall leaves agent hooks in place; gitpro agent uninstall removes them
-```
-
-The deny reason never mentions the bypass: the agent is told to ask you. The
-hook judges `git commit`, `git push`, `git merge`/`rebase`/`cherry-pick`/`am`
+To turn the check off, set `GITPRO_SKIP=1` in the shell that starts the agent, or
+`[agents] hook = "warn"` or `"off"`. The deny reason never mentions the
+bypass: the agent is told to ask you. `gitpro uninstall` leaves agent hooks in
+place; `gitpro agent uninstall` removes them. The hook judges `git commit`,
+`git push`, `git merge`/`rebase`/`cherry-pick`/`am`
 including `--continue`, `gh pr create` and the like; `--abort`, `--skip`,
 `--quit`, dry runs and `--help` pass. Repo aliases are looked up read-only
 and `!` shell aliases are never run. When the command's directory is not
 known (`cd "$DIR"`), the hook judges the nearest directory it can know.
-`gitpro agent install --scope project` puts the hook in
+`gitpro agent install --scope project` (deprecated) puts the hook in
 `<repo>/.claude/settings.local.json` instead of your user settings.
 
 The plugin's hook runs `gitpro` from a plain `sh`, so gitpro must be on the
@@ -897,38 +972,34 @@ does nothing.
 
 ### MCP server
 
-`gitpro mcp` is a stdio MCP server with read-only tools by default:
-`which_identity`, `why`, `check_commit`, `scan`, `identities`, plus
-`lost`, `audit`, `env_for` when installed, and the structured `preflight`,
-`operation_status`, `reconcile_operation`, `propose_change`, `change_status` and `draft_report` tools. Register it with `gitpro mcp
-install --agent claude|cursor|gemini|opencode` or by installing the
-gitpro plugin. The default tools do not write target files. An operator can
-explicitly enable `run_operation`, `apply_change` and `recover_change` with
-`gitpro mcp --allow-execution`; the host must authorize each write, and persistent
-changes additionally require recorded human approval or a covering operator-selected
-`--approval-policy`. There is no MCP approval tool or client-selectable policy.
-Project-level `.mcp.json` is a team file: `--write` is required.
+`gitpro mcp` is a stdio MCP server with read-only tools by default. Its tools
+have the names of the commands and return the same JSON as the matching
+`--json` command. A `fix` field is a command to show you, not to run.
 
-```text
-$ gitpro mcp install --agent cursor -y
-✓ registered the gitpro MCP server in ~/.cursor/mcp.json
-↩ undo: sh ~/.local/state/gitpro/mcp-undo-20261002-093144.sh   (removes it)
-```
+| tool | what it returns |
+|---|---|
+| `why` | `why --json`. Takes `path`, `remote`, `author_email`, `committer_email` and `message`. The `settings` field holds the identity settings git uses; the `commit` field says whether the guard would block the commit. |
+| `setup` | the state of the machine, as `setup -n --json`: identities, what is still to do |
+| `scan` | `scan --json`. With `lost: true` it adds the lost-work checks. |
+| `audit` | the same JSON as `audit --json` |
+| `env` | the shell lines for the repo's identity: the commands that fetch a token, never a token |
+| `report` | a redacted bug report draft |
 
-For Claude Code, `gitpro mcp install` runs `claude mcp add` for you and the
-undo script runs `claude mcp remove`:
+Register it with `gitpro setup --agent claude|cursor|gemini|opencode`, or by
+installing the gitpro plugin. `gitpro mcp uninstall` (hidden) removes the
+registration. Project-level `.mcp.json` is a team file: gitpro prints what to
+add and does not edit it unasked.
 
-```text
-$ gitpro mcp install -y
-→ plugin users already have the server (the gitpro plugin ships .mcp.json)
-✓ registered the gitpro MCP server with claude mcp add
-```
+Deprecated tools stay in the tool list in 0.4.x and are removed in 0.5.0
+(`apply_change`, `recover_change` and `run_operation` are listed only with
+`--allow-execution`, as before); see
+[Deprecated in 0.4.0, removed in 0.5.0](#deprecated-in-040-removed-in-050) for
+each tool and its replacement.
 
-`gitpro mcp install --agent claude-desktop` edits the desktop app's config
-file. Every tool returns the same JSON as the matching `--json` command; a
-`fix` field is a command to show you, not to run. `gitpro mcp --log FILE`
-records every request and response (mode 0600) when you need to see what the
-assistant asked.
+`gitpro mcp --log FILE` records every request and response (mode 0600) when
+you need to see what the assistant asked. The tools of the deprecated agent
+operation protocol are described in
+[agent workflows](agent-workflows.md#deprecated-the-operation-protocol).
 
 ### env for agents
 
@@ -939,8 +1010,8 @@ command that fetches the token, never the token.
 
 ### devcontainer: keep the identity in a container
 
-Containers do not see the host's gitpro files. `gitpro devcontainer`
-prints the `initializeCommand` entry that runs `gitpro pin` on the host
+Containers do not see the host's gitpro files. In VS Code, "Set up devcontainer pin"
+writes the entry for you. The command `gitpro devcontainer` (deprecated) prints the `initializeCommand` entry that runs `gitpro pin` on the host
 before every container start (and does nothing on hosts without gitpro).
 `devcontainer.json` is shared with your team, so gitpro only prints it;
 `--write` edits it with a backup and undo. `gitpro devcontainer status`
@@ -979,7 +1050,7 @@ $ gitpro devcontainer status
 
 `gitpro audit` lists commits whose committer (or your own other email as
 author) is not the repo's identity: unpushed ones get `gitpro audit
---rewrite`, which fixes only those commits, keeps every date and never
+--fix`, which fixes only those commits, keeps every date and never
 runs `rebase` (the commits above them get new ids but are otherwise
 unchanged); pushed ones are reported only. It also lists commits made with an AI
 agent (`Co-Authored-By` bot trailers). Set `co_authored_by = "forbid" |
@@ -1000,8 +1071,9 @@ agent commits (1)
   c2991c7  2026-09-30  jane@personal.dev Add retry to API client      Co-Authored-By: Claude <noreply@anthropic.com>
 ```
 
-`gitpro audit --rewrite` shows the plan, asks (unless you pass `-y`), and
-leaves an undo script. In another repo:
+`gitpro audit --fix` (the deprecated name is `--rewrite`) shows the plan, asks
+(unless you pass `-y`), and leaves an undo script. The samples on this page
+are 0.3.4 output, where the option was `--rewrite`. In another repo:
 
 ```text
 $ gitpro audit --rewrite -y
@@ -1058,8 +1130,8 @@ owner, whether commits must be signed, and trailer rules. Point an identity's
 - `gitpro team` is the one-screen summary. It ends with the
   `gitpro check --policy …` command that shows the details.
 
-Plain `gitpro check` is unchanged. It only says whether `gitpro apply` would
-change anything, and never looks at policies.
+Plain `gitpro check` (deprecated; use `gitpro setup -n`) only says whether
+`gitpro apply` would change anything, and never looks at policies.
 
 ### The policy file
 
@@ -1122,9 +1194,8 @@ policy Employer engineering (~/work/gitpro-policy.toml) for work-github
 1 problem
 ```
 
-Plain `gitpro check` in the same repo still prints `up to date: nothing to
-change`, because `apply` has nothing to do. `gitpro why` and `gitpro doctor`
-show the policy problems too:
+Plain `gitpro check` (deprecated) in the same repo still prints `up to date: nothing to
+change`, because `apply` has nothing to do. `gitpro why` shows the policy problems too:
 
 ```text
 $ gitpro why
@@ -1330,7 +1401,7 @@ guard: installed (block)     agent hook: claude · cursor · gemini ·
 
 ## Undo everything
 
-`gitpro uninstall` removes everything `apply` wrote: the marked blocks in
+`gitpro uninstall` removes everything `setup` wrote: the marked blocks in
 `~/.gitconfig` and `~/.ssh/config` (and those files, if nothing else is left
 in them), `~/.gitconfig-identities`, every `~/.gitconfig-<id>`,
 `~/.ssh/config.d/git-identities`, `~/.config/git/allowed_signers`, and the
@@ -1344,12 +1415,12 @@ when it ran, and has its own command:
 | what | undo |
 |---|---|
 | per-repo guard (`guard install --repo DIR`) | `gitpro guard uninstall --repo DIR` |
-| agent hook (`agent install`) | `gitpro agent uninstall` (same `--agent`/`--scope`) |
-| MCP registration (`mcp install`) | `gitpro mcp uninstall` (same `--agent`/`--scope`) |
-| `devcontainer --write` | the `↩ undo:` script it printed, or remove the `initializeCommand` key |
-| `pin` | `gitpro unpin` in each pinned repo |
+| agent hook (`setup --agent`) | `gitpro agent uninstall` (same `--agent`/`--scope`) |
+| MCP registration (`setup --agent`) | `gitpro mcp uninstall` (same `--agent`/`--scope`) |
+| `devcontainer --write` (deprecated) | the `↩ undo:` script it printed, or remove the `initializeCommand` key |
+| `pin` | `gitpro pin --remove` in each pinned repo |
 | `scan --fix` | the `↩ undo:` script it printed |
-| `audit --rewrite` | the `↩ undo:` script it printed (it moves the branch back) |
+| `audit --fix` | the `↩ undo:` script it printed (it moves the branch back) |
 | `clone` | remove the cloned directory |
 
 Undo scripts live in `~/.local/state/gitpro/`; backups of files gitpro edited
@@ -1360,8 +1431,8 @@ are next to them. They are plain `sh` scripts you can read before running.
 | code | meaning |
 |---|---|
 | `0` | ok |
-| `1` | something to do or a mismatch found: `check`, `audit`, `doctor`, `lost` found something, a policy violation, or you said no at a question |
-| `2` | configuration, usage or runtime error, including "this command needs `--online`" and "no terminal to confirm on; re-run with --yes" |
+| `1` | something to do or a problem found: `setup -n` has something to do, `scan` or `audit` found something, a policy violation, or you said no at a question |
+| `2` | configuration, usage or runtime error, including "this command needs `--online`" and "no terminal to confirm on" (the message names `-y` and `-n`) |
 | `3` | hook block: only from `guard check` (what the hooks call) and `guard test`, for a confirmed mismatch with `on_mismatch = "block"`. Hooks treat every other non-zero code as "not blocking". |
 | `130` | interrupted |
 
@@ -1382,7 +1453,7 @@ $ gitpro --version --json
 {
   "ok": true,
   "command": "version",
-  "version": "0.3.4",
+  "version": "0.4.0",
   "python": "3.12.3",
   "capabilities": [
     "agent-check",
@@ -1396,9 +1467,135 @@ $ gitpro --version --json
 Tools (the VS Code extension, the skill) look for a capability instead of
 comparing version numbers.
 
+## Deprecated in 0.4.0, removed in 0.5.0
+
+0.4.0 reduces gitpro to the commands above. The commands, flags and MCP tools
+below still work in 0.4.x and are removed in 0.5.0. Use the replacement.
+
+### Upgrading from 0.3
+
+Two things change on a machine that already runs 0.3, even if you never type a
+deprecated command.
+
+**The commit guard judges more.** Hooks that 0.3 installed call the new gitpro,
+so they follow the new rules at once; your config does not change. A commit in
+a repo whose remotes belong to different identities is now refused, for example
+a fork where `origin` is yours and `upstream` is the company's. 0.3 applied the
+identity that comes later in your config to every remote and said nothing. A
+refused commit looks like this:
+
+```text
+$ git commit -m "Fix typo"
+✗ gitpro: the remotes belong to different identities (origin → personal, upstream → work-github); git applies work-github to all of them because its include comes later; this commit would use jane.doe@employer.com
+  fix:   gitpro pin -y --remote origin ~/work/github.com/employer-org/app
+  skip once: GITPRO_SKIP=1 git commit ...
+```
+
+Choose one way out:
+
+- `gitpro pin --remote NAME` pins the remote your work goes to. The pin is your
+  answer, so the repo is no longer ambiguous.
+
+A pin made with 0.3 does not count here. 0.3's `gitpro pin` wrote the identity
+git applied, which in such a repo is the one that comes later in your config,
+not a choice between the remotes. So such a repo is refused until you pin it
+again with `--remote`, and the message says the pin is from 0.3. A 0.3 pin in a
+repo whose remotes all belong to one identity keeps working as before.
+- `[guard] on_mismatch = "warn"` prints the message and lets the commit
+  through. It applies to every kind of mismatch.
+- `GITPRO_SKIP=1` skips the check once.
+
+`gitpro scan` lists every such repo up front.
+
+**`setup` does more than `apply`.** `gitpro setup`, with or without `-y`, also
+installs the commit guard unless `[guard] hooks = false`. When Claude Code is on
+the machine (`~/.claude` exists or `claude` is on the `PATH`) it also installs
+its hook and the MCP server. `--agent NAME` picks other agents; `--agent none`
+skips them. So:
+
+- `gitpro apply -y` becomes `gitpro setup -y`, which changes more than `apply`
+  did. To keep the guard and the agent parts off, set `[guard] hooks = false`
+  and pass `--agent none`.
+- `gitpro check` and `gitpro plan` become `gitpro setup -n`, which also counts
+  the guard and the hook as work to do. On a machine where `check` exited 0,
+  `setup -n` exits 1 until they are installed.
+
+### Commands and flags
+
+| deprecated | use | note |
+|---|---|---|
+| `init` | `gitpro setup` | |
+| `discover` | `gitpro setup PATH` | |
+| `plan` | `gitpro setup -n` | `setup -n` also lists the commit guard, the Claude Code hook and the MCP server. See [Upgrading from 0.3](#upgrading-from-03). |
+| `apply` | `gitpro setup -y` | Not a drop-in: `setup` also installs the commit guard (`[guard] hooks = false` keeps it off) and, when Claude Code is on the machine, its hook and the MCP server (`--agent none` skips them). See [Upgrading from 0.3](#upgrading-from-03). |
+| `check` | `gitpro setup -n` | Exit 1 when something is to do. Plain `check` is `apply` in check mode. `setup -n` also counts the guard and the hook, so it exits 1 where `check` exited 0 until they are installed. `check --repo`, `--policy` and `--range` check a [team policy](#teams); this row names no replacement for them. |
+| `doctor` | `gitpro setup -n` and `gitpro why` | |
+| `which` | `gitpro why --json` | its `settings` field |
+| `lost` | `gitpro scan --lost` | |
+| `unpin` | `gitpro pin --remove` | |
+| `devcontainer` | VS Code: "Set up devcontainer pin" | |
+| `keys --generate` | `gitpro setup` | `keys` itself stays |
+| `guard install` without `--repo` | `gitpro setup` | `guard install --repo`, `guard uninstall`, `guard status` and `guard test` stay |
+| `agent install`, `agent status` | `gitpro setup --agent NAME`, `gitpro setup -n` | `agent uninstall` stays (hidden) |
+| `mcp install` | `gitpro setup --agent NAME` | `mcp uninstall` stays (hidden) |
+| `scan --suggest` | `gitpro setup --add PATH` | |
+| `audit --rewrite` | `gitpro audit --fix` | |
+| `setup --write` | `gitpro setup` | already a no-op |
+| `preflight`, `run`, `operation-status`, `operation-reconcile`, `change …` | none | nothing uses them |
+
+The last row is the agent operation protocol: `preflight`, `run`,
+`operation-status`, `operation-reconcile`, `change propose`, `change approve`,
+`change apply`, `change status` and `change recover`. No replacement is
+planned because nothing used it. The documentation of the protocol is kept in
+[agent workflows](agent-workflows.md#deprecated-the-operation-protocol) until it is removed.
+
+### MCP tools
+
+| deprecated | use |
+|---|---|
+| `which_identity` | `why` (its `settings`) |
+| `check_commit` | `why` with `committer_email`, `author_email` and `message` (its `commit`) |
+| `identities` | `setup` (its state) |
+| `lost` | `scan` with `lost: true` |
+| `env_for` | `env` (same output) |
+| `draft_report` | `report` (same draft) |
+| `preflight`, `operation_status`, `reconcile_operation`, `propose_change`, `change_status`, `apply_change`, `recover_change`, `run_operation` | none |
+
+`setup`, `env` and `report` are new tools. `env` is the same as `env_for` and
+`report` is the same as `draft_report`.
+
+### How a deprecated command behaves in 0.4.x
+
+- It does what it did in 0.3.4: same output, same files, same exit codes.
+- It is hidden from `gitpro --help` and from shell completion.
+- It prints one line on stderr before it runs, for example
+  `⚠ gitpro apply is deprecated and will be removed in 0.5.0; use: gitpro setup -y`.
+  For a command with no replacement the line ends
+  `…removed in 0.5.0; nothing replaces it`.
+- With `--json` nothing goes to stderr. The JSON object gains
+  `"deprecated": {"removed_in": "0.5.0", "use": "gitpro setup -y"}`; `use` is
+  `null` when nothing replaces it.
+- `GITPRO_NO_DEPRECATION=1` turns off both the line and the field.
+- A deprecated MCP tool stays in the tool list (`apply_change`,
+  `recover_change` and `run_operation` only with `--allow-execution`, as
+  before). Its description starts with
+  `Deprecated, removed in 0.5.0; use <tool>.` and its result has the
+  `deprecated` field.
+- `gitpro --version --json` lists the capability `deprecations.v1`, so a
+  client can tell that it is there. Other capabilities stay announced in 0.4.x.
+
+An 0.3 VS Code extension keeps working with gitpro 0.4.x.
+
+### What happens in 0.5.0
+
+The deprecated commands, flags and tools are removed. Proposed, not decided:
+keep `unpin`, `lost`, `audit --rewrite`, `check` and `apply` as aliases of
+their replacements, and make the other removed names exit 2 with a line such
+as `gitpro plan was removed in 0.5.0; use: gitpro setup -n`.
+
 ## Troubleshooting
 
-- **Wrong or no identity**: run `gitpro which` in the repo and compare
+- **Wrong or no identity**: run `gitpro why` in the repo and compare
   its remote URL with `host` and `owners`. Owners are case-sensitive.
   `gitpro why` explains the decision and prints the fix.
 - **Push or clone signs in as the wrong account**: register the identity's key
@@ -1407,21 +1604,21 @@ comparing version numbers.
   shows which account each host and alias signs in as.
 - **One repo ignores the config**: a repo-level `user.email` overrides it.
   `gitpro scan DIR` shows it; `gitpro scan --fix DIR` removes it.
-- **Not sure what is wrong**: `gitpro doctor` runs every check.
-- **Inside a container**: run `gitpro pin` in the repo on the host, or add
-  the entry from `gitpro devcontainer` so it happens on every start.
+- **Not sure what is wrong**: `gitpro setup -n` shows what is missing on this machine, and `gitpro why` explains one repo.
+- **Inside a container**: run `gitpro pin` in the repo on the host, or use
+  "Set up devcontainer pin" in VS Code so it happens on every start.
 - **husky, lefthook or pre-commit**: the global guard does not reach repos
   with their own `core.hooksPath`; use `gitpro guard install --repo DIR`.
 - **A hook blocked my commit**: read the `cause:` and `fix:` lines. Skip once
   with `GITPRO_SKIP=1 git commit …` if you are sure.
 - **A hook printed `exited N; not blocking`**: gitpro failed and let the
-  commit through; `gitpro doctor` shows why.
+  commit through; `gitpro why` in the repo and `gitpro setup -n` show why.
 - **The agent hook does nothing**: the hook runs `gitpro` from a plain `sh`;
   check that `command -v gitpro` works there.
-- **`lost` or `audit` says a pushed commit is unpushed**: both go by your
+- **`scan --lost` or `audit` says a pushed commit is unpushed**: both go by your
   remote-tracking refs as of the last fetch. Run `git fetch` and try again.
 - **`gitpro check` passes but `gitpro why` shows a policy problem**: plain
-  `check` only asks whether `apply` would change anything. Use
+  `check` (deprecated) only asks whether `apply` would change anything. Use
   `gitpro check --repo .` for the policy.
 - **CI ignores the policy change in my pull request**: in `--range` mode the
   policy is read from the base commit. Your change takes effect once it is
@@ -1490,13 +1687,13 @@ and exits 2; set `GITPRO_DEBUG=1` to also see the traceback.
 
 - **VS Code**: the extension in [`vscode/`](../vscode/) shows the current repo's
   identity and SSH key in the status bar, turns red on a mismatch and offers
-  the fix, and runs `plan`, `apply`, `pin`, `clone` and more. It has views for
+  the fix, and runs `setup`, `scan`, `pin`, `clone` and more. It has views for
   repo-level overrides and lost work. Install it from the Marketplace with
   `code --install-extension yantrakar.gitpro`, or build it from source with
-  `cd vscode && npm ci && npx vsce package && code --install-extension gitpro-0.3.4.vsix`.
+  `cd vscode && npm ci && npx vsce package && code --install-extension gitpro-0.4.0.vsix`.
   See [`vscode/README.md`](../vscode/README.md).
 - **Claude Code**: a [skill](../skills/gitpro/SKILL.md) teaches Claude to
-  edit the config from plain requests, show `plan`, and `apply` only after you
+  edit the config from plain requests, show `setup -n`, and run `setup -y` only after you
   confirm. Install it as a plugin:
 
   ```
@@ -1516,7 +1713,7 @@ and exits 2; set `GITPRO_DEBUG=1` to also see the traceback.
 ```sh
 python -m venv .venv && .venv/bin/pip install -e . pytest pytest-xdist && .venv/bin/pytest -n auto
 .venv/bin/python -m pip wheel --no-deps --wheel-dir dist .
-.venv/bin/python tests/smoke_wheel.py dist/gitpro-0.3.4-py3-none-any.whl
+.venv/bin/python tests/smoke_wheel.py dist/gitpro-0.4.0-py3-none-any.whl
 .venv/bin/python tests/smoke_providers.py      # remote URL forms of common git hosts (-v: every case)
 cd vscode && npm ci && npm test                  # extension unit tests
 xvfb-run -a npm run test:integration             # starts VS Code; drop xvfb-run with a display

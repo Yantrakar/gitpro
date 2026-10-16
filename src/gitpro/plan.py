@@ -107,6 +107,11 @@ def guard_wanted(cfg: Config, env: Env) -> bool:
     return bool(cfg.guard.hooks) or guard_installed(env)
 
 
+def guard_by_setup(cfg: Config) -> bool:
+    """setup installs the guard unless the config says [guard] hooks = false (spec 21, D4)."""
+    return cfg.guard.hooks is not False
+
+
 def prune_hooks_dir(env: Env) -> None:
     """Remove ~/.config/gitpro/hooks after an uninstall, only when nothing is left in it."""
     try:
@@ -126,9 +131,9 @@ def guard_targets(cfg: Config, env: Env) -> list[Target]:
                   Target(env.home / GUARD_GITCONFIG, render.hooks_gitconfig(hooks), 0o600, strict=True)]
 
 
-def build(cfg: Config, env: Env) -> tuple[list[Target], list[Path]]:
+def build(cfg: Config, env: Env, *, guard: bool = False) -> tuple[list[Target], list[Path]]:
     """Return (targets, stale generated files to remove). Callers holding (Default, list[Identity])
-    wrap them: build(Config(d, ids), env)."""
+    wrap them: build(Config(d, ids), env). guard=True includes the guard even before it is installed."""
     d, ids = cfg.default, list(cfg.identities)
     reserved = [env.home / name for name in (MANAGED_GITCONFIG, ".gitconfig", ALLOWED_SIGNERS,
                                              ".ssh/config", ".ssh/" + MANAGED_SSH)]
@@ -156,19 +161,19 @@ def build(cfg: Config, env: Env) -> tuple[list[Target], list[Path]]:
     ssh_dir = env.home / ".ssh"
     managed_text = render.managed_gitconfig(
         d, ids, env.expand, str(signers_path) if signers is not None else None, manifest)
-    guard: list[Target] = []
-    if guard_wanted(cfg, env):
+    hooks: list[Target] = []
+    if guard or guard_wanted(cfg, env):
         from .guard import check_chain_to, check_foreign
         check_chain_to(cfg, env, missing_ok=True)   # every render: refuses an unsafe dir, warns about a missing one
         if not guard_installed(env):   # first install through [guard] hooks = true: same refusal as guard install
             check_foreign(cfg, env.home)
-        guard = guard_targets(cfg, env)
+        hooks = guard_targets(cfg, env)
         managed_text = render.with_guard_include(managed_text, guard_include(env), guard_manifest(env))
         manifest = sorted(manifest + guard_manifest(env))
     targets = [
         Target(managed, managed_text),
         *extra,
-        *guard,
+        *hooks,
         # Last in ~/.gitconfig so it overrides anything hand-written above it.
         Target(gitconfig, render.with_block(
             _read(gitconfig), f"[include]\n{render.INDENT}path = {env.tilde(managed)}", first=False, where="~/.gitconfig")),

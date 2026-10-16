@@ -22,7 +22,7 @@ def bad(home, text, message):
 def test_defaults_of_new_tables(home):
     c = load_all(home, D + I)
     assert c.scan == config.Scan(roots=("~",), exclude=(), stale_days=180)
-    assert c.guard.hooks is False and c.guard.on_mismatch == "block" and c.guard.chain_to == ""
+    assert c.guard.hooks is None and c.guard.on_mismatch == "block" and c.guard.chain_to == ""
     assert c.clone.dir is None and c.clone.layout == "{host}/{owner}/{repo}"
     assert c.forge.online is False and c.forge.similar is False
     assert c.agents.hook == "block" and "noreply@anthropic.com" in c.agents.bot_emails

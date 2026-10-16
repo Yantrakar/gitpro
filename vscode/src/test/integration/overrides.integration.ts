@@ -1,4 +1,4 @@
-// The Repo Overrides view (scan, Suggest, Review One by One, Fix Checked) and the no-identity status.
+// The Repo Overrides view (scan, Fix Checked) and the no-identity status.
 // Runs last (name order): it leaves the test repo without any identity.
 import * as assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
@@ -6,13 +6,12 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as vscode from "vscode";
 import type { Api } from "../../extension";
-import type { Choice } from "../../scan";
 import { env, withEnv, withUi } from "./helpers";
 
 export async function run(api: Api): Promise<void> {
   const ids = await vscode.commands.getCommands(true);
-  for (const c of ["which", "plan", "apply", "pin", "unpin", "setup", "openConfig", "refresh",
-    "scan", "scanFix", "scanReview", "scanSuggest", "openRepoConfig"]) {
+  for (const c of ["which", "pin", "unpin", "setup", "openConfig", "refresh",
+    "scan", "scanFix", "openRepoConfig"]) {
     assert.ok(ids.includes(`gitpro.${c}`), `command gitpro.${c} not registered`);
   }
   await setupLauncher(api);
@@ -45,7 +44,7 @@ async function setupLauncher(api: Api): Promise<void> {
       const options = terminal.creationOptions;
       assert.ok("shellPath" in options);
       assert.equal(options.shellPath, env("GI_GITPRO"));
-      assert.deepEqual(options.shellArgs, ["setup", "--write", "-c", file]);
+      assert.deepEqual(options.shellArgs, ["setup", "-c", file]);
       assert.equal(typeof await terminal.processId, "number");
       assert.equal(fs.existsSync(file), false, "launching setup must not write a config");
     } finally {
@@ -61,8 +60,8 @@ async function setupLauncher(api: Api): Promise<void> {
       assert.ok(api.caps.has("setup"));
       await launch("gitpro.setup");
       api.ui.info = async (_msg, ...choices) => {
-        assert.deepEqual(choices, ["Guided Setup", "Create with Discovery", "Create from Example"]);
-        return "Guided Setup";
+        assert.deepEqual(choices, ["Set Up", "Create with Discovery", "Create from Example"]);
+        return "Set Up";
       };
       await launch("gitpro.openConfig");
       api.ui.info = info;
@@ -131,33 +130,10 @@ async function overrides(api: Api): Promise<void> {
   assert.deepEqual(model, [["Global Me <me@global.test>", "1 repo",
     [["from Global Me <old@x.test>", [["app", "github.com/x", true]]]]]]);
 
-  await vscode.commands.executeCommand("gitpro.scanSuggest");
-  const doc = vscode.window.activeTextEditor?.document.getText() ?? "";
-  assert.match(doc, /^# paste the blocks you want into/);
-  assert.match(doc, /email = "old@x\.test"/);
-  await vscode.commands.executeCommand("workbench.action.revertAndCloseActiveEditor");
-
-  // Review One by One: Escape changes nothing, Skip leaves nothing to fix, Fix ends in the usual question.
   const scanRepo = env("GI_SCAN_REPO");
-  let asked = "";
-  api.setConfirm(async (q) => {
-    asked = q;
-    return false;
-  });
-  const shown: string[] = [];
-  const answers: (Choice | undefined)[] = [undefined, "skip", "fix"];
-  api.setReview(async (rs, i, fix) => {
-    shown.push(`${rs[i].label} ${i + 1}/${rs.length} ${fix ? "fix" : "skip"}`);
-    return answers.shift();
-  });
-  for (let n = 0; n < 3; n++) {
-    await vscode.commands.executeCommand("gitpro.scanReview");
-  }
-  assert.deepEqual(shown, ["app 1/1 fix", "app 1/1 fix", "app 1/1 skip"]);
-  assert.equal(asked, "Remove 1 setting from 1 repo? They'll use Global Me <me@global.test>.");
   assert.equal(spawnSync("git", ["-C", scanRepo, "config", "--local", "--get", "user.email"]).status, 0);
 
-  asked = "";
+  let asked = "";
   api.setConfirm(async (q) => {
     asked = q;
     return true;
@@ -215,7 +191,7 @@ async function noIdentity(api: Api): Promise<void> {
       const s = api.status();
       assert.equal(s.text, "$(warning) no git identity");
       assert.equal(s.background, "statusBarItem.warningBackground");
-      assert.match(s.tooltip, /gitpro scan --suggest --repo /);
+      assert.match(s.tooltip, /gitpro setup /);
     });
   });
 }

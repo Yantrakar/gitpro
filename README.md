@@ -22,26 +22,38 @@ Install from [PyPI](https://pypi.org/project/gitpro/) with pipx.
 
 ```sh
 pipx install gitpro
-gitpro setup --write
+gitpro setup
 ```
 
-The wizard helps you choose identities, Git hosts and owners, existing SSH keys,
-and optional signing. **No TOML editing is needed for basic setup.** Review the
-configuration before saving; nothing is applied to Git or SSH yet.
+Setup offers to look through your repos and proposes your identities. Accept,
+edit or answer the questions yourself; **no TOML editing is needed.** One
+preview shows everything, including the commit guard and, with Claude Code, its
+hook and MCP server. One yes applies it all. Setup never changes your repos.
+
+```mermaid
+flowchart LR
+  S["gitpro setup"] --> HC{"Config <br/>exists?"}
+  HC -->|no| L["Read your repos, <br/>SSH config and <br/>editor recents, <br/>if you agree"]
+  L --> Q["Propose <br/>identities; you <br/>accept or edit"]
+  Q --> I
+  HC -->|yes| I["Inspect config, <br/>Git and SSH files, <br/>keys, guard, <br/>agent hook, MCP"]
+  I -->|all current| OK["Nothing <br/>to do"]
+  I -->|something to do| PV["One preview, <br/>each part with <br/>its undo"]
+  PV --> ASK{"Apply <br/>all?"}
+  ASK -->|no| NONE["Nothing <br/>written"]
+  ASK -->|yes| AP["Write it, print <br/>the public keys <br/>to register"]
+  AP --> NX["Next: <br/>gitpro scan"]
+```
+
+Then:
 
 ```sh
-gitpro plan              # see exactly what would change
-gitpro apply -y          # explicitly apply the reviewed changes
+gitpro why               # inside a repository: the expected identity and anything overriding it
+gitpro scan              # repos that need a fix, with the command for each
 ```
 
-Then, inside a repository:
-
-```sh
-gitpro why               # see the expected identity and anything overriding it
-```
-
-Already have a config? Run `gitpro setup --write` to add another identity without losing
-your existing settings or comments. Prefer editing files? The
+Already have a config? `gitpro setup` brings this machine up to date with it.
+`gitpro setup -n` only shows what is left to do. Prefer editing files? The
 [user guide](docs/guide.md#configuration) covers the full TOML format.
 
 ## What you get
@@ -53,20 +65,17 @@ your existing settings or comments. Prefer editing files? The
 
 Gitpro generates ordinary Git and SSH configuration; it needs no background
 service. Changes can be previewed, existing hand-written files are backed up,
-and key creation or uploads are never part of the setup wizard.
+and key uploads are never part of setup.
 
 ## Using VS Code?
 
-Run **gitpro: Set Up Identities** from the Command Palette to open the same wizard
-in a terminal. The extension also shows the current identity and helps find
-repository-level overrides. [Install the extension](vscode/README.md).
+The extension shows the current identity and helps find repository-level
+overrides. It runs the same commands as the terminal. [Install the extension](vscode/README.md).
 
 ## Go further when you need to
 
-For agents, [the versioned workflow](docs/agent-workflows.md) provides structured
-preflight, identity-scoped execution and durable idempotency for commits, pushes
-and GitHub PRs. Persistent changes use exact proposals, human approval by default,
-optional operator-scoped preauthorization, and recoverable apply. MCP execution is opt-in.
+AI agents get the same answers through the MCP server and the Claude Code hook:
+see [agent workflows](docs/agent-workflows.md).
 
 | I want to… | Start here |
 |---|---|
@@ -76,9 +85,6 @@ optional operator-scoped preauthorization, and recoverable apply. MCP execution 
 | Configure team policy, CI or AI assistants | [Teams and CI](docs/guide.md#teams) · [AI assistants](docs/guide.md#ai-assistants) |
 | Look up a command or undo changes | [Command reference](docs/guide.md#commands) · [Undo](docs/guide.md#undo-everything) |
 | Troubleshoot or contribute | [Troubleshooting](docs/guide.md#troubleshooting) · [Development](docs/guide.md#development) |
-
-The detailed TOML, YAML and command examples live in the guide, not on the
-getting-started path.
 
 ## Problems and questions
 

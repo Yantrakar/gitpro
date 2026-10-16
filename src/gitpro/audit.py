@@ -7,6 +7,7 @@ keeping every date; it never runs `rebase`, never touches pushed commits, the in
 """
 from __future__ import annotations
 
+import argparse
 import os
 import re
 import shlex
@@ -18,7 +19,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Set, Tuple
 
 from . import config, jsonout, resolve, trailers, undo
-from .args import capability
+from .args import capability, dry_run, preview_only
 from .config import Config, ConfigError
 
 PROG = "gitpro"
@@ -31,7 +32,7 @@ FORMAT = "%H%x00%an%x00%ae%x00%cn%x00%ce%x00%cI%x00%P%x00%s%x00%(trailers:only,u
 # Options --range may contain besides revisions; anything else (--output=..., say) is refused.
 RANGE_OPTIONS = ("--not", "--all", "--remotes", "--branches", "--tags", "--first-parent", "--no-merges",
                  "--merges", "--since", "--until", "--after", "--before", "--max-count")
-_CAUSES = ("url_form", "override", "pin_stale", "global_override", "not_applied", "env_override")
+_CAUSES = ("ambiguous", "url_form", "override", "pin_stale", "global_override", "not_applied", "env_override")
 
 
 @dataclass
@@ -715,9 +716,11 @@ def _preview(data: dict, exp) -> List[str]:
 
 def cmd_audit(args) -> int:
     as_json = jsonout.wants_json(args)
+    args.rewrite = args.rewrite or getattr(args, "rewrite_flag", False)
     if args.rewrite and getattr(args, "agents", False):
         raise ConfigError("--rewrite needs the author audit; drop --agents")
-    if args.rewrite and as_json and not args.yes:
+    show_only = bool(args.rewrite and args.dry_run and preview_only(args))
+    if args.rewrite and as_json and not args.yes and not show_only:
         raise ConfigError("--json needs -y with --rewrite (there is no terminal to confirm on)")
     home = Path(args.home).expanduser().resolve()
     path, how = config.find(args.config, home)
@@ -746,6 +749,12 @@ def cmd_audit(args) -> int:
         print()
         print("\n".join(_preview(data, exp)))
     n = data["rewrite"]["commits"]
+    if show_only:
+        if as_json:
+            jsonout.emit("audit", dict(_public(data), dry_run=True))
+        else:
+            print(f"Dry run: nothing written. Rewrite the {n} unpushed commit{'s' * (n != 1)} with -y.")
+        return 0 if data["ok"] else 1
     if not _confirm(f"rewrite {n} unpushed commit{'s' * (n != 1)}?", args.yes):
         print("✗ aborted, nothing written")
         return 1
@@ -773,7 +782,7 @@ def cmd_audit(args) -> int:
 def register(sub, common, confirm) -> None:
     sp = sub.add_parser(
         "audit", parents=[common, confirm],
-        help="find commits made as the wrong identity or with an AI agent; fix unpushed ones with --rewrite",
+        help="find commits made as the wrong identity or with an AI agent; fix unpushed ones with --fix",
         description="Audit the history of a repo: commits whose committer (or your own other email as author) is "
                     "not the repo's identity, commits made with an AI agent (Co-Authored-By trailers, bot "
                     "emails) and the [*.trailers] policy. Default: the unpushed commits (as of the last fetch) "
@@ -792,9 +801,11 @@ def register(sub, common, confirm) -> None:
     w = sp.add_mutually_exclusive_group()
     w.add_argument("--agents", action="store_true", help="only the agent / trailer audit")
     w.add_argument("--authors", action="store_true", help="only the wrong-author audit")
-    sp.add_argument("--rewrite", action="store_true",
+    sp.add_argument("--fix", dest="rewrite", action="store_true",
                     help="fix the unpushed wrong-author commits (asks first; writes an undo script)")
+    sp.add_argument("--rewrite", dest="rewrite_flag", action="store_true", help=argparse.SUPPRESS)  # 0.4: --fix
+    dry_run(sp)
     sp.add_argument("--json", action="store_true", help="machine-readable output")
     sp.add_argument("-v", "--verbose", action="store_true", help="list every commit, not the first ten")
     sp.set_defaults(func=cmd_audit)
-    capability("audit", "audit.rewrite", "trailers")
+    capability("audit", "audit.rewrite", "audit.fix", "trailers")

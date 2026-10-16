@@ -43,7 +43,17 @@ def confirm() -> argparse.ArgumentParser:
     return p
 
 
+def dry_run(p: argparse.ArgumentParser) -> None:
+    """-n/--dry-run for a command that already previews without -y (pin, scan, audit; spec 22 R4)."""
+    p.add_argument("-n", "--dry-run", action="store_true", help="show only, change nothing (as without -y)")
+
+
 def preview_only(args: object) -> bool:
+    if getattr(args, "dry_run", False):
+        if getattr(args, "yes", False):
+            from .config import ConfigError
+            raise ConfigError("choose one: -n shows the change, -y makes it")
+        return True
     return not (getattr(args, "yes", False) or getattr(args, "write", False))
 
 
