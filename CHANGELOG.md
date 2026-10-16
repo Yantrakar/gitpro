@@ -25,21 +25,34 @@ earlier versions are on [GitHub releases](https://github.com/Yantrakar/gitpro/re
 - `gitpro pin --remove` and `gitpro audit --fix`.
 - MCP: `why` takes `remote`, `author_email`, `committer_email` and `message`.
   New `setup`, `env` and `report` tools. `scan` takes `lost`.
-- The capabilities `why.commit`, `scan.lost`, `pin.remove`, `audit.fix` and
-  `deprecations.v1`.
+- The capabilities `why.commit`, `scan.lost`, `pin.remove`, `audit.fix`,
+  `setup.dry-run`, `setup.learn` and `deprecations.v1`.
 - `-y`, `--json`, `-v`, a `PATH` and `-c PATH` mean the same in every command.
   `-n` is on `setup`.
 
 ### Changed
 
+- The commit guard refuses a commit in a repo whose remotes belong to
+  different identities, for example a fork where `origin` is yours and
+  `upstream` is the company's, until the repo is pinned. 0.3 applied the
+  identity that comes later in your config to every remote and said nothing.
+  Hooks that 0.3 installed enforce the new rule as soon as you upgrade; your
+  config does not change. Pin the remote your work goes to with
+  `gitpro pin --remote NAME`, set `[guard] on_mismatch = "warn"` for a warning
+  instead, or skip once with `GITPRO_SKIP=1`. `why` and `scan` report such a
+  repo as `ambiguous`.
 - The terminal, VS Code and MCP share one command surface. `gitpro --help`
   lists `setup`, `why`, `scan`, `pin`, `clone`, `audit`, `env` and `uninstall`,
   then a "more" group.
-- `gitpro setup` now also installs the Claude Code hook and the MCP server
-  with `--agent NAME`, and replaces `init`, `apply` and the agent and MCP
-  install commands.
-- `gitpro setup` without a terminal and without `-y` or `-n` now exits 2 and
-  names both. In 0.3 it printed a preview and exited 0.
+- `gitpro setup` replaces `init`, `apply` and the agent and MCP install
+  commands. It does more than `apply`: it also installs the commit guard
+  (`[guard] hooks = false` keeps it off) and, when Claude Code is on the
+  machine, its hook and the MCP server (`--agent NAME` picks other agents,
+  `--agent none` skips them). So `gitpro setup -y` is not a drop-in for
+  `gitpro apply -y`, and `gitpro setup -n` exits 1 where `gitpro check` exited
+  0, until the guard and the hook are in place.
+- `gitpro setup` without a terminal and without `-y` or `-n` exits 2, as in
+  0.3. The message now names both flags.
 - `gitpro why --json` without a config still exits 2 with the error, and now
   also has the repo's `settings` and `remotes`.
 - "No config found" errors (and `doctor`'s fix for them) now name

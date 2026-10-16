@@ -319,6 +319,27 @@ def test_warn_mode(work, cfg):
     assert "⚠ gitpro: this commit would be committed as wrong@x" in r.stderr and "not blocking" in r.stderr
 
 
+def test_a_fork_is_refused_until_pinned(installed, cfg, tmp_path):
+    # 0.3 let the later identity win for every remote and committed without a word; hooks installed by 0.3 enforce
+    # the new rule on upgrade. The guide (Upgrading from 0.3) names three ways out; each is pinned here.
+    repo = repo_with_remote(tmp_path, "fork", WORK)
+    git(repo, "remote", "add", "upstream", "git@github.com:me/app.git")
+    r = gcommit(repo)
+    assert r.returncode == 1
+    assert "the remotes belong to different identities (origin → work-github, upstream → personal)" in r.stderr
+    assert "fix:   gitpro pin -y --remote origin" in r.stderr and "skip once: GITPRO_SKIP=1 git commit" in r.stderr
+    assert gcommit(repo, GITPRO_SKIP="1").returncode == 0                       # skip once
+    cfg(DEFAULT_CONFIG + '\n[guard]\non_mismatch = "warn"\n')                   # a warning instead
+    r = gcommit(repo)
+    assert r.returncode == 0 and "⚠ gitpro: the remotes belong to different identities" in r.stderr
+    cfg(DEFAULT_CONFIG)
+    assert gcommit(repo).returncode == 1                                        # block is the default again
+    assert run("pin", "-y", "--remote", "origin", str(repo)) == 0               # a pin is the answer
+    r = gcommit(repo)
+    assert r.returncode == 0 and "gitpro" not in r.stderr
+    assert git(repo, "log", "-1", "--format=%ce") == "me@corp.test"
+
+
 # ---------------------------------------------------------------- 9: chaining
 
 def test_repo_hooks_still_run(work, tmp_path):

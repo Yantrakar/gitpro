@@ -576,7 +576,10 @@ refuse a commit or push whose committer email is not the identity the
 remote belongs to, then run the repo's own hooks (every hook is
 forwarded, including husky-style `post-checkout`). If gitpro itself
 fails, the commit goes through. Skip the check once with `GITPRO_SKIP=1`.
-`[guard] on_mismatch = "warn"` turns the block into a warning.
+`[guard] on_mismatch = "warn"` turns the block into a warning. It also refuses a
+commit in a repo whose remotes belong to different identities until you pin one
+with `gitpro pin --remote NAME`
+([Upgrading from 0.3](#upgrading-from-03)).
 
 For pushes, the guard checks the actual destination URL Git gives the hook,
 including `remote.<name>.pushurl` and URL rewrites, rather than the fetch URL.
@@ -1461,15 +1464,57 @@ comparing version numbers.
 0.4.0 reduces gitpro to the commands above. The commands, flags and MCP tools
 below still work in 0.4.x and are removed in 0.5.0. Use the replacement.
 
+### Upgrading from 0.3
+
+Two things change on a machine that already runs 0.3, even if you never type a
+deprecated command.
+
+**The commit guard judges more.** Hooks that 0.3 installed call the new gitpro,
+so they follow the new rules at once; your config does not change. A commit in
+a repo whose remotes belong to different identities is now refused, for example
+a fork where `origin` is yours and `upstream` is the company's. 0.3 applied the
+identity that comes later in your config to every remote and said nothing. A
+refused commit looks like this:
+
+```text
+$ git commit -m "Fix typo"
+✗ gitpro: the remotes belong to different identities (origin → personal, upstream → work-github); git applies work-github to all of them because its include comes later; this commit would use jane.doe@employer.com
+  fix:   gitpro pin -y --remote origin ~/work/github.com/employer-org/app
+  skip once: GITPRO_SKIP=1 git commit ...
+```
+
+Choose one way out:
+
+- `gitpro pin --remote NAME` pins the remote your work goes to. The pin is your
+  answer, so the repo is no longer ambiguous.
+- `[guard] on_mismatch = "warn"` prints the message and lets the commit
+  through. It applies to every kind of mismatch.
+- `GITPRO_SKIP=1` skips the check once.
+
+`gitpro scan` lists every such repo up front.
+
+**`setup` does more than `apply`.** `gitpro setup`, with or without `-y`, also
+installs the commit guard unless `[guard] hooks = false`. When Claude Code is on
+the machine (`~/.claude` exists or `claude` is on the `PATH`) it also installs
+its hook and the MCP server. `--agent NAME` picks other agents; `--agent none`
+skips them. So:
+
+- `gitpro apply -y` becomes `gitpro setup -y`, which changes more than `apply`
+  did. To keep the guard and the agent parts off, set `[guard] hooks = false`
+  and pass `--agent none`.
+- `gitpro check` and `gitpro plan` become `gitpro setup -n`, which also counts
+  the guard and the hook as work to do. On a machine where `check` exited 0,
+  `setup -n` exits 1 until they are installed.
+
 ### Commands and flags
 
 | deprecated | use | note |
 |---|---|---|
 | `init` | `gitpro setup` | |
 | `discover` | `gitpro setup PATH` | |
-| `plan` | `gitpro setup -n` | |
-| `apply` | `gitpro setup -y` | |
-| `check` | `gitpro setup -n` | Exit 1 when something is to do. Plain `check` is `apply` in check mode. `check --repo`, `--policy` and `--range` check a [team policy](#teams); this row names no replacement for them. |
+| `plan` | `gitpro setup -n` | `setup -n` also lists the commit guard, the Claude Code hook and the MCP server. See [Upgrading from 0.3](#upgrading-from-03). |
+| `apply` | `gitpro setup -y` | Not a drop-in: `setup` also installs the commit guard (`[guard] hooks = false` keeps it off) and, when Claude Code is on the machine, its hook and the MCP server (`--agent none` skips them). See [Upgrading from 0.3](#upgrading-from-03). |
+| `check` | `gitpro setup -n` | Exit 1 when something is to do. Plain `check` is `apply` in check mode. `setup -n` also counts the guard and the hook, so it exits 1 where `check` exited 0 until they are installed. `check --repo`, `--policy` and `--range` check a [team policy](#teams); this row names no replacement for them. |
 | `doctor` | `gitpro setup -n` and `gitpro why` | |
 | `which` | `gitpro why --json` | its `settings` field |
 | `lost` | `gitpro scan --lost` | |
