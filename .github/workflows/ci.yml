@@ -1,19 +1,17 @@
 name: CI
 
-# One run per change: a PR is tested by its pull_request run, main after each
-# merge. A release tag is tested by release.yml's build. A newer push to a PR
-# cancels its older run.
+# Runs before a PR is accepted, once per push to it; a newer push cancels the
+# older run. Main is not tested again after the merge, and a release tag is
+# tested by release.yml's build.
 on:
-  push:
-    branches: [main]
   pull_request:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ci-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 
 jobs:
   test:
