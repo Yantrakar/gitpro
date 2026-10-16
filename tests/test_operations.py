@@ -65,6 +65,53 @@ def test_commit_is_scoped_and_idempotent(op_request: dict, monkeypatch: pytest.M
     assert operations.status("commit-once")["outcome"] == result["outcome"]
 
 
+def problem_codes(op_request: dict) -> list:
+    return [p["code"] for p in operations.preflight(op_request)["problems"]]
+
+
+def in_progress(git_dir: Path, marker: str) -> None:
+    target = git_dir / marker
+    target.mkdir() if marker.startswith("rebase-") else target.write_text("0" * 40 + "\n")
+
+
+@pytest.mark.parametrize("marker", ["MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "rebase-merge", "rebase-apply"])
+def test_commit_waits_for_a_git_operation_in_progress(op_request: dict, marker: str) -> None:
+    repo = Path(op_request["repo"])
+    assert "operation_in_progress" not in problem_codes(op_request)
+    in_progress(repo / ".git", marker)
+    assert problem_codes(op_request).count("operation_in_progress") == 1
+
+
+def test_operation_in_progress_is_read_per_worktree(op_request: dict, tmp_path: Path) -> None:
+    repo = Path(op_request["repo"])
+    linked = tmp_path / "linked"
+    subprocess.run(["git", "-C", str(repo), "worktree", "add", "-q", "-b", "side", str(linked)], check=True)
+    (linked / "other.txt").write_text("another staged change\n")
+    git(linked, "add", "other.txt")
+    linked_request = {**op_request, "repo": str(linked)}
+    in_progress(repo / ".git", "MERGE_HEAD")
+    assert "operation_in_progress" in problem_codes(op_request)
+    assert "operation_in_progress" not in problem_codes(linked_request)
+    (repo / ".git/MERGE_HEAD").unlink()
+    in_progress(repo / ".git/worktrees/linked", "rebase-merge")
+    assert "operation_in_progress" not in problem_codes(op_request)
+    assert "operation_in_progress" in problem_codes(linked_request)
+
+
+@pytest.mark.parametrize("key", ["gpg.ssh.allowedSignersFile", "gpg.ssh.revocationFile"])
+@pytest.mark.parametrize("relative", [False, True])
+def test_a_changed_git_trust_file_makes_the_plan_stale(op_request: dict, tmp_path: Path, key: str,
+                                                       relative: bool) -> None:
+    repo = Path(op_request["repo"])
+    trust = repo / "trust" if relative else tmp_path / "trust"
+    trust.write_text("one\n")
+    git(repo, "config", key, "trust" if relative else str(trust))
+    plan = ready(op_request)
+    trust.write_text("two\n")
+    result = operations.execute(op_request, plan["plan_token"], "trust-file", authorized=True)
+    assert result["problems"][0]["code"] == "stale_plan", result
+
+
 def test_execution_excluded_by_configuration_change_but_finished_requests_replay(op_request: dict) -> None:
     plan = ready(op_request)
     with configuration_lock(exclusive=True):

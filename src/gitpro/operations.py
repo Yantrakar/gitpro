@@ -152,16 +152,29 @@ def _snapshot(req: Request, cfg: Config, env: Dict[str, str], index: Path) -> di
     branch = git(req.repo, env, "symbolic-ref", "--quiet", "HEAD", codes=(0, 1)).strip()
     if index.is_symlink():
         raise OperationError("symlink_index", "The staged index must be a regular file.", "blocked")
+    listing = git(req.repo, env, "config", "--null", "--list", "--show-origin")
+    values = _config_values(listing)
     trust = {}
-    for key in ("gpg.ssh.allowedSignersFile", "gpg.ssh.revocationFile"):
-        name = _config(req.repo, env, key)
+    for key in ("gpg.ssh.allowedsignersfile", "gpg.ssh.revocationfile"):
+        name = values.get(key)
         if name:
             path = Path(name).expanduser()
             path = path if path.is_absolute() else req.repo / path
             trust[str(path)] = file_hash(path)
     return {"head": _oid(head) if head else None, "branch": branch, "index": file_hash(index),
-            "git_config": digest(git(req.repo, env, "config", "--null", "--list", "--show-origin")),
+            "git_config": digest(listing),
             "config": digest(dataclasses.asdict(cfg)), "config_file": file_hash(cfg.path), "git_trust": trust}
+
+
+def _config_values(listing: str) -> Dict[str, str]:
+    """{key: value} from `git config --null --list --show-origin`, the last value winning as with
+    `git config --get`. Keys are as git lists them: section and name lower case, subsection as written."""
+    fields = listing.split("\0")
+    values = {}
+    for entry in fields[1::2]:
+        key, _, value = entry.partition("\n")
+        values[key] = value
+    return values
 
 
 def _policies(plan: Plan) -> None:
@@ -445,8 +458,12 @@ def _commit_checks(plan: Plan) -> None:
     _, bad_author = resolve.identity_conflicts(exp.email, resolve.own_emails(plan.cfg), author, exp.email)
     if bad_author:
         plan.problem("author_identity", "The proposed author is another of your configured identities.")
-    for marker in ("MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "rebase-merge", "rebase-apply"):
-        path = git(req.repo, env, "rev-parse", "--path-format=absolute", "--git-path", marker).strip()
+    markers = ("MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "rebase-merge", "rebase-apply")
+    paths = git(req.repo, env, "rev-parse", "--path-format=absolute",
+                *(a for m in markers for a in ("--git-path", m))).splitlines()
+    if len(paths) != len(markers):
+        raise OperationError("check_failed", "Could not locate Git's in-progress markers.")
+    for path in paths:
         if Path(path).exists():
             plan.problem("operation_in_progress", "Finish the existing Git operation first.")
     changes = process(["git", "diff", "--cached", "--quiet", "--exit-code", "--no-ext-diff"], req.repo, env)
