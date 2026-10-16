@@ -22,6 +22,8 @@ def subcommand_names(parser: argparse.ArgumentParser, path=()):
     for a in parser._actions:
         if isinstance(a, argparse._SubParsersAction):
             for name, sp in a.choices.items():
+                if getattr(sp, "gitpro_hidden", False):    # hidden and deprecated (spec 22 §4, §10.3)
+                    continue
                 yield (*path, name)
                 yield from subcommand_names(sp, (*path, name))
 
@@ -73,7 +75,8 @@ def test_bash_has_every_subcommand_and_parses(home, capsys, tmp_path):  # 18
     text = script(capsys, "bash")
     parser, _ = cli.build_parser()
     names = list(subcommand_names(parser))
-    assert {"completion", "prompt", "doctor", "apply", "why"} <= {n[-1] for n in names}
+    assert {"completion", "prompt", "setup", "why"} <= {n[-1] for n in names}
+    assert not {"doctor", "apply", "plan", "which", "lost", "agent-check"} & {n[0] for n in names}
     for path in names:
         assert path[-1] in text
     f = tmp_path / "c.bash"
@@ -87,10 +90,10 @@ def test_bash_completes_subcommands(home, capsys, tmp_path):  # 18 (the task: lo
     parser, _ = cli.build_parser()
     top = {n[0] for n in subcommand_names(parser)}
     assert set(bash_complete(text, ["gitpro", ""], tmp_path)) == top
-    assert bash_complete(text, ["gitpro", "do"], tmp_path) == ["doctor"]
-    assert set(bash_complete(text, ["gitpro", "p"], tmp_path)) >= {"plan", "pin", "prompt"}
+    assert bash_complete(text, ["gitpro", "wh"], tmp_path) == ["why"]
+    assert set(bash_complete(text, ["gitpro", "p"], tmp_path)) == {"pin", "policy", "prompt"}
     assert "--max-ms" in bash_complete(text, ["gitpro", "prompt", "--"], tmp_path)
-    assert "--online" in bash_complete(text, ["gitpro", "doctor", "--"], tmp_path)
+    assert "--lost" in bash_complete(text, ["gitpro", "scan", "--"], tmp_path)
     assert bash_complete(text, ["gitpro", "completion", "--values", "h"], tmp_path) == ["hooks"]
 
 
@@ -100,7 +103,7 @@ def test_extension_commands_appear(home, capsys, monkeypatch):  # 18: commands a
         sp.add_argument("--flavour", choices=["mint", "lime"])
 
     def extend(subs):
-        cli.extend_command(subs, "apply", lambda p: p.add_argument("--zzextra", action="store_true"),
+        cli.extend_command(subs, "scan", lambda p: p.add_argument("--zzextra", action="store_true"),
                            lambda args: None)
 
     fake = types.ModuleType("gitpro.zzlater")
@@ -146,7 +149,7 @@ def test_zsh_completes_with_stubbed_compsys(tmp_path):
 def test_fish_has_complete_lines(home, capsys, tmp_path):  # 18
     text = script(capsys, "fish")
     assert "complete -c gitpro" in text
-    assert "-a doctor" in text and "-l online" in text
+    assert "-a setup" in text and "-l lost" in text and "-a doctor" not in text
     if FISH:
         f = tmp_path / "gitpro.fish"
         f.write_text(text)

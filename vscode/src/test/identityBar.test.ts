@@ -140,11 +140,21 @@ test("actionsFor: one fix per problem using the CLI's argv, then the always-item
   { code: "global_override", message: "beats", fix: "gitpro apply", fix_argv: ["gitpro", "apply"] },
   { code: "env_override", message: "env", fix: "unset GIT_AUTHOR_EMAIL", fix_argv: null }];
   const s = actionsFor(stale, caps());
-  assert.deepEqual(s.map((a) => a.label), ["Re-pin this repo", "Apply config", ...always]);
+  assert.deepEqual(s.map((a) => a.label), ["Re-pin this repo", "Set up…", ...always]);
   assert.deepEqual(s[0].argv, ["gitpro", "pin", "/home/me/work/app"]);
-  assert.equal(s[1].command, "gitpro.apply");
+  assert.equal(s[1].command, "gitpro.setup");
 
-  assert.equal(actionsFor(noIdentity(), caps())[0].label, "Suggest an identity…");
+  assert.equal(actionsFor(noIdentity(), caps())[0].label, "Set up…");
+  assert.equal(actionsFor(noIdentity(), caps())[0].command, "gitpro.setup");
+
+  // remotes of different identities: the pin names the remote it settles on
+  const two = match();
+  const pArgv = ["gitpro", "pin", "-y", "--remote", "origin", "/home/me/work/app"];
+  two.problems = [{ code: "ambiguous", message: "the remotes belong to different identities", fix: pArgv.join(" "),
+    fix_argv: pArgv }];
+  const t = actionsFor(two, caps());
+  assert.equal(t[0].label, "Pin origin's identity");
+  assert.deepEqual(t[0].argv, pArgv);
 
   // 01's fix for a global key/sign mismatch edits ~/.gitconfig, not the repo: the label names the file.
   const global = match();
@@ -157,7 +167,7 @@ test("actionsFor: one fix per problem using the CLI's argv, then the always-item
   assert.equal(actionsFor(global, caps())[0].label, "Unset commit.gpgsign in /home/me/.gitconfig");
 
   const all = actionsFor(match(), caps("env", "doctor")).map((a) => a.label);
-  assert.deepEqual(all, ["Explain (gitpro why)", "Copy env for terminal", "Run doctor", "Open config", "Show Log"]);
+  assert.deepEqual(all, ["Explain (gitpro why)", "Copy env for terminal", "Open config", "Show Log"]); // no doctor
   assert.ok(!actionsFor(match(), caps("doctor")).some((a) => a.label === "Copy env for terminal"));
   assert.deepEqual(actionsFor(undefined, caps()).map((a) => a.label), always);
 });

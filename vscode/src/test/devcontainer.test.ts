@@ -5,7 +5,8 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { test } from "node:test";
-import { fileHasPin, hasPin, LINE, locate, MERGED, NOTE, Proposal, proposeLine, question, snippet } from "../devcontainer";
+import { editRefusal, fileHasPin, hasPin, inspectText, LINE, locate, MERGED, NOTE, Proposal, proposeLine, question, snippet,
+  stripJsonc, withInitializeCommand } from "../devcontainer";
 
 /** [existing initializeCommand, what gitpro proposes]. */
 const CASES: [unknown, unknown][] = [
@@ -96,6 +97,78 @@ test("locate and fileHasPin: the two places, in order; a file with gitpro pin is
     assert.equal(fileHasPin(file), false);
     fs.writeFileSync(file, JSON.stringify({ image: "x", initializeCommand: LINE }));
     assert.equal(fileHasPin(file), true);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("stripJsonc: comments and trailing commas are found, strings are left alone", () => {
+  assert.deepEqual(stripJsonc('{"a": "x // y", "b": 1}'), { text: '{"a": "x // y", "b": 1}', jsonc: false });
+  assert.equal(stripJsonc('{"a": 1, // note\n "b": 2}').jsonc, true);
+  assert.equal(stripJsonc('{"a": 1, /* note */ "b": 2}').jsonc, true);
+  assert.equal(stripJsonc('{"a": [1, 2,], }').jsonc, true);
+  assert.deepEqual(JSON.parse(stripJsonc('{"a": [1, 2,], // x\n}').text), { a: [1, 2] });
+  assert.deepEqual(JSON.parse(stripJsonc('{"a": "q\\" // not a comment"}').text), { a: 'q" // not a comment' });
+});
+
+test("inspectText: absent key, existing command, already pinned, comments, not JSON", () => {
+  const f = "/r/.devcontainer.json";
+  const none = inspectText(f, '{"image": "x"}');
+  assert.deepEqual([none.ok, none.has_pin, none.has_comments, none.proposed, none.existing_command],
+    [true, false, false, LINE, null]);
+  const merged = inspectText(f, '{"initializeCommand": "npm ci"}');
+  assert.deepEqual(merged.proposed, { gitpro: LINE, npm: "npm ci" });
+  assert.equal(merged.merged, true);
+  assert.equal(inspectText(f, JSON.stringify({ initializeCommand: LINE })).has_pin, true);
+  const jsonc = inspectText(f, '{\n  // base image\n  "image": "x"\n}');
+  assert.deepEqual([jsonc.ok, jsonc.has_comments, jsonc.proposed], [true, true, LINE]);
+  const bad = inspectText(f, "not json");
+  assert.deepEqual([bad.ok, bad.has_comments], [false, true]);
+  assert.match(bad.error ?? "", /cannot be parsed/);
+  assert.match(inspectText(f, "[1]").error ?? "", /not an object/);
+  assert.match(inspectText(f, '{"initializeCommand": {"gitpro": "a", "gitpro-pin": "b"}}').error ?? "", /already has keys/);
+  assert.match(question({ ...jsonc, tracked: false }), /has comments/);
+  assert.match(question(bad), /cannot be parsed/);
+});
+
+test("withInitializeCommand: a new key is added and every other byte stays", () => {
+  const text = '{\n    "image": "x",\n    "features": {"a": [1,2]}\n}\n';
+  const out = withInitializeCommand(text, LINE);
+  assert.ok(out.startsWith('{\n    "image": "x",\n    "features": {"a": [1,2]},\n    "initializeCommand": "'), out);
+  assert.ok(out.endsWith('"\n}\n'));
+  assert.deepEqual(JSON.parse(out), { image: "x", features: { a: [1, 2] }, initializeCommand: LINE });
+  assert.equal(JSON.parse(out).initializeCommand, LINE);
+  // an empty object, tabs, no trailing newline
+  assert.deepEqual(JSON.parse(withInitializeCommand("{}", LINE)), { initializeCommand: LINE });
+  assert.ok(withInitializeCommand('{\n\t"a": 1\n}', LINE).includes('\n\t"initializeCommand"'));
+  // an object value is indented under the key
+  const obj = { gitpro: LINE, npm: "npm ci" };
+  assert.deepEqual(JSON.parse(withInitializeCommand('{"a": 1}', obj)).initializeCommand, obj);
+});
+
+test("withInitializeCommand: an existing key is replaced, the other keys and their order kept", () => {
+  const text = '{\n  "a": 1,\n  "initializeCommand": "npm ci",\n  "b": [2]\n}\n';
+  const out = withInitializeCommand(text, proposeLine("npm ci"));
+  const parsed = JSON.parse(out);
+  assert.deepEqual(Object.keys(parsed), ["a", "initializeCommand", "b"]);
+  assert.deepEqual(parsed.initializeCommand, { gitpro: LINE, npm: "npm ci" });
+  assert.deepEqual([parsed.a, parsed.b], [1, [2]]);
+  assert.ok(out.endsWith("}\n"));
+});
+
+test("editRefusal: a normal file may be written, a symlink out of the repo may not", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gitpro-dc-"));
+  try {
+    const repo = path.join(dir, "repo");
+    fs.mkdirSync(repo);
+    const file = path.join(repo, ".devcontainer.json");
+    fs.writeFileSync(file, "{}");
+    assert.equal(editRefusal(file, repo), undefined);
+    const outside = path.join(dir, "shared.json");
+    fs.writeFileSync(outside, "{}");
+    fs.rmSync(file);
+    fs.symlinkSync(outside, file);
+    assert.match(editRefusal(file, repo) ?? "", /outside the repo/);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

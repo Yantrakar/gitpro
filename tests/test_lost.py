@@ -540,8 +540,9 @@ def test_online_from_config_without_gh_falls_back(tmp_path, w, cfg, fake_bin, mo
 
 
 def test_vscode_never_goes_online():  # spec 03 §5
-    src = (Path(__file__).resolve().parents[1] / "vscode/src/lost.ts").read_text()
-    assert '["lost", "--json", "--offline"]' in src
+    src = (Path(__file__).resolve().parents[1] / "vscode/src/capabilities.ts").read_text()
+    assert '["lost", "--json", "--offline"]' in src            # 0.3; scan --lost is always offline
+    assert '["scan", "--lost", "--json"]' in src and "--online" not in src
 
 
 def test_offline_hint(tmp_path, w, capsys):

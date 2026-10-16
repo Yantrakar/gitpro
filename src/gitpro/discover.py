@@ -374,6 +374,8 @@ class _Ctx:
         self.ssh_map: Dict[str, dict] = {}  # lowercased ssh Host alias -> entry
         self.include_files: set = set()     # resolved paths of includeIf targets (not gitpro's)
         self.walked = 0
+        self.reflog = False                 # setup: also the commit identity of each repo (spec 22 §5.3)
+        self.committed = 0                  # repos with commit lines in their reflog
 
     def warn(self, msg: str) -> None:
         self.warnings.append(msg)
@@ -396,7 +398,8 @@ class _Ctx:
         """The record of host/owner; owners that differ only in case share one (forges ignore case)."""
         rec = self.owners.setdefault((host, owner.lower()), {
             "repos": set(), "emails": Counter(), "names": Counter(), "paths": [], "aliases": Counter(),
-            "rule": None, "sources": set(), "spellings": Counter()})
+            "rule": None, "sources": set(), "spellings": Counter(),
+            "people": Counter()})
         rec["spellings"][owner] += 1
         return rec
 
@@ -426,6 +429,8 @@ class _Ctx:
             rec["emails"][email] += 1
         if isinstance(name, str) and name.strip() and not re.search(r"[\x00-\x08\x0a-\x1f\x7f]", name):
             rec["names"][name.strip()] += 1
+            if isinstance(email, str) and EMAIL_RE.match(email) and not _CONTROL.search(email):
+                rec["people"][(name.strip(), email)] += 1
 
     def add_repo(self, source: str, path: Path) -> None:
         try:
@@ -444,7 +449,15 @@ class _Ctx:
         url = sanitise(repo.remote) if repo.remote else None
         self.note(f"{source}  {_tilde(path, self.home)}  {url or ('(remote not usable)' if repo.remote else '(no remote)')}")
         if url:
-            self.add_url(source, url, path=path, person=self._person(repo))
+            person = self._person(repo)
+            if self.reflog:
+                from .scan import commit_identity
+                found = commit_identity(Path(path))
+                if found:
+                    self.committed += 1
+                    if "user.email" not in person:
+                        person = {"user.name": found[0], "user.email": found[1]}
+            self.add_url(source, url, path=path, person=person)
 
     def _person(self, repo) -> dict:
         """user.email/user.name of a repo when they say something about its owner: set in the repo
@@ -1027,15 +1040,20 @@ def _collapse(paths) -> List[str]:
 
 
 def collect(sources, *, history: bool = False, online: bool = False, home: Optional[Path] = None,
-            config_path: Optional[Path] = None, find_config: bool = True, quiet: bool = False) -> dict:
+            config_path: Optional[Path] = None, find_config: bool = True, quiet: bool = False,
+            roots: Optional[List[Path]] = None, reflog: bool = False, budget: float = BUDGET) -> dict:
     """Read the sources and join them. Returns the --json body (sources, hosts, aliases, roots,
     accounts, rules, config, toml, warnings) plus "findings" (the -v lines) and "history_hint".
     history/online gate their sources whatever `sources` says. quiet: the online announcement goes
-    to stderr (for --json)."""
+    to stderr (for --json). roots: look for repos under exactly these (editor folders only when under
+    one of them), at any depth, for up to `budget` seconds; reflog: a repo whose name and email are not
+    set in it gets the identity of the commits made in it (setup, spec 22 §5.3)."""
     home = Path(home) if home else Path.home()
     sources = [s for s in SOURCES if s in sources
                and (s != "history" or history) and (s not in ONLINE_SOURCES or online)]
     ctx = _Ctx(home)
+    ctx.reflog = reflog
+    only = [os.path.normpath(str(r)) for r in roots] if roots is not None else None
     cfg_info, cfg = _load_config(ctx, config_path, find_config, home)
     srcs: Dict[str, Optional[dict]] = {s: None for s in SOURCES}
 
@@ -1060,6 +1078,8 @@ def collect(sources, *, history: bool = False, online: bool = False, home: Optio
         srcs["jetbrains"], paths = _jetbrains(home, ctx)
         editor += [("jetbrains", p) for p in paths]
     for src, p in editor:
+        if only is not None and not any(_under(os.path.normpath(str(p)), r) for r in only):
+            continue
         try:
             is_repo = (p / ".git").exists()
         except OSError:
@@ -1073,18 +1093,26 @@ def collect(sources, *, history: bool = False, online: bool = False, home: Optio
         from . import scan
         walk = [r for r in _collapse(ctx.roots + cfg_roots) if os.path.isdir(r)]
         exclude = list(cfg_info["exclude"])
-        if not walk and cfg_info["scan_roots"] is None and home.is_dir():
+        depth: Optional[int] = MAX_DEPTH
+        if only is not None:
+            walk, depth = [r for r in _collapse(only) if os.path.isdir(r)], None
+            if str(home) in walk:
+                exclude += HOME_SKIP
+        elif not walk and cfg_info["scan_roots"] is None and home.is_dir():
             # nothing else says where repos live: look under ~ (hidden dirs and node_modules are
             # skipped by scan.find; these caches too)
             walk = [str(home)]
             exclude += HOME_SKIP
             ctx.note(f"repos: no roots found; looked under ~ (depth {MAX_DEPTH})")
-        found = scan.find([Path(r) for r in walk], exclude=exclude, max_depth=MAX_DEPTH)
+        deadline = time.monotonic() + budget     # for the walk, then again for reading what it found
+        found = scan.find([Path(r) for r in walk], exclude=exclude, max_depth=depth, deadline=deadline)
         srcs["repos"] = {"roots": walk, "count": len(found)}
-        deadline = time.monotonic() + BUDGET
+        if time.monotonic() > deadline:
+            ctx.warn(f"repos: stopped looking after {budget:g} s; reading the {len(found)} found by then")
+        deadline = time.monotonic() + budget
         for n, p in enumerate(found):
             if time.monotonic() > deadline:
-                ctx.warn(f"repos: stopped after {BUDGET:g} s ({n} of {len(found)} repos looked at)")
+                ctx.warn(f"repos: stopped after {budget:g} s ({n} of {len(found)} repos looked at)")
                 break
             ctx.add_repo("repos", p)
 
@@ -1099,6 +1127,8 @@ def collect(sources, *, history: bool = False, online: bool = False, home: Optio
         srcs["ssh"]["aliases"] = len(d["aliases"])
     d["history_hint"] = None if "history" in sources else [_tilde(p, home) for p, _ in _history_files(home)]
     d["home"] = str(home)
+    if reflog:
+        d["committed"] = ctx.committed
     d["toml"] = render_toml(d)
     return d
 
@@ -1136,7 +1166,8 @@ def _join(ctx: _Ctx, rules, accounts, ssh_entries, cfg, cfg_info, cfg_roots) -> 
             "owner": o, "repos": len(rec["repos"]), "emails": dict(rec["emails"].most_common()),
             "names": dict(rec["names"].most_common()), "in_config": cid is not None, "config_id": cid,
             "aliases": dict(rec["aliases"]), "sources": sorted(rec["sources"]),
-            "rule": {"condition": r["condition"], "name": r["name"], "email": r["email"]} if r else None})
+            "rule": {"condition": r["condition"], "name": r["name"], "email": r["email"]} if r else None,
+            **({"people": [[n, e, c] for (n, e), c in rec["people"].most_common()]} if ctx.reflog else {})})
     hosts = [{"host": h, "owners": sorted(os_, key=lambda o: (-o["repos"], o["owner"]))} for h, os_ in by_host.items()]
     hosts.sort(key=lambda h: (-sum(o["repos"] for o in h["owners"]), h["host"]))
 

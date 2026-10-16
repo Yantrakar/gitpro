@@ -68,11 +68,11 @@ def test_no_config(home, capsys):  # 1
     rc, out = doc(capsys)
     assert rc == 1
     r = row(out, "config")
-    assert "✗" in r and "no config found" in r and "→ gitpro init" in r
+    assert "✗" in r and "no config found" in r and "→ gitpro setup" in r
     rc, data, s = doc_json(capsys)
     assert rc == 1 and data["ok"] is False and data["command"] == "doctor"
     assert s["config"]["status"] == "error"
-    assert s["config"]["problems"][0]["fix"] == "gitpro init"
+    assert s["config"]["problems"][0]["fix"] == "gitpro setup"
     for name in ("applied", "files", "lint", "ssh", "repo"):
         assert s[name]["status"] == "skipped", name
     assert data["summary"]["problems"] >= 1

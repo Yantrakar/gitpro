@@ -6,6 +6,8 @@ import json
 import os
 import re
 import shlex
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -17,7 +19,7 @@ ROOT = Path(__file__).resolve().parent.parent
 GUIDE = (ROOT / "docs/guide.md").read_text(encoding="utf-8")
 README = (ROOT / "README.md").read_text(encoding="utf-8")
 SKILL = (ROOT / "skills/gitpro/SKILL.md").read_text(encoding="utf-8")
-VERSION = "0.3.4"
+VERSION = "0.4.0"
 GIT_URL = "git+https://github.com/Yantrakar/gitpro.git"
 INSTALL = "pipx install gitpro"
 
@@ -423,6 +425,31 @@ def test_version_json_reports_the_release(home, capsys):
     assert json.loads(capsys.readouterr().out)["version"] == VERSION
 
 
+# What `gitpro --version --json` listed in the last release (0.3.4). Clients (the VS Code extension, agents, scripts)
+# decide what to call from this list, so a capability that has shipped is not taken away without editing this set in
+# the same change. After a release, replace the set with what that release printed.
+RELEASED_CAPABILITIES = frozenset({
+    'agent-check', 'agent.install', 'agent.status', 'approval-policy.v1', 'audit', 'audit.rewrite', 'auth',
+    'change-apply.v1', 'change-approve.v1', 'change-propose.v1', 'change-recover.v1', 'change-status.v1',
+    'check.json', 'check.policy', 'clone', 'completion', 'devcontainer', 'devcontainer.write', 'discover',
+    'doctor', 'dry-run-defaults.v1', 'env', 'forge', 'forge.similar', 'guard', 'init.discover', 'keys.health',
+    'keys.upload', 'lost', 'lost.online', 'mcp', 'mcp.install', 'operation-reconcile.v1',
+    'operation-status.v1', 'policy', 'preflight.v1', 'prompt', 'report', 'run.v1', 'scan.roots', 'setup',
+    'team', 'trailers', 'which.json', 'why', 'why.config',
+})
+
+
+def test_capabilities_only_grow_and_the_changelog_names_the_new_ones(tmp_path):
+    # A fresh interpreter, as a user runs it: other tests add capabilities to this process and never take them away.
+    out = subprocess.run([sys.executable, "-m", "gitpro", "--version", "--json"], capture_output=True, text=True,
+                         check=True, timeout=60, env=dict(os.environ, HOME=str(tmp_path)))
+    caps = set(json.loads(out.stdout)["capabilities"])
+    assert RELEASED_CAPABILITIES <= caps, f"capabilities taken away: {sorted(RELEASED_CAPABILITIES - caps)}"
+    changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    unnamed = sorted(c for c in caps - RELEASED_CAPABILITIES if f"`{c}`" not in changelog)
+    assert not unnamed, f"CHANGELOG.md does not name the new capabilities {unnamed}"
+
+
 def test_vsix_name_matches_version():
     assert f"gitpro-{VERSION}.vsix" in GUIDE
     assert not re.search(r"gitpro-\d+\.\d+\.\d+\.vsix", GUIDE.replace(f"gitpro-{VERSION}.vsix", ""))
@@ -466,7 +493,8 @@ def test_readme_is_a_short_onboarding_page():
     assert len(README.splitlines()) <= 100
     assert len(README.split()) <= 650
     assert "gitpro setup" in README and "docs/guide.md" in README
-    assert "gitpro plan" in README and "gitpro apply" in README
+    assert "pipx install gitpro" in README and "gitpro scan" in README and "gitpro why" in README
+    assert "setup --write" not in README
     assert "```toml" not in README and "```yaml" not in README
 
 

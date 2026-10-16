@@ -36,11 +36,12 @@ def inventory(d: Default, ids: list[Identity]) -> list[Key]:
 
 
 def generate(keys: list[Key], expand: Expand, passphrase: bool = True) -> int:
-    """Create missing keys; existing ones are never touched. Returns how many were created."""
+    """Create missing keys; existing ones are never touched, nor is a .pub without its private key
+    (ssh-keygen would replace it) or a dangling symlink. Returns how many were created."""
     created = 0
     for k in keys:
         p = expand(k.path)
-        if p.exists():
+        if p.exists() or p.is_symlink() or pub_path(p).exists():
             continue
         p.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
         cmd = ["ssh-keygen", "-t", "ed25519", "-a", "100", "-f", str(p),

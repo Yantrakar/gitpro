@@ -48,8 +48,8 @@ def confirm(question: str) -> bool:
     return Confirm.ask(question, default=False)
 
 
-def plural(n: int, word: str) -> str:
-    return f"{n} {word}{'s' * (n != 1)}"
+def plural(n: int, word: str, many: str = "") -> str:
+    return f"{n} {word if n == 1 else many or word + 's'}"
 
 
 def who(d: dict[str, str]) -> str:
@@ -111,7 +111,7 @@ def scan(rep: dict, show: Callable[[str], str], *, verbose: bool, suggest: bool,
         title = Text(after, style="bold green") if after else Text("their own: nothing else sets one, so fix keeps it")
         tree = Tree(title + Text(f"  ({n} repo{'s' * (n != 1)})", style="dim"), guide_style="dim")
         for before, rs in sorted(befores.items(), key=lambda kv: (kv[0] == after, kv[0])):
-            names = ", ".join(show(r["path"]) if verbose else r["short"] for r in rs)
+            names = ", ".join(show(r["path"]) for r in rs)
             if before == after:
                 tree.add(Text("unchanged: ", style="dim") + Text(names))
             else:
@@ -141,6 +141,25 @@ def scan(rep: dict, show: Callable[[str], str], *, verbose: bool, suggest: bool,
         if settings:
             out.print(Text(f"\ndry run, nothing changed. Remove {plural(settings, 'setting')} from "
                            f"{plural(sum(bool(r['fixable']) for r in over), 'repo')}: ") + Text(again, style="bold cyan"), soft_wrap=True)
+
+
+def attention(rep: dict, show: Callable[[str], str]) -> None:
+    """scan's sections for repos with remotes of different identities and repos the guard misses."""
+    out = console()
+    amb = rep.get("ambiguous", [])
+    if amb:
+        out.print(Text(f"\n⚠ {plural(len(amb), 'repo')} with remotes for different identities: commits there "
+                       "are blocked until you pin one", style="bold"), soft_wrap=True)
+        for a in amb:
+            out.print(Text(f"  {show(a['path'])}  ") + Text(a["message"], style="dim"), soft_wrap=True)
+            out.print(Text("    fix: ", style="dim") + Text(a["fix"], style="bold cyan"), soft_wrap=True)
+    own = [o for o in rep.get("own_hooks", []) if not o["guarded"]]
+    if own:
+        out.print(Text(f"\n⚠ {plural(len(own), 'repo')} with its own core.hooksPath: the commit guard does not "
+                       "run there", style="bold"), soft_wrap=True)
+        for o in own:
+            out.print(Text(f"  {show(o['path'])}  ") + Text(f"({o['hooks_path']})", style="dim"), soft_wrap=True)
+            out.print(Text("    fix: ", style="dim") + Text(o["fix"], style="bold cyan"), soft_wrap=True)
 
 
 def fixed(removed: list[tuple[str, str, str, str]], undo: str) -> None:

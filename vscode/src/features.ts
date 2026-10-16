@@ -19,7 +19,6 @@ export function registerFeatures(context: vscode.ExtensionContext, cli: Cli, cap
   registerDevcontainer(context, cli);
   context.subscriptions.push(
     vscode.commands.registerCommand("gitpro.copyEnv", () => copyEnv(cli)), // 12
-    vscode.commands.registerCommand("gitpro.doctor", () => runDoctor(cli)), // 16
     vscode.commands.registerCommand("gitpro.reportIssue", (opts?: { crash?: boolean }) =>
       runReport(context, cli, opts?.crash === true)), // 19
   );
@@ -51,15 +50,6 @@ export async function copyEnv(cli: Cli): Promise<string | undefined> {
   await vscode.env.clipboard.writeText(r.stdout);
   void ui.info(`Copied gitpro env for ${tilde(dir, os.homedir())}: paste it into a terminal (or eval "$(gitpro env)").`);
   return r.stdout;
-}
-
-/** 16: run `gitpro doctor` into the log and show it (exit 1 means it found something, not that it failed). */
-export async function runDoctor(cli: Cli): Promise<void> {
-  if (!cli.require("doctor")) {
-    return;
-  }
-  const dir = cli.dir();
-  await cli.show(dir ? ["doctor", dir] : ["doctor"], { cwd: dir ?? os.homedir(), accept: [0, 1] });
 }
 
 /** 19: draft a redacted issue with `gitpro report --json --print`, show it, and offer the prefilled form. */

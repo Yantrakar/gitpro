@@ -277,6 +277,11 @@ def identity_commit(ctx: Context) -> int:
     for p in rep.problems:
         if p.code in ("key_mismatch", "sign_mismatch"):
             ctx.say(f"⚠ gitpro: {p.message}")
+    amb = next((p for p in rep.problems if p.code == "ambiguous"), None)
+    if amb is not None:
+        # git picks one identity for every remote; whichever it is, the work for the others is wrong
+        return _mismatch(ctx, f"{amb.message}; this commit would use {exp.email}",
+                         [f"fix:   {_shown_fix(amb)}"] if _shown_fix(amb) else [], "commit", "ambiguous")
     if exp.email is None:
         return 0
     bad_committer, bad_author = identity_conflicts(exp.email, own_emails(ctx.cfg),
@@ -853,7 +858,7 @@ def cmd_uninstall(args) -> int:
     script = undo.write("guard uninstall", _backup_lines(changes, undo.state_dir()), what="guard uninstall")
     files.apply(changes)
     plan.prune_hooks_dir(env)
-    hooks_on = False
+    hooks_on: object = False
     try:
         hooks_on = _load_cfg(env.home).guard.hooks
     except Exception:   # noqa: BLE001
@@ -867,6 +872,8 @@ def cmd_uninstall(args) -> int:
     print(f"↩ undo: sh {undo.tilde(script)}")
     if hooks_on:
         view.warn(f"[guard] hooks = true in your config: the next '{PROG} apply' installs them again; set it to false")
+    elif hooks_on is None:
+        view.step(f"'{PROG} setup' installs them again; to keep them off, set [guard] hooks = false in your config")
     return 0
 
 

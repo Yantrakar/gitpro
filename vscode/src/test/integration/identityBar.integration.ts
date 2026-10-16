@@ -4,7 +4,6 @@ import { execFileSync, spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as vscode from "vscode";
-import type { Result } from "../../cli";
 import type { Api } from "../../extension";
 import { env, withEnv, withUi } from "./helpers";
 
@@ -13,7 +12,7 @@ const PERSONAL = "$(account) personal · id_personal";
 
 /** Every command spec 15 §2.1 declares for the feature packages. */
 const FEATURE_COMMANDS = ["scanRoots", "lostRefresh", "lostOpenRepo", "lostCopyFix", "clone", "copyEnv",
-  "devcontainerSetup", "doctor"];
+  "devcontainerSetup"];
 
 /** The stubs and their commands; a file another package has replaced (no STUB export) is skipped. */
 const STUBS: [string, string[]][] = [["roots", ["scanRoots"]], ["lost", ["lostRefresh", "lostOpenRepo", "lostCopyFix"]],
@@ -75,13 +74,6 @@ export async function run(api: Api): Promise<void> {
   execFileSync("git", ["-C", repoB, "config", "--unset", "user.email"]);
   assert.equal(api.status().text, WORK);
 
-  // 10: apply with nothing to change says so and never asks.
-  await withUi(api, { modal: "Apply" }, async (seen) => {
-    await vscode.commands.executeCommand("gitpro.apply");
-    assert.deepEqual(seen.info, ["gitpro: up to date, nothing to change."]);
-    assert.deepEqual(seen.modal, []);
-  });
-
   // 8: a gitpro without the 'why' capability: "gitpro?", the old commands still run, everything is registered.
   const cfg = vscode.workspace.getConfiguration("gitpro");
   await cfg.update("path", env("GI_GITPRO_OLD"), vscode.ConfigurationTarget.Workspace);
@@ -91,8 +83,6 @@ export async function run(api: Api): Promise<void> {
   s = api.status();
   assert.equal(s.text, "$(account) gitpro?");
   assert.equal(s.background, "statusBarItem.warningBackground");
-  const plan = await vscode.commands.executeCommand<Result | undefined>("gitpro.plan");
-  assert.equal(plan?.code, 0);
   await withUi(api, {}, async (seen) => {
     assert.equal(await vscode.commands.executeCommand("gitpro.copyEnv"), undefined);
     assert.equal(seen.warn.length, 1);

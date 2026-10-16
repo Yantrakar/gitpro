@@ -1022,3 +1022,18 @@ def test_matched_url_is_redacted():
     assert agents._who_is_expected(rep) == "origin (https://user:***@github.com/o/r.git) belongs to identity w <w@x.test>"
     m.remote = None
     assert "ghp_xxx" not in agents._who_is_expected(rep)
+
+
+def test_two_identity_remotes_are_denied(repos, monkeypatch, capsys):  # spec 21 B1, O5
+    git(repos.good, "remote", "add", "upstream", "git@github.com:me/app.git")
+    rc, out, err = check(monkeypatch, capsys, claude("git commit -m x", repos.good))
+    reason = deny_reason(out)
+    assert reason.startswith("gitpro: this commit runs in a repo whose remotes belong to different identities")
+    assert "gitpro pin -y --remote origin" in reason
+    # a push names its remote and is judged alone: origin is work's, the commits are personal's
+    rc, out, err = check(monkeypatch, capsys, claude("git push origin HEAD", repos.good))
+    assert "origin (git@github.com:corp-org/app.git) belongs to identity work-github" in deny_reason(out)
+    assert run("pin", "-y", "--remote", "origin", str(repos.good)) == 0
+    capsys.readouterr()
+    for cmd in ("git commit -m x", "git push origin HEAD"):
+        assert check(monkeypatch, capsys, claude(cmd, repos.good))[1] == ""

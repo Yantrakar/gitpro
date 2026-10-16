@@ -411,6 +411,19 @@ def test_repin_from_subdir_refreshes_without_changing_config(cfg, tmp_path, work
     assert (common / "config").read_bytes() == before
 
 
+def test_scan_names_each_override_by_its_path(home, capsys):
+    """The tree names a repo by its path, not the shortest unique tail: "unchanged: edu" said which repo only with -v."""
+    write_config(home, CONFIG)
+    run("apply", "-y")
+    edu = repo_with_remote(home / "projects", "edu", "git@github.com:someone/edu.git")
+    git(edu, "config", "user.name", "Personal Me")
+    capsys.readouterr()
+
+    assert run("scan", str(home / "projects")) == 0
+    lines = [line.rstrip() for line in capsys.readouterr().out.splitlines()]
+    assert "└── unchanged: ~/projects/edu" in lines
+
+
 def test_scan_reports_and_removes_repo_overrides(home, tmp_path, capsys):
     write_config(home, CONFIG)
     run("apply", "-y")
@@ -433,8 +446,9 @@ def test_scan_reports_and_removes_repo_overrides(home, tmp_path, capsys):
     assert "    1  Work Me <me@corp.test>          ~/.gitconfig-work-github" in lines
     assert "    1  see below                       set in the repo" in lines  # counted by where the email comes from
     assert "Personal Me <me@personal.test>  (1 repo)" in lines
-    assert "└── from Personal Me <old@personal.test>:  stale" in lines
-    assert "└── unchanged: same" in lines
+    flat = "".join(out.split())  # a long temp path wraps, mid-word on macOS
+    assert "".join(f"└── from Personal Me <old@personal.test>: {stale.resolve()} Work Me <me@corp.test>".split()) in flat
+    assert "".join(f"└── unchanged: {same.resolve()} to keep some".split()) in flat
     assert "dry run, nothing changed. Remove 2 settings from 2 repos: gitpro scan --fix " + str(root) in lines
     assert git(stale, "config", "user.email") == "old@personal.test"  # scan alone writes nothing
 

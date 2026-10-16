@@ -14,33 +14,35 @@ Docs: https://github.com/Yantrakar/gitpro/blob/main/docs/guide.md
 
 ## Rules
 
-- **Never run `apply`, `uninstall` or `scan --fix` without the user's explicit yes in this
-  conversation.** Run `gitpro plan` first, show the user the diff, and
-  only after they confirm run `gitpro apply -y` (`-y` is required
-  without a terminal).
+- **Never run `setup`, `uninstall`, `scan --fix`, `pin`, `clone` or `audit --fix`
+  without the user's explicit yes in this conversation.** Run `gitpro setup -n`
+  first, show the user what it says is still to do, and only after they
+  confirm run `gitpro setup -y` (`-y` is required without a terminal; without
+  `-y` or `-n` and without a terminal, `setup` exits 2).
 - Edit only the TOML config. The files it generates (`~/.gitconfig-identities`,
   `~/.gitconfig-<id>`, `~/.ssh/config.d/git-identities`, the marked blocks in
-  `~/.gitconfig` and `~/.ssh/config`) are overwritten on every `apply`.
+  `~/.gitconfig` and `~/.ssh/config`) are overwritten on every `setup`.
 - Never read, print or copy private SSH keys. Public keys (`.pub`) are fine.
-- Don't run `keys --generate` yourself: it prompts for a passphrase. Ask the
-  user to run it in their terminal. `--no-passphrase` only if they ask for it.
-- `gitpro setup` is a preview-only terminal wizard. To save, the user runs
-  `gitpro setup --write` and confirms Save; there is no noninteractive `-y`.
+- `gitpro setup` sets up the whole machine (config, SSH keys, Git and SSH
+  files, the guard, the Claude Code hook and MCP server) after one yes. It
+  offers to look through the user's repos and proposes identities from them
+  (it never reads private keys, shell history or forge accounts). The user runs
+  it in their terminal: the first run asks questions, and new keys ask for a
+  passphrase. Don't run it yourself without their explicit yes.
 - Don't invent owners, hosts or emails. Ask the user, or read them from the
-  remote URLs of their repos (`git remote -v`).
+  remote URLs of their repos (`git remote -v`), or let `gitpro setup` find
+  them.
 - Before any `git commit`, `git push` or `gh pr create` for the user, run
   `gitpro why` in that repo (or call the `why` MCP tool). If it reports a
   problem (a `✗` line), show the user the `→` fix line and ask before running
   it. Never use `--no-verify` or set `GITPRO_SKIP=1` unless the user says so
   in this conversation.
-- Never run `gitpro guard install`, `agent install`, `mcp install`,
-  `devcontainer --write`, `keys --upload`, `audit --rewrite` or `clone`
-  without an explicit yes. Always show the dry run first: `guard status`,
-  `agent status`, `devcontainer`, `audit`, `clone --dry-run`. These commands
-  ask on a terminal and you have none, so pass `-y` only after the user said
-  yes.
+- Never run `setup`, `guard install --repo`, `audit --fix`, `keys --upload` or
+  `clone` without an explicit yes. Always show the dry run first: `setup -n`,
+  `guard status`, `audit`, `clone --dry-run`. These commands ask on a
+  terminal and you have none, so pass `-y` only after the user said yes.
 - `devcontainer.json`, `.mcp.json` and `.claude/settings.json` are team
-  files. gitpro prints what to add; use `--write` only when the user owns the
+  files. gitpro prints what to add; edit them only when the user owns the
   repo and asks for it.
 - Never pass `--online`, `--history` or `--send-repo-names` unless the user
   asks. Before an online command, tell the user what its first `online:` line
@@ -58,6 +60,9 @@ Docs: https://github.com/Yantrakar/gitpro/blob/main/docs/guide.md
 - A `***` in a URL gitpro prints is a password, token or secret query value
   that it masked on purpose. The masking is for display only: do not try to
   recover the value or paste the masked URL into a git command.
+- Commands and MCP tools marked deprecated still work in 0.4.x and are removed
+  in 0.5.0. Use their replacements (see the end of the Commands section).
+  `GITPRO_NO_DEPRECATION=1` silences the deprecation line.
 
 ## Install
 
@@ -74,10 +79,10 @@ PyPI. `gitpro --version --json` lists `capabilities`; check for one there
 ## The config
 
 Path: `-c PATH`, else `$GITPRO_CONFIG`, else
-`~/.config/gitpro.toml`. `gitpro setup` guides the user through basic configuration
-and can add identities while preserving an existing config. Alternatively, `gitpro init` writes a
-commented example; `plan` refuses to run until its placeholder emails and
-hosts (`*.example`, `example.com`) are replaced.
+`~/.config/gitpro.toml`. `gitpro setup` finds the user's identities in their repos (or asks), writes
+the config and can add identities while preserving an existing config. The
+example config uses placeholder emails and hosts (`*.example`, `example.com`)
+that gitpro refuses until they are replaced.
 
 ```toml
 [default]                          # repos no identity matches (all keys optional)
@@ -117,64 +122,36 @@ ssh_alias = "github-work"          # ssh Host that offers only ssh_key
 
 ## Workflow for a change
 
-When `change-propose.v1` is available, use the
-[approved change workflow](../../docs/agent-workflows.md#approved-persistent-changes)
-instead of editing live configuration. Supply a complete explicit TOML document
-(`configure`), render existing settings (`regenerate`), or request the bounded
-`repo-identity` repair. `gitpro change propose` / MCP `propose_change` returns an
-exact proposal without changing target files. Save it privately and ask the
-human to run `gitpro change approve --write --proposal FILE` in their terminal.
-**Never drive that prompt or manufacture a TTY to approve on their behalf.**
-After approval and explicit host/user execution permission, use
-`gitpro change apply --plan-id ID -y` / `apply_change`, then preflight the operation.
-No-op proposals need no apply. Repeated apply uses the same plan ID.
-
-With `approval-policy.v1`, an operator may explicitly preauthorize narrow kinds
-and file/repository scopes using `--approval-policy`. Do not create, broaden or
-select a policy on the agent's own authority. A covered proposal can be applied
-headlessly using its exact plan ID and `--proposal FILE`; MCP `apply_change` takes
-the normalized `request` and uses only the server operator's startup policy.
-An uncovered proposal still requires human approval. Host execution permission,
-stale-plan checks and all ordinary safeguards remain. Policy files and startup
-arguments must be protected by the host; same-UID file permissions are not an
-enforced boundary against an unrestricted agent.
-
-For an interrupted change, inspect `gitpro change status` / `change_status`;
-`gitpro change recover` / `recover_change` uses the approved rollback, not a
-forward retry, and still needs execution permission. Do not overwrite recovery
-conflicts or remove unknown locks. An `undo` proposal references the applied
-`change_id` and requires a separate approval. Never use a fresh plan to conceal
-an indeterminate previous attempt.
-
-For older installations, with explicit permission to edit configuration:
-
-1. Read the config. Make the smallest edit that does what the user asked.
-2. `gitpro plan`. Show the diff and any `⚠` warning lines.
-3. On the user's yes: `gitpro apply -y`.
+1. Read the config. Make the smallest edit that does what the user asked, with
+   their permission to edit configuration. Or let `gitpro setup --add PATH`
+   (run by the user) learn identities from their repos.
+2. `gitpro setup -n`. Show what it says is still to do and any `⚠` warning lines.
+3. On the user's yes: `gitpro setup -y`.
 4. If keys were added: `gitpro keys` prints each public key and the
    account to register it with (twice on GitHub with `sign`: as an
    authentication key and as a signing key). Test with `ssh -T git@<alias>`.
-5. Verify in a repo: `gitpro why <dir>` (or `gitpro which <dir>`).
+5. Verify in a repo: `gitpro why <dir>`.
 
 ## Other workflows
 
 - **"The repo commits as the wrong person"**: `gitpro why` → show its `→`
   fix and run it on the user's yes → `gitpro why` again until it says
-  `✓ identity matches`. If history is already wrong: `gitpro audit` → show
-  the list → on the user's yes, `gitpro audit --rewrite -y` (it rewrites only
-  unpushed commits, needs a clean working tree and prints an `↩ undo:` line;
-  tell the user to fetch first, since "pushed" means as of the last fetch).
-- **"Set up a new machine"**: the user runs `gitpro setup --write` in their terminal →
-  `gitpro plan` → yes → `gitpro apply -y` → `gitpro keys` →
-  `gitpro auth` (online: say so first) → `gitpro doctor`.
-  For broader discovery, `gitpro init --discover` remains available (add
-  `--history` only if the user wants shell history read); then review the template.
-- **"Lost work before wiping or moving a machine"**: `gitpro lost` (offline,
-  read-only), then `gitpro lost --online` if the user asks. Suggest a
-  `git fetch` first so "unpushed" is current.
-- **"Make the agent safe"**: `gitpro agent status`. Recommend the gitpro
-  plugin (it brings the hook and the MCP server) or `gitpro agent install`.
-  The hook never grants anything; it only denies with a reason.
+  `✓ identity matches`. If the repo has two remotes for two identities, `why`
+  and `scan` say so; the user chooses with `gitpro pin --remote R`. If history
+  is already wrong: `gitpro audit` → show the list → on the user's yes,
+  `gitpro audit --fix -y` (it rewrites only unpushed commits, needs a clean
+  working tree and prints an `↩ undo:` line; tell the user to fetch first,
+  since "pushed" means as of the last fetch).
+- **"Set up a new machine"**: the user runs `pipx install gitpro` and
+  `gitpro setup` in their terminal (it offers to find their identities in
+  their repos) → `gitpro scan` (repos that need a fix) → `gitpro auth` (online:
+  say so first) if they want the forge checks.
+- **"Lost work before wiping or moving a machine"**: `gitpro scan --lost`
+  (offline, read-only). Suggest a `git fetch` first so "unpushed" is current.
+- **"Make the agent safe"**: `gitpro setup -n` shows which hooks are in place.
+  Recommend the gitpro plugin (it brings the hook and the MCP server) or
+  `gitpro setup --agent claude`. The hook never grants anything; it only denies
+  with a reason.
 - **"Clone a repo"**: `gitpro clone --dry-run <url>` → show the plan → on
   the user's yes, `gitpro clone <url> -y`.
 - **"Our team has rules"**: `gitpro team`, then the `gitpro check --policy
@@ -194,64 +171,54 @@ For older installations, with explicit permission to edit configuration:
 
 ## Before committing for the user
 
-When capabilities include `preflight.v1` and `run.v1`, prefer the
-[structured agent workflow](../../docs/agent-workflows.md):
-construct a version-1 request for the exact commit, push or GitHub PR;
-call `preflight` through CLI/MCP; proceed only on `decision: "ready"` and
-host/user authorization. A ready `plan_token` detects changed state, **not**
-permission. `gitpro run` needs that token, a unique idempotency key and `-y`.
-Network preflight/execution also needs explicitly approved `--online`.
-MCP `run_operation` is available only when the operator enabled execution.
-Never enable it or change persistent configuration without user approval.
-
-Retry a lost response only with the **same request, original token and key**.
-Use `gitpro operation-status` / MCP `operation_status` to inspect the durable
-result. `gitpro operation-reconcile` / MCP `reconcile_operation` observes recorded
-intent without retrying writes or changing the ledger. Remote inspection needs
-explicit network permission. `observed` does not prove attribution or permit a
-retry (`retry_safe` remains false). For `indeterminate` or `outcome_unknown`,
-inspect effects and stop; do not
-invent a fresh key to repeat the write. New intended operations require a new
-preflight and key. Do not use `eval` or obtain token values for this workflow.
-
-For older installations:
-
 Run `gitpro why` in the repo. It prints the remotes, the identity the repo
 should use and why, the effective name and email with the file each comes
 from, the SSH key and signing, and a `→` fix for every problem. If it shows a
-`✗` line, stop and show the user the fix instead of committing. `gitpro
-which` shows the raw effective settings.
+`✗` line, stop and show the user the fix instead of committing. To ask whether
+the guard would block a particular commit, add `--committer EMAIL`,
+`--author EMAIL` and `--message TEXT` with `--json`; the `commit` object says
+`would_block`. `gitpro why --json` has a `settings` field with the effective
+settings.
 
 ## Commands
 
-Every command has `--help`.
+Every command has `--help`. `gitpro --help` lists `setup`, `why`, `scan`, `pin`,
+`clone`, `audit`, `env` and `uninstall`, then a "more" group.
 
-With `dry-run-defaults.v1`, bare writing commands preview rather than execute.
-Use `-y`/`--yes` only after host/user authorization; `--write` retains interactive
-confirmation where applicable. Existing explicit action flags (`--fix`,
-`--rewrite`, `--generate`, `--upload`) retain their safeguards. A preview never
-grants approval. `run` without execution consent returns preflight, while
-`change apply` previews and `change recover` reads status.
+The same flags mean the same everywhere: `-y` does not ask,
+`--json` prints one JSON object, `-v` adds detail, a `PATH` names the repo or
+folder, `-c PATH` the config. `setup -n` shows only; `setup` asks once on a terminal. `pin`,
+`scan --fix` and `audit --fix` show a preview without `-y`. A preview never
+grants approval.
 
 | command | writes? | needs yes? | network |
 |---|---|---|---|
-| `preflight`, `operation-status`, `operation-reconcile` | no | no; `--online` requires explicit permission | preflight/reconciliation can read destination/account state with `--online` |
-| `run` | yes: reviewed Git/forge operation and durable journal; never identity config | **yes**, then `-y`; original plan token and idempotency key required | push/PR require `--online` |
-| `change propose`, `change status` | no target writes | no | no |
-| `change approve` | only with `--write`: immutable approval and backup journal | **yes**, human reviews in their own terminal; no `-y` | no |
-| `change apply`, `change recover` | yes: authorized exact files or conflict-safe restoration | **yes**, then `-y`, plus human approval or an operator-scoped grant; recovery retains original rollback permission | no |
-| `which`, `why`, `doctor`, `prompt`, `completion`, `check`, `plan`, `scan`, `scan --roots`, `scan --suggest`, `lost`, `audit`, `keys`, `keys --health`, `guard status`, `guard test`, `agent status`, `devcontainer`, `devcontainer status`, `policy show`, `policy lint`, `team`, `env`, `discover`, `clone --dry-run` | no | no | no (`--online` is opt-in where present: ask first) |
+| `why`, `prompt`, `completion`, `scan`, `scan --roots`, `scan --lost`, `audit`, `keys`, `keys --health`, `guard status`, `guard test`, `policy show`, `policy lint`, `team`, `env`, `setup -n`, `clone --dry-run` | no | no | no (`--online` is opt-in where present: ask first) |
 | `report` | no | **yes**, to open the form or send; `-y` answers it | with `--online` (`gh`): say so |
 | `guard check`, `agent-check`, `mcp` | no; git hooks, the agent hook and the MCP client call these | do not run them yourself | no |
 | `auth`, `forge repos`, `forge forks`, `forge email` | no | no, but say it goes online | **yes**, say so |
-| `discover --history`, `init --discover --history` | reads shell history (`init` also writes the config) | **yes** | no |
-| `init`, `init --discover` | previews; `-y` creates the config and never overwrites | **yes** | no |
-| `setup` | previews; `--write` permits saving with backup before updating | **yes**, user confirms Save in their terminal | no |
-| `apply`, `scan --fix`, `pin`, `unpin`, `uninstall`, `guard install`, `guard uninstall`, `agent install`, `agent uninstall`, `mcp install`, `mcp uninstall`, `audit --rewrite` | yes | **yes**, then `-y` | no |
+| `setup` | yes: config, keys, Git and SSH files, guard, agents; previews first | **yes**, user runs it in their terminal; `-y` only after their yes | no |
+| `scan --fix`, `pin`, `pin --remove`, `uninstall`, `guard install --repo`, `guard uninstall`, `agent uninstall`, `mcp uninstall`, `audit --fix` | yes | **yes**, then `-y` | no |
 | `clone` | yes: a new directory | **yes**, then `-y` | yes: `git clone` |
-| `devcontainer --write`, `mcp install --scope project --write` | yes, **team file** | **yes**, then `-y` | no |
 | `keys --upload`, `forge similar` | adds keys to the account / sends repo names | **yes** + `--online` (+ `--send-repo-names`) | **yes** |
-| `keys --generate` | creates keys, interactive | do not run: ask the user to | no |
+
+Deprecated in 0.4.0, removed in 0.5.0. They behave as in 0.3.4, print a line on
+stderr and are hidden from `--help`:
+
+| command | writes? | needs yes? | use instead |
+|---|---|---|---|
+| `init` | yes (deprecated): creates the example config | **yes**, then `-y` | `gitpro setup` |
+| `apply` | yes (deprecated) | **yes**, then `-y` | `gitpro setup -y` |
+| `unpin` | yes (deprecated) | **yes**, then `-y` | `gitpro pin --remove` |
+| `audit --rewrite` | yes (deprecated) | **yes**, then `-y` | `gitpro audit --fix` |
+| `guard install` | yes (deprecated without `--repo`) | **yes**, then `-y` | `gitpro setup` |
+| `agent install`, `mcp install` | yes (deprecated) | **yes**, then `-y` | `gitpro setup --agent NAME` |
+| `devcontainer --write` | yes (deprecated): **team file** | **yes**, then `-y` | VS Code "Set up devcontainer pin" |
+| `keys --generate` | yes (deprecated): creates keys, interactive | do not run: ask the user to | `gitpro setup` |
+| `plan`, plain `check`, `doctor`, `which`, `lost`, `discover`, `agent status`, `devcontainer`, `devcontainer status` | no (deprecated) | no | `setup -n`, `setup -n`, `setup -n` and `why`, `why --json`, `scan --lost`, `setup PATH`, `setup -n`, VS Code, VS Code |
+| `preflight`, `operation-status`, `operation-reconcile`, `change propose`, `change status` | no (deprecated) | no | none |
+| `run` | yes (deprecated) | **yes**, then `-y` | none |
+| `change approve`, `change apply`, `change recover` | yes (deprecated) | **yes** | none |
 
 Notes:
 
@@ -259,46 +226,76 @@ Notes:
   looks at policies. `check --repo DIR` checks the repo's identity against its
   team policy, `check --policy FILE` checks every identity that uses FILE,
   and `check --policy FILE --range A..B` checks commits (CI; the base's policy
-  judges).
+  judges). Only plain `check` is deprecated (use `setup -n`); the policy forms
+  stay and are listed under "more".
+- `setup -n` exits 0 when nothing is to do, 1 when something is, 2 on an error.
+  `--json` has `identities`, `pending` and `done`; `ok` is false when
+  `pending` is not empty.
 - `team --online` shows `⚠` (never `✗`) when the forge did not answer; the
   reason is on stderr and in `warnings`.
-- `scan --json`, `why --json`, `lost --json` and the other `--json` forms
-  print one JSON object for you to read.
+- `scan --json`, `why --json` and the other `--json` forms print one JSON
+  object for you to read. `scan --lost` adds a `lost` object. `--lost` with
+  `--fix` is refused.
 - `scan --fix` keeps an override that is a repo's only identity. Without `-y`
-  it is interactive. It prints the undo script's path.
-- `uninstall` removes everything `apply` wrote and the global guard hooks. It
+  it shows a preview. It prints the undo script's path.
+- `pin --remote R` pins the identity that remote R's URL matches, for a repo
+  whose remotes match two identities. `pin --remove` with `--remote` is refused.
+- `uninstall` removes everything `setup` wrote and the global guard hooks. It
   does not remove agent hooks, MCP registrations, per-repo hooks, pins or
   `devcontainer.json` entries; each of those has its own undo.
 - `env` output is meant for `eval "$(gitpro env)"` in the user's shell.
+- A deprecated command with `--json` has `"deprecated": {"removed_in": "0.5.0", "use": …}`
+  in its object and prints nothing on stderr.
 
 ## MCP server
 
-The gitpro plugin (or `gitpro mcp install`) gives you an MCP server with
-these tools: `which_identity`, `why`, `check_commit`, `scan`,
-`identities`, `env_for`, `lost`, `audit`, `preflight`, `operation_status`, `reconcile_operation`,
-`propose_change`, `change_status`, `draft_report`.
-The explicitly enabled execution server additionally exposes `run_operation`,
-`apply_change` and `recover_change`. There is no approval tool or client-selectable
-policy. The operator can configure `gitpro mcp --allow-execution --approval-policy PATH`.
+The gitpro plugin (or `gitpro setup --agent NAME`) gives you an MCP server.
+Its tools have the commands' names and return the same JSON as the matching
+`--json` command:
 
-- Before committing, call `why`, then `check_commit` with the commit message
-  if you need to know whether the guard would block it.
-- Every default tool is read-only and returns the same JSON as the matching `--json`
-  command.
+- `why`: the repo's identity. Takes `path`, `remote`, `author_email`,
+  `committer_email` and `message`. Its `settings` field is the effective
+  settings; its `commit` field says whether the guard would block the commit.
+- `setup`: the state of the machine (`setup -n --json`): identities and what is
+  still to do. Changes nothing.
+- `scan`: the repos and what needs a fix. With `lost: true` it adds the lost-work
+  checks.
+- `audit`: commits made as the wrong identity.
+- `env`: the commands that fetch the forge token, never a token.
+- `report`: a redacted bug report draft.
+
+Deprecated tools stay in the list in 0.4.x, with a description that starts
+`Deprecated, removed in 0.5.0; use <tool>.`, and are removed in 0.5.0
+(`apply_change`, `recover_change` and `run_operation` are listed only when the
+server runs with `--allow-execution`, as before):
+
+| deprecated tool | use |
+|---|---|
+| `which_identity` | `why` (its `settings`) |
+| `check_commit` | `why` with `committer_email`, `author_email`, `message` (its `commit`) |
+| `identities` | `setup` |
+| `lost` | `scan` with `lost: true` |
+| `env_for` | `env` |
+| `draft_report` | `report` |
+| `preflight`, `operation_status`, `reconcile_operation`, `propose_change`, `change_status`, `apply_change`, `recover_change`, `run_operation` | none |
+
+- Before committing, call `why`. Pass `committer_email` and `message` if you
+  need to know whether the guard would block the commit.
+- Every tool is read-only.
 - A `fix` field is a command to propose to the user, not to run.
-- `env_for` returns the commands that fetch a token, never a token.
 
 ## Troubleshooting
 
-- Not sure what is wrong: `gitpro doctor` runs every check and lists the fixes.
-- Wrong or no identity: compare `which` output's remote URL with `host` and
+- Not sure what is wrong: `gitpro setup -n` shows what is missing on the
+  machine, and `gitpro why` explains one repo.
+- Wrong or no identity: compare `why` output's remote URL with `host` and
   `owners` (case!). A repo-level `user.email` overrides everything:
   `gitpro scan <dir>` shows it, `gitpro scan --fix -y <dir>` removes it.
 - "Please tell me who you are": no identity matches and `[default]` has no
   name/email. This is intended; add an identity or a default.
 - Inside a dev container (VS Code Dev Containers copy `~/.gitconfig` but not
-  its includes): on the host, run `gitpro pin` in the repo, or add the entry
-  that `gitpro devcontainer` prints so it happens on every start. Signing and
+  its includes): on the host, run `gitpro pin` in the repo, or use VS Code's
+  "Set up devcontainer pin" so it happens on every start. Signing and
   SSH key choice are not pinned.
 - Push or clone signs in as the wrong account: the identity's key isn't
   registered with that account, or it has no `ssh_alias` while the host is in
@@ -309,7 +306,7 @@ policy. The operator can configure `gitpro mcp --allow-execution --approval-poli
 - "A hook blocked me": read the `cause:` and `fix:` lines, show them to the
   user and ask before running the fix.
 - "A hook printed `exited N; not blocking`": the guard failed open and the
-  commit went through. Run `gitpro doctor`.
+  commit went through. Run `gitpro why` in the repo and `gitpro setup -n`.
 - The agent hook does nothing: it runs `gitpro` from a plain `sh`, so gitpro
   must be on that `PATH` (`command -v gitpro`).
 - Something else, or a gitpro bug: `gitpro report --print` drafts a redacted

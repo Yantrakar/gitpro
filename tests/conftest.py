@@ -74,6 +74,7 @@ def isolated_git_environment(monkeypatch: pytest.MonkeyPatch) -> None:
         if name.startswith("GIT_"):
             monkeypatch.delenv(name)
     monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+    monkeypatch.setenv("GITPRO_NO_DEPRECATION", "1")   # 0.3 tests of deprecated commands (spec 22 §12)
     # Rich colours captured output when a terminal exports FORCE_COLOR; tests compare plain text.
     monkeypatch.delenv("FORCE_COLOR", raising=False)
 
