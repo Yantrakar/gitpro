@@ -1495,6 +1495,12 @@ Choose one way out:
 
 - `gitpro pin --remote NAME` pins the remote your work goes to. The pin is your
   answer, so the repo is no longer ambiguous.
+
+A pin made with 0.3 does not count here. 0.3's `gitpro pin` wrote the identity
+git applied, which in such a repo is the one that comes later in your config,
+not a choice between the remotes. So such a repo is refused until you pin it
+again with `--remote`, and the message says the pin is from 0.3. A 0.3 pin in a
+repo whose remotes all belong to one identity keeps working as before.
 - `[guard] on_mismatch = "warn"` prints the message and lets the commit
   through. It applies to every kind of mismatch.
 - `GITPRO_SKIP=1` skips the check once.

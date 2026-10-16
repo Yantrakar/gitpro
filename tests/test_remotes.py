@@ -153,15 +153,18 @@ def test_plain_pin_is_unchanged(cfg, tmp_path):
         '[user]\n    name = "Work Me"\n    email = "me@corp.test"\n')
 
 
-def test_old_pin_is_read_by_its_email(cfg, tmp_path):
-    """A name/email pin from before --remote: it chose work, but the SSH key still comes from personal."""
+def test_old_pin_must_be_pinned_again(cfg, tmp_path, capsys):
+    """A name/email pin from 0.3 has no marker: 0.3 pinned git's winner, so it does not answer which remote."""
     path = cfg()
     repo = fork(tmp_path)
     (repo / ".git" / pin.FILE).write_text(f"{render.HEADER}\n[user]\n    name = Work Me\n    email = me@corp.test\n")
     git(repo, "config", "--add", "include.path", pin.FILE)
     rep = resolve.compare(repo, load(path))
-    assert rep.expected.id == "work-github" and codes(rep) == ["key_mismatch"]
-    assert rep.problems[0].fix_argv == ("gitpro", "pin", "-y", "--remote", "origin", str(rep.repo))
+    amb = [p for p in rep.problems if p.code == "ambiguous"]
+    assert amb and "pin is from gitpro 0.3" in amb[0].message
+    assert amb[0].fix_argv == ("gitpro", "pin", "-y", "--remote", "origin", str(rep.repo))
+    capsys.readouterr()
+    assert run("why", "--json", str(repo)) == 1
     assert run("pin", "-y", "--remote", "origin", str(repo)) == 0
     assert codes(resolve.compare(repo, load(path))) == []
 

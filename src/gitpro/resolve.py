@@ -515,7 +515,7 @@ def expected(repo: Path, cfg: Config, *, remote: Optional[str] = None,
     lay = _need_layout(Path(repo))
     urls = _remote_urls(Path(repo))
     if remote is None and remote_url is None:
-        chosen = _settled(cfg, conflicting(cfg, urls), lay, None)
+        chosen = _settled(cfg, conflicting(cfg, urls), lay)
         if chosen:
             return chosen[1]
     return _expected_for(cfg, _candidates(urls, remote, remote_url))
@@ -572,29 +572,27 @@ def pinned_identity(lay: _Layout) -> Optional[str]:
     return None
 
 
-def _settled(cfg: Config, rows: List[Row], lay: _Layout, eff: Optional["Effective"]
-             ) -> Optional[Tuple[str, Expected]]:
-    """(remote, expected) when the repo's pin settles conflicting rows: the identity its marker names,
-    or, for a pin written before the marker existed (eff given), the one whose email it pins."""
-    if not rows:
+def _settled(cfg: Config, rows: List[Row], lay: _Layout) -> Optional[Tuple[str, Expected]]:
+    """(remote, expected) when the repo's pin settles conflicting rows: the identity its marker names.
+    A pin without the marker (0.3) does not: 0.3 pinned whatever git applied, which is the guess the
+    ambiguous check exists to refuse (owner, 2026-10-16: "force re-pin")."""
+    chosen = pinned_identity(lay) if rows else None
+    if not chosen:
         return None
-    chosen = pinned_identity(lay)
-    if chosen:
-        hits = [r for r in rows if r[1].id == chosen]
-    elif eff is not None and eff.pinned and eff.email.scope == "pin" and eff.email.value:
-        hits = [r for r in rows if r[1].email.casefold() == eff.email.value.casefold()]
-    else:
-        return None
-    if not hits or len({r[1].id for r in hits}) > 1:
+    hits = [r for r in rows if r[1].id == chosen]
+    if not hits:
         return None
     name, i, m = hits[0]
     return name, _expected_of(cfg, i, m, f"pinned to {i.id}, the identity of {name}")
 
 
-def _ambiguous(rows: List[Row], applied: Expected, top: Path, push: Optional[str]) -> Problem:
+def _ambiguous(rows: List[Row], applied: Expected, top: Path, push: Optional[str],
+               old_pin: bool = False) -> Problem:
     shown = ", ".join(f"{name} → {i.id}" for name, i, _ in rows)
     msg = (f"the remotes belong to different identities ({shown}); git applies {applied.id} to all of them "
            "because its include comes later")
+    if old_pin:
+        msg += "; this repo's pin is from gitpro 0.3 and does not say which remote, so pin it again"
     if push is not None:
         return _p("ambiguous", msg, ["gitpro", "pin", "-y", "--remote", push, str(top)])
     names = "|".join(dict.fromkeys(name for name, _, _ in rows))
@@ -825,12 +823,13 @@ def compare(repo: Path, cfg: Config, *, remote: Optional[str] = None,
 
     if remote is None and remote_url is None:   # pre-push judges its destination instead
         rows = conflicting(cfg, urls)
-        settled = _settled(cfg, rows, lay, eff)
+        settled = _settled(cfg, rows, lay)
         if settled:
             exp = settled[1]
             repin = ["gitpro", "pin", "-y", "--remote", settled[0], str(top)]
         elif rows:
-            out.append(_ambiguous(rows, exp, top, push_remote(top, [n for n, _, _ in rows], git_env)))
+            out.append(_ambiguous(rows, exp, top, push_remote(top, [n for n, _, _ in rows], git_env),
+                                  old_pin=eff.pinned and pinned_identity(lay) is None))
     who = _who(exp)
 
     if exp.email is None:

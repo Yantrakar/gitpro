@@ -42,7 +42,8 @@ earlier versions are on [GitHub releases](https://github.com/Yantrakar/gitpro/re
   config does not change. Pin the remote your work goes to with
   `gitpro pin --remote NAME`, set `[guard] on_mismatch = "warn"` for a warning
   instead, or skip once with `GITPRO_SKIP=1`. `why` and `scan` report such a
-  repo as `ambiguous`.
+  repo as `ambiguous`. A pin made with 0.3 does not settle such a repo, since
+  0.3 pinned the identity git applied; pin it again with `--remote`.
 - The terminal, VS Code and MCP share one command surface. `gitpro --help`
   lists `setup`, `why`, `scan`, `pin`, `clone`, `audit`, `env` and `uninstall`,
   then a "more" group.
