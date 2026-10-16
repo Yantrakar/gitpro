@@ -32,6 +32,21 @@ everything it will set up: the config, the missing SSH keys, the Git and SSH
 files, the commit guard and, when Claude Code is installed, its hook and MCP
 server. One yes applies all of it. Setup never changes your repos.
 
+```mermaid
+flowchart LR
+  S["gitpro setup"] --> HC{"Config<br/>exists?"}
+  HC -->|no| L["Offer to look through your repos:<br/>remotes, reflog, SSH config,<br/>includeIf, editor recents"]
+  L --> Q["Propose identities;<br/>you accept or edit"]
+  Q --> I
+  HC -->|yes| I["Inspect: config, Git and SSH files,<br/>keys, guard, agent hook, MCP"]
+  I -->|all current| OK["Nothing to do"]
+  I -->|something to do| PV["One preview,<br/>each part with its undo"]
+  PV --> ASK{"Apply<br/>all?"}
+  ASK -->|no| NONE["Nothing written"]
+  ASK -->|yes| AP["Write it, print the<br/>public keys to register"]
+  AP --> NX["Next: gitpro scan"]
+```
+
 Then:
 
 ```sh
