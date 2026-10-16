@@ -2,7 +2,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import * as vscode from "vscode";
-import { Capabilities, LiveCapabilities, loadCapabilities, unpinCall } from "./capabilities";
+import { Capabilities, LiveCapabilities, loadCapabilities, setupCall, unpinCall } from "./capabilities";
 import { Cli, exec, killAll, makeCli, ui } from "./cli";
 import { registerFeatures } from "./features";
 import type { RootsSeam } from "./roots";
@@ -83,8 +83,9 @@ function registerCore(context: vscode.ExtensionContext, cli: Cli): void {
     // `gitpro setup` asks questions (scan, review, confirm), so it runs in a terminal, on the config
     // this window uses.
     const file = configFile();
-    cli.log.info(`$ ${cli.executable()} setup -c ${file}    (in a terminal)`);
-    vscode.window.createTerminal({ name: "gitpro setup", shellPath: cli.executable(), shellArgs: ["setup", "-c", file],
+    const argv = setupCall(cli.caps, file);
+    cli.log.info(`$ ${cli.executable()} ${argv.join(" ")}    (in a terminal)`);
+    vscode.window.createTerminal({ name: "gitpro setup", shellPath: cli.executable(), shellArgs: argv,
       cwd: cli.dir() || os.homedir() }).show();
   }
 

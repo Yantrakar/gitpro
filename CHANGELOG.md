@@ -21,14 +21,16 @@ earlier versions are on [GitHub releases](https://github.com/Yantrakar/gitpro/re
   would block a commit. `why --remote` picks a remote. The JSON gains
   `settings` and `commit`.
 - `gitpro scan --lost` checks for work that is only on this machine, offline.
-  The JSON gains `lost`.
+  The JSON gains `lost`. It exits 1 when it finds lost work, as `lost` did.
 - `gitpro pin --remove` and `gitpro audit --fix`.
 - MCP: `why` takes `remote`, `author_email`, `committer_email` and `message`.
   New `setup`, `env` and `report` tools. `scan` takes `lost`.
 - The capabilities `why.commit`, `scan.lost`, `pin.remove`, `audit.fix`,
   `setup.dry-run`, `setup.learn` and `deprecations.v1`.
-- `-y`, `--json`, `-v`, a `PATH` and `-c PATH` mean the same in every command.
-  `-n` is on `setup`.
+- `-y`, `--json`, `-v`, a `PATH` and `-c PATH` mean the same in every command
+  that has them. `-n` (`--dry-run`) is on `setup`, `pin`, `scan` and `audit`;
+  on `pin`, `scan --fix` and `audit --fix` it shows the same preview as
+  without `-y`, with the same exit code. `-n -y` is refused.
 
 ### Changed
 
@@ -67,6 +69,16 @@ earlier versions are on [GitHub releases](https://github.com/Yantrakar/gitpro/re
   the 0.3 commands as the fallback.
 - The user guide, the agent guide, the skill and the website follow the new
   surface.
+
+### Fixed
+
+- `gitpro scan --fix` in a repo with linked worktrees removed a setting once
+  per worktree and failed on the second; it now removes each setting once.
+- Creating an SSH key (`setup`, `keys --generate`) no longer replaces a `.pub`
+  or a symlink already at the key's path; it says so and creates no key.
+- The undo script for a settings file gitpro created removes the file only if
+  it still holds what gitpro wrote. The Gemini hook and MCP server share
+  `~/.gemini/settings.json`, and undoing the first removed the second.
 
 ### Deprecated
 

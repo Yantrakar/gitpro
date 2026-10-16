@@ -291,7 +291,10 @@ The same flags mean the same thing in every command:
 On a terminal, a command that changes something shows the change and asks
 once. In 0.4.0 this is how `setup` works. `pin`, `scan --fix` and
 `audit --fix` keep their 0.3 behavior in 0.4.x: without `-y` they show a
-preview.
+preview. `-n` (`--dry-run`) asks for that preview by name: it shows the same
+thing, changes nothing and exits as the command would without `-y`.
+`-n -y` is refused. `scan --fix --json` writes without `-y`, as in 0.3;
+`scan --fix --json -n` gives the preview as JSON, with `"dry_run": true`.
 
 The terminal, the VS Code extension and the MCP server use the same commands,
 options and JSON fields. The extension runs the command and asks its yes in a
@@ -318,12 +321,14 @@ Finding identities needs a terminal. Without one, setup exits 2.
 **Finding identities from your repos.** Your repos already know who you are.
 
 1. *Where.* With `PATH` arguments, setup looks there. Without them it asks
-   `Look through your repos to find your identities? [Y/n]`, then `Where [~]`.
+   `Look through your repos to find your identities? [y/n] (y)`, then
+   `Where (folders, separated by spaces) (~)`.
    Give space-separated folders; `~` expands. Answering no skips the search.
 2. *What it reads.* Everything is local and read-only:
    - every repo under those folders. Hidden directories, `node_modules` and
-     the usual caches are skipped; it goes 6 levels deep and stops after 20
-     seconds;
+     the usual caches are skipped. It goes to any depth under those folders,
+     stops looking after 20 seconds, then reads what it found for up to 20
+     seconds more;
    - for each repo, the host and owner of its remote, and the name and email
      it uses. In this order: set in the repo; set by an `includeIf` file; the
      identity of the commits made in it on this machine;
@@ -374,7 +379,7 @@ Found 3 identities in 52 repos under ~:
 
   not assigned: github.com/someone (1 repo, no commits)
 
-Use these? [Y/n/e]  (e: go through them one by one)
+Use these? (e: go through them one by one) [y/n/e] (y)
 ```
 
 - `y` keeps all of them. For each one without a key, setup asks the key
@@ -383,7 +388,7 @@ Use these? [Y/n/e]  (e: go through them one by one)
   with the found values as defaults), or skip.
 - `n` drops them and asks for identities by hand.
 
-Then setup offers a fallback identity (`[default]`): `Set a fallback identity? [Y/n]`.
+Then setup offers a fallback identity (`[default]`): `Set a fallback identity? [y/n] (n)`.
 It defaults to your global `user.name` and `user.email`. If nothing was found
 (no repos, or none with a remote), setup goes straight to the questions.
 
@@ -393,13 +398,13 @@ still needs, grouped:
 | group | what setup does | undo |
 |---|---|---|
 | config | saves the TOML (an existing file is backed up first) | the backup it names |
-| SSH key | creates each missing key with `ssh-keygen -t ed25519`; it asks for a passphrase (`--no-passphrase` skips it) | delete the new key |
+| SSH key | creates each missing key with `ssh-keygen -t ed25519`; it asks for a passphrase (`--no-passphrase` skips it). Where a `.pub` or a symlink is already at the key's path, it creates no key and says so | delete the new key |
 | Git and SSH files | writes the Git and SSH files for your identities | the `setup-undo-*.sh` it prints |
 | guard | installs the commit guard (see [guard](#guard-stop-a-wrong-identity-commit)); `[guard] hooks = false` keeps it off | the same script, or `gitpro guard uninstall` |
 | agents | when Claude Code is installed: the agent hook and the MCP server (skipped when the gitpro plugin is enabled) | the `agent-undo-*.sh` and `mcp-undo-*.sh` it prints |
 
 It also lists what is "Already in place" and any warnings, then asks
-`Apply these changes? [y/N]`. `-y` answers yes. Ctrl-C, or no, writes nothing.
+`Apply these changes? [y/n] (n)`. `-y` answers yes. Ctrl-C, or no, writes nothing.
 Setup never edits a repo. It ends with the public keys to register with each
 account, and `gitpro scan`, which lists the repos that need a fix.
 `--agent NAME` sets up another agent (repeatable); `--agent none` sets up none.
@@ -432,7 +437,7 @@ With `--json`:
 ```
 
 `ok` is false when `pending` is not empty. With no config, `setup -n` exits 1
-and `pending` holds `{"group": "config", "what": "no config yet: run gitpro setup in a terminal"}`.
+and `pending` holds `{"group": "config", "what": "no identities in ~/.config/gitpro.toml yet: run gitpro setup in a terminal"}`.
 
 **Without a terminal.**
 
@@ -457,8 +462,8 @@ For a commented template instead of the questions, see
   identities, `pin` lists the remotes and asks which to follow; without a
   terminal it exits with an error that names `--remote`. `pin --remote R`
   pins the identity that remote R's URL matches. `pin --remove [PATH]` removes
-  the pin. `--remove` with `--remote` is refused. In 0.4.x the JSON of
-  `pin --remove` still says `"command": "unpin"`, for the VS Code extension.
+  the pin. `--remove` with `--remote` is refused. `-n` shows what `pin`
+  would write and changes nothing, as without `-y`; `-n -y` is refused.
 - **`clone URL [DIR]`**: see [clone](#clone-the-right-identity-from-the-first-commit).
 - **`audit [PATH]`**: see [audit](#audit-commits-made-as-the-wrong-identity-or-by-an-agent).
   `audit --fix` rewrites the unpushed commits (it was `audit --rewrite`).
@@ -810,7 +815,8 @@ gone, stashes, dirty trees, repos with no remote, diverged duplicate clones
 and (with `-v`) stale and empty repos. They are shown after scan's sections.
 With `--json`, scan has a `lost` object. It never deletes anything and never
 prints a command that would. `--lost` with `--fix` is refused (exit 2): lost
-work needs a person. The deprecated `gitpro lost` also has `--online`, which
+work needs a person. With `--lost`, scan exits 1 when it finds lost work, as
+`gitpro lost` did. The deprecated `gitpro lost` also has `--online`, which
 asks GitHub/GitLab via `gh`/`glab` whether each remote still exists, and
 `--only`, `--repo` and `--stale-days`.
 
@@ -984,7 +990,9 @@ installing the gitpro plugin. `gitpro mcp uninstall` (hidden) removes the
 registration. Project-level `.mcp.json` is a team file: gitpro prints what to
 add and does not edit it unasked.
 
-Deprecated tools stay in the tool list in 0.4.x and are removed in 0.5.0; see
+Deprecated tools stay in the tool list in 0.4.x and are removed in 0.5.0
+(`apply_change`, `recover_change` and `run_operation` are listed only with
+`--allow-execution`, as before); see
 [Deprecated in 0.4.0, removed in 0.5.0](#deprecated-in-040-removed-in-050) for
 each tool and its replacement.
 
@@ -1562,7 +1570,9 @@ planned because nothing used it. The documentation of the protocol is kept in
   `"deprecated": {"removed_in": "0.5.0", "use": "gitpro setup -y"}`; `use` is
   `null` when nothing replaces it.
 - `GITPRO_NO_DEPRECATION=1` turns off both the line and the field.
-- A deprecated MCP tool stays in the tool list. Its description starts with
+- A deprecated MCP tool stays in the tool list (`apply_change`,
+  `recover_change` and `run_operation` only with `--allow-execution`, as
+  before). Its description starts with
   `Deprecated, removed in 0.5.0; use <tool>.` and its result has the
   `deprecated` field.
 - `gitpro --version --json` lists the capability `deprecations.v1`, so a

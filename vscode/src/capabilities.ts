@@ -87,3 +87,9 @@ export function unpinCall(caps: Pick<Capabilities, "has">, dir: string): string[
   return caps.has("pin.remove") ? ["pin", "--remove", "-y", dir]
     : ["unpin", ...(caps.has("dry-run-defaults.v1") ? ["-y"] : []), dir];
 }
+
+/** The Set Up terminal: `setup -c FILE`; a 0.3 CLI (dry-run defaults, no deprecations) needs `--write` to save. */
+export function setupCall(caps: Pick<Capabilities, "has">, file: string): string[] {
+  const write = caps.has("dry-run-defaults.v1") && !caps.has("deprecations.v1");
+  return ["setup", ...(write ? ["--write"] : []), "-c", file];
+}

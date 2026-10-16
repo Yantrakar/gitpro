@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Set, Tuple
 
 from . import config, jsonout, resolve, trailers, undo
-from .args import capability
+from .args import capability, dry_run, preview_only
 from .config import Config, ConfigError
 
 PROG = "gitpro"
@@ -719,7 +719,8 @@ def cmd_audit(args) -> int:
     args.rewrite = args.rewrite or getattr(args, "rewrite_flag", False)
     if args.rewrite and getattr(args, "agents", False):
         raise ConfigError("--rewrite needs the author audit; drop --agents")
-    if args.rewrite and as_json and not args.yes:
+    show_only = bool(args.rewrite and args.dry_run and preview_only(args))
+    if args.rewrite and as_json and not args.yes and not show_only:
         raise ConfigError("--json needs -y with --rewrite (there is no terminal to confirm on)")
     home = Path(args.home).expanduser().resolve()
     path, how = config.find(args.config, home)
@@ -748,6 +749,12 @@ def cmd_audit(args) -> int:
         print()
         print("\n".join(_preview(data, exp)))
     n = data["rewrite"]["commits"]
+    if show_only:
+        if as_json:
+            jsonout.emit("audit", dict(_public(data), dry_run=True))
+        else:
+            print(f"Dry run: nothing written. Rewrite the {n} unpushed commit{'s' * (n != 1)} with -y.")
+        return 0 if data["ok"] else 1
     if not _confirm(f"rewrite {n} unpushed commit{'s' * (n != 1)}?", args.yes):
         print("✗ aborted, nothing written")
         return 1
@@ -797,6 +804,7 @@ def register(sub, common, confirm) -> None:
     sp.add_argument("--fix", dest="rewrite", action="store_true",
                     help="fix the unpushed wrong-author commits (asks first; writes an undo script)")
     sp.add_argument("--rewrite", dest="rewrite_flag", action="store_true", help=argparse.SUPPRESS)  # 0.4: --fix
+    dry_run(sp)
     sp.add_argument("--json", action="store_true", help="machine-readable output")
     sp.add_argument("-v", "--verbose", action="store_true", help="list every commit, not the first ten")
     sp.set_defaults(func=cmd_audit)

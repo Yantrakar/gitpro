@@ -322,7 +322,7 @@ export function registerDevcontainer(context: vscode.ExtensionContext, cli: Cli)
     await vs.window.showTextDocument(vs.Uri.file(file0));
     const merged = p.merged ? ` Note: ${MERGED}.` : "";
     void ui.info(`Written: the next container start runs gitpro pin on the host.${merged} `
-      + (tracked ? "Undo: git checkout -- the file, or Ctrl+Z in the editor." : "Undo: Ctrl+Z in the editor."));
+      + (tracked ? "Undo: git checkout -- the file." : "Undo: remove the initializeCommand key."));
     return "written";
   }
 

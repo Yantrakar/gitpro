@@ -74,7 +74,8 @@ Deprecated in 0.4.0, removed in 0.5.0: `which_identity`, `check_commit`,
 above). Also deprecated, with no replacement because nothing used them:
 `preflight`, `operation_status`, `reconcile_operation`, `propose_change`,
 `change_status`, `apply_change`, `recover_change` and `run_operation`. A
-deprecated tool stays in the tool list; its description starts with
+deprecated tool stays in the tool list (`apply_change`, `recover_change` and
+`run_operation` only with `--allow-execution`, as before); its description starts with
 `Deprecated, removed in 0.5.0; use <tool>.` and its result has a `deprecated`
 field. See the [user guide](guide.md#deprecated-in-040-removed-in-050).
 

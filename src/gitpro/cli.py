@@ -35,7 +35,7 @@ from pathlib import Path
 from typing import Dict, Iterator, Optional, Tuple
 
 from . import __version__, config, deprecation, jsonout
-from .args import CAPABILITIES, capability, common, confirm, fail, guarded, preview_only, preview_result
+from .args import CAPABILITIES, capability, common, confirm, dry_run, fail, guarded, preview_only, preview_result
 
 PROG = "gitpro"
 MIN_GIT = (2, 36)
@@ -158,6 +158,7 @@ def build_parser() -> Tuple[argparse.ArgumentParser, Subs]:
     s.add_argument("--lost", action="store_true",
                    help="also list work that is only on this machine: unpushed branches, stashes, dirty trees, "
                         "repos without a remote, stale and empty repos (offline)")
+    dry_run(s)
     s.set_defaults(func=cmd_scan)
     sp = sub.add_parser("pin", parents=[com, conf],
                         help="choose a repo's identity: --remote R, --remove (preview; -y writes it)")
@@ -166,6 +167,7 @@ def build_parser() -> Tuple[argparse.ArgumentParser, Subs]:
                     help="pin the identity of this remote, with its SSH key and signing (for a repo whose "
                          "remotes belong to different identities)")
     sp.add_argument("--remove", action="store_true", help="remove the pin (preview; -y removes it)")
+    dry_run(sp)
     sp.set_defaults(func=cmd_pin)
     sp = sub.add_parser("unpin", parents=[conf], help="preview removing the pin (-y removes it)")
     sp.add_argument("dir", nargs="?", default=".", help="repo directory (default: .)")
@@ -260,7 +262,7 @@ def _deprecate(parser, old: str, use: Optional[str], when=None) -> None:
             else:
                 deprecation.warn(f"gitpro {old}", use)
         try:
-            return func(args)
+            return guarded(func, args)          # an error's JSON object carries the field too
         finally:
             jsonout.EXTRA.pop("deprecated", None)   # in-process callers (MCP) run several commands
     parser.set_defaults(func=run)
@@ -504,6 +506,10 @@ def cmd_scan(args) -> int:
     if args.lost and args.fix:
         raise config.ConfigError("--lost lists work only you can sort out, so it does not go with --fix; "
                                  "run gitpro scan --lost without --fix")
+    # -n shows the fix and changes nothing; --json without -y still writes (00-existing, known issue 2)
+    preview = bool(args.fix and args.dry_run and preview_only(args))
+    if preview:
+        args.fix = False
     ask = args.fix and not args.yes and not args.json
     if ask and not sys.stdin.isatty():
         raise config.ConfigError("no terminal to confirm on; re-run with --yes")
@@ -524,7 +530,8 @@ def cmd_scan(args) -> int:
     rep.update(scan.checks(repos, cfg))
     rep.update(exclude=list(exclude), skipped_excluded=len(excluded),
                roots_source=getattr(args, "roots_source", "args" if args.repo or args.dirs else "default"))
-    fixable = [r for r in repos if any(k in r.beneath for k in r.local)]
+    pairs = scan.fixes(repos)
+    fixable = list({id(r): r for r, _ in pairs}.values())
     lost_rep = _lost(roots, exclude, cfg, paths, rep["roots_source"]) if args.lost else None
     if lost_rep is not None:
         rep["lost"] = {k: v for k, v in lost_rep.items() if k not in ("ok", "command")}
@@ -541,9 +548,10 @@ def cmd_scan(args) -> int:
                 return 1
             return _fix(args, [r for r in fixable if str(r.path) in chosen], home)
 
+    lost_found = int(lost_rep is not None and not lost_rep["ok"])   # 1, as `lost` exits
     if args.json and not args.fix:
-        jsonout.emit("scan", rep)
-        return 0
+        jsonout.emit("scan", dict(rep, dry_run=True) if preview else rep)
+        return lost_found
     if not args.json:
         where = "".join(f" --repo {_sh(show(p))}" for p in roots) if args.repo else \
             "".join(f" {_sh(show(d))}" for d in roots if args.dirs)
@@ -561,14 +569,14 @@ def cmd_scan(args) -> int:
             print()
             view.step(args.roots_hint)
     if not args.fix:
-        return 0
+        return lost_found
     if not fixable:
         if args.json:
             jsonout.emit("scan", {"removed": [], "undo": None})
         else:
             print("\n✓ nothing to fix")
         return 0
-    n = sum(k in r.beneath for r in fixable for k in r.local)
+    n = len(pairs)
     if ask:
         print()
         if not _confirm(f"Remove {view.plural(n, 'setting')} from {view.plural(len(fixable), 'repo')}?", False):

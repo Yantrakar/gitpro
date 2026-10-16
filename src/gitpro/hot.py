@@ -23,7 +23,8 @@ CALLER_UMASK: Optional[int] = None    # the umask gitpro was started with (set b
 def main(argv: Optional[List[str]] = None) -> int:
     global CALLER_UMASK
     argv = sys.argv[1:] if argv is None else list(argv)
-    if argv and argv[0] in HOT and os.name == "posix" and os.geteuid() != 0:
+    # `guard install` is typed, not hot: cli.py gives it its deprecation notice (spec 22 §10.3)
+    if argv and argv[0] in HOT and argv[:2] != ["guard", "install"] and os.name == "posix" and os.geteuid() != 0:
         name = HOT[argv[0]]
         try:
             mod = importlib.import_module(name)

@@ -1,8 +1,8 @@
 import * as assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Result } from "../cli";
-import { LiveCapabilities, loadCapabilities, lostBody, lostCall, missing, parseCapabilities, settingsCall, unpinCall,
-  UPDATE } from "../capabilities";
+import { LiveCapabilities, loadCapabilities, lostBody, lostCall, missing, parseCapabilities, settingsCall, setupCall,
+  unpinCall, UPDATE } from "../capabilities";
 
 test("parseCapabilities reads --version --json; an old CLI's text is null", () => {
   const c = parseCapabilities('{"version":"0.2.0","capabilities":["why","lost"]}');
@@ -73,4 +73,10 @@ test("unpinCall: pin --remove -y with pin.remove, else unpin (-y with dry-run-de
   assert.deepEqual(unpinCall(has("pin.remove", "dry-run-defaults.v1"), "/r"), ["pin", "--remove", "-y", "/r"]);
   assert.deepEqual(unpinCall(has("dry-run-defaults.v1"), "/r"), ["unpin", "-y", "/r"]);
   assert.deepEqual(unpinCall(has(), "/r"), ["unpin", "/r"]);
+});
+
+test("setupCall: --write only for a 0.3 CLI (dry-run defaults, no deprecations)", () => {
+  assert.deepEqual(setupCall(has("dry-run-defaults.v1", "deprecations.v1"), "/c.toml"), ["setup", "-c", "/c.toml"]);
+  assert.deepEqual(setupCall(has("dry-run-defaults.v1"), "/c.toml"), ["setup", "--write", "-c", "/c.toml"]);
+  assert.deepEqual(setupCall(has(), "/c.toml"), ["setup", "-c", "/c.toml"]);
 });

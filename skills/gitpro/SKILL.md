@@ -265,7 +265,9 @@ Its tools have the commands' names and return the same JSON as the matching
 - `report`: a redacted bug report draft.
 
 Deprecated tools stay in the list in 0.4.x, with a description that starts
-`Deprecated, removed in 0.5.0; use <tool>.`, and are removed in 0.5.0:
+`Deprecated, removed in 0.5.0; use <tool>.`, and are removed in 0.5.0
+(`apply_change`, `recover_change` and `run_operation` are listed only when the
+server runs with `--allow-execution`, as before):
 
 | deprecated tool | use |
 |---|---|

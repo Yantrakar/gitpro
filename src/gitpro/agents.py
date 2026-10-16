@@ -1814,7 +1814,7 @@ def _edit(args: argparse.Namespace, removing: bool) -> int:
         view.step("added .claude/settings.local.json to .git/info/exclude so it is not committed")
     view.ok(f"removed the gitpro hook from {shown}" if removing else
             f"installed; {title} picks it up on its next session")
-    restores = f"restores from {undo.tilde(res.backup)}" if res.backup else f"removes {shown}"
+    restores = f"restores from {undo.tilde(res.backup)}" if res.backup else f"removes {shown} unless it changed since"
     print(f"↩ undo: sh {undo.tilde(res.undo)}   ({restores})")
     return 0
 

@@ -150,7 +150,7 @@ function plain(text: string): string {
 }
 
 export function containerFix(repo: string): string {
-  return `on the host, run: gitpro pin ${repo} — or set it up once: gitpro devcontainer`;
+  return `on the host, run: gitpro pin ${repo} — or set it up once: the command "gitpro: Set up devcontainer pin"`;
 }
 
 export function tooltipFrom(json: WhyJson, opts: TooltipOptions = {}): string {

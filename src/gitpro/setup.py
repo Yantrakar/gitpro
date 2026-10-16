@@ -409,7 +409,15 @@ def inspect(cfg: config.Config, env, names: List[str]) -> Work:
     """What the files, the guard and the agents still need; reads only."""
     from . import agents, keys, mcp, plan
     w = Work()
-    w.keys = [k for k in keys.inventory(cfg.default, list(cfg.identities)) if k.path and not env.expand(k.path).exists()]
+    for k in keys.inventory(cfg.default, list(cfg.identities)):
+        p = env.expand(k.path) if k.path else None
+        if p is None or p.exists():
+            continue
+        if p.is_symlink() or keys.pub_path(p).exists():   # an agent-held key, or a dangling link: not ours
+            w.notes.append(f"{k.path}: no private key, but {'a symlink' if p.is_symlink() else 'a .pub'} is there; "
+                           "setup does not create a key over it")
+        else:
+            w.keys.append(k)
     w.guard, why = _guard(cfg, env)
     if why:
         w.notes.append(why)

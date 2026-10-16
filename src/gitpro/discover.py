@@ -1104,8 +1104,11 @@ def collect(sources, *, history: bool = False, online: bool = False, home: Optio
             walk = [str(home)]
             exclude += HOME_SKIP
             ctx.note(f"repos: no roots found; looked under ~ (depth {MAX_DEPTH})")
-        found = scan.find([Path(r) for r in walk], exclude=exclude, max_depth=depth)
+        deadline = time.monotonic() + budget     # for the walk, then again for reading what it found
+        found = scan.find([Path(r) for r in walk], exclude=exclude, max_depth=depth, deadline=deadline)
         srcs["repos"] = {"roots": walk, "count": len(found)}
+        if time.monotonic() > deadline:
+            ctx.warn(f"repos: stopped looking after {budget:g} s; reading the {len(found)} found by then")
         deadline = time.monotonic() + budget
         for n, p in enumerate(found):
             if time.monotonic() > deadline:

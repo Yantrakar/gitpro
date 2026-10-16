@@ -66,9 +66,9 @@ while writing the spec, which the owner has not confirmed. The 0.5.0 rows marked
 | Commit identity from the reflog | The commit identity of a repo comes from the `commit*` lines in the last 1 MiB of `logs/HEAD`. | Owner | The reflog records who actually committed. |
 | Grouping | Identities are grouped by host, then owner. The most-used email is kept and the others show as "also seen". An owner with no email joins the host's identity if the host has exactly one, otherwise it is "not assigned". | Claude | Keeps the proposal short without guessing between emails. |
 | `lost` folded in | `lost` becomes `scan --lost`. `--lost` with `--fix` is refused. | Owner | Lost work is a check on the repos `scan` already walks. |
-| `unpin` folded in | `unpin` becomes `pin --remove`. `--remove` with `--remote` is refused. JSON `command` stays `unpin` in 0.4.x. | Owner (merge), Claude (the refusal and the JSON detail) | One command for the pin and its undo. |
+| `unpin` folded in | `unpin` becomes `pin --remove`. `--remove` with `--remote` is refused. | Owner (merge), Claude (the refusal) | One command for the pin and its undo. |
 | `audit --rewrite` | `audit --rewrite` becomes `audit --fix`. | Owner | Every check uses `--fix` for its fix (R5). |
-| Consent in 0.4.x | `setup` follows R4. `pin`, `scan --fix` and `audit --fix` keep their 0.3 behavior in 0.4.x (a preview without `-y`) and also accept `-n`. | Claude | Changing the consent of existing writers is a separate decision. |
+| Consent in 0.4.x | `setup` follows R4. `pin`, `scan --fix` and `audit --fix` keep their 0.3 behavior in 0.4.x (a preview without `-y`) and also accept `-n`, which shows the same preview with the same exit code (`-n -y` is refused). `scan --fix --json` still writes without `-y` (00-existing, known issue 2). | Claude | Changing the consent of existing writers is a separate decision. |
 | Operation protocol | The agent operation protocol (preflight, run, change workflows) is deprecated. | Owner | Nothing used it. |
 | Deprecate, then remove | Deprecated commands and MCP tools work in 0.4.0 with a warning, and are removed in 0.5.0. `GITPRO_NO_DEPRECATION=1` turns the warning off. | Owner | Gives users one release to move. |
 | Team `check` stays | Only `check` without `--policy`, `--repo` or `--range` (the file drift check) is deprecated, for `setup -n`. The team policy check stays and is listed under "more". | Claude (open) | It is a feature CI runs, not a duplicate, and nothing replaces it. The owner may fold it elsewhere in 0.5.0. |
@@ -83,6 +83,5 @@ while writing the spec, which the owner has not confirmed. The 0.5.0 rows marked
 - 0.5.0 aliases and tombstones (spec 22 §10.4).
 - `keys`, `auth`, `forge`, `team`, `policy`: fold into `setup -n --online`
   and `why`, or keep. Needs usage data.
-- Whether `pin`, `scan --fix` and `audit --fix` should take `-n` too.
 - VS Code Open Config still offers `init` when there is no config.
 - The devcontainer write keeps no backup.

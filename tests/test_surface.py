@@ -180,13 +180,13 @@ def test_scan_lost_matches_lost(cfg, tmp_path, capsys):
     cfg()
     solo = repo_with_remote(tmp_path / "w", "solo", None, commits=1, author=JANE)
     capsys.readouterr()
-    assert run("scan", "--lost", "--json", str(tmp_path / "w")) == 0
+    assert run("scan", "--lost", "--json", str(tmp_path / "w")) == 1      # as lost: 1 when it finds some
     got = out_json(capsys)["lost"]
     assert run("lost", "--json", "--offline", str(tmp_path / "w")) == 1
     want = out_json(capsys)
     assert [e["repo"] for e in got["no_remote"]] == [str(solo.resolve())] == [e["repo"] for e in want["no_remote"]]
     assert "ok" not in got and "command" not in got
-    assert run("scan", "--lost", str(tmp_path / "w")) == 0
+    assert run("scan", "--lost", str(tmp_path / "w")) == 1
     assert "solo" in capsys.readouterr().out
 
 

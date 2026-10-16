@@ -20,8 +20,9 @@ Set `gitpro.path` if it is not on `PATH`.
 Run **gitpro: Set Up** from the Command Palette. It opens `gitpro setup` in
 a terminal and asks its questions there: it can scan your repos, shows what it
 found, and writes the identities after you confirm. It is the one step that
-sets up a machine; run it again any time. **Open Config** offers **Set Up**
-when no config exists. With an older CLI, unsupported setup shows update
+sets up a machine; run it again any time. When no config exists, **Open
+Config** offers **Set Up**, **Create with Discovery** (`gitpro init --discover`,
+in a terminal) and **Create from Example** (`gitpro init`). With an older CLI, unsupported setup shows update
 instructions rather than trying to run an unknown command.
 
 ## Status bar
@@ -121,7 +122,7 @@ outside the scan roots" and offers **Add Them for This Session**.
 ## Lost Work
 
 The Lost Work view lists work that exists only on this machine, from
-`gitpro lost --json --offline`: unpushed branches, branches whose upstream is
+`gitpro scan --lost --json` (`gitpro lost --json --offline` with gitpro 0.3): unpushed branches, branches whose upstream is
 gone, stashes, dirty trees, repos with no remote and diverged duplicate
 clones, grouped by kind and repo. It never goes online, whatever
 `[forge] online` says, and never pushes or deletes anything.
@@ -158,13 +159,13 @@ initializeCommand so the container keeps your identity", with **Show** and
 **Don't ask again**.
 
 **Show** (or the command **Set up devcontainer pin**) shows the
-`initializeCommand` entry and offers **Write** or **Copy**. `devcontainer.json` is usually committed and shared with your team,
-so **Write** asks again and explains that teammates need gitpro on their host
+`initializeCommand` entry and offers **Write** or **Copy**. `devcontainer.json` is usually committed and shared with your team:
+when git tracks it, **Write** asks again and explains that teammates need gitpro on their host
 for the entry to do anything. If the file has comments (JSONC), writing
 would lose them, so only **Copy** is offered. **Write** adds just the
 `initializeCommand` key (or merges your existing command next to it) and
-leaves the rest of the file as it was; undo it with Ctrl+Z in the editor or
-`git checkout`.
+leaves the rest of the file as it was. To undo it, run `git checkout` on the
+file, or remove the `initializeCommand` key.
 
 ## Which gitpro is installed
 

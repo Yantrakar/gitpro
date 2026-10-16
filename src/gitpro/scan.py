@@ -12,6 +12,8 @@ import json
 import os
 import re
 import shlex
+import stat
+import time
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -38,6 +40,7 @@ class Repo:
     beneath: dict[str, str]                # key -> value git would resolve without those
     urls: dict[str, str] = field(default_factory=dict)   # remote.<name>.url -> URL
     hooks_path: str = ""                   # the repo's own core.hooksPath ("" when it has none)
+    local_file: str = ""                   # the file `local` comes from; the worktrees of a repo share it
 
     def source(self, key: str = "user.email") -> str:
         """Where the value git uses comes from: 'repo', 'pin', a file path, or '' when unset."""
@@ -84,7 +87,11 @@ def commit_identity(repo: Path) -> Optional[tuple]:
     if gd is None:
         return None
     try:
-        with open(gd / "logs" / "HEAD", "rb") as f:
+        # an untrusted checkout may hold a FIFO or a symlink here: never block, never follow
+        fd = os.open(gd / "logs" / "HEAD", os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        with os.fdopen(fd, "rb") as f:
+            if not stat.S_ISREG(os.fstat(f.fileno()).st_mode):
+                return None
             f.seek(0, os.SEEK_END)
             size = f.tell()
             f.seek(max(0, size - REFLOG_TAIL))
@@ -106,13 +113,15 @@ def commit_identity(repo: Path) -> Optional[tuple]:
     return best[0] if best else None
 
 
-def find(roots, *, exclude=(), max_depth: int | None = None, excluded: set | None = None) -> list[Path]:
+def find(roots, *, exclude=(), max_depth: int | None = None, excluded: set | None = None,
+         deadline: float | None = None) -> list[Path]:
     """Every directory holding a .git (repo, worktree or submodule), nested ones included.
 
     Hidden directories and node_modules are always skipped. exclude: patterns as in [scan] exclude
     (see excluded_by); a directory one matches is not entered, and is added to `excluded` when given.
     A root that is itself excluded is skipped. max_depth: how many levels below each root to look
-    (None: no limit)."""
+    (None: no limit). deadline: a time.monotonic() value after which the walk stops and returns what
+    it found so far."""
     pats = _patterns(exclude)
     found = set()
     for root in roots:
@@ -121,6 +130,8 @@ def find(roots, *, exclude=(), max_depth: int | None = None, excluded: set | Non
             continue
         base = len(root.parts)
         for dirpath, dirnames, filenames in os.walk(root):
+            if deadline is not None and time.monotonic() > deadline:
+                return sorted(found)
             if ".git" in dirnames or ".git" in filenames:
                 found.add(Path(dirpath))
             if max_depth is not None and len(Path(dirpath).parts) - base >= max_depth:
@@ -220,8 +231,22 @@ def inspect(path: Path) -> Repo:
         now[key] = (value, origin)
         if origin not in own_origins:
             beneath[key] = value
+    local_file = next((o for o in own_origins if o.startswith("file:")), "")[len("file:"):]
     return Repo(path, urls.get("remote.origin.url") or next(iter(urls.values()), ""), now,
-                {key: value for _, key, value in own}, beneath, urls, hooks_path)
+                {key: value for _, key, value in own}, beneath, urls, hooks_path,
+                os.path.normpath(os.path.join(r, local_file)) if local_file else "")
+
+
+def fixes(repos: list[Repo]) -> list[tuple[Repo, str]]:
+    """(repo, key) for every override something else can replace, once per config file: a repo and its
+    worktrees share one, and removing a key twice fails."""
+    seen, out = set(), []
+    for r in repos:
+        for k in r.local:
+            if k in r.beneath and (r.local_file or str(r.path), k) not in seen:
+                seen.add((r.local_file or str(r.path), k))
+                out.append((r, k))
+    return out
 
 
 def checks(repos: list[Repo], cfg) -> dict:
@@ -395,6 +420,7 @@ def report(roots: list[Path], repos: list[Repo], failed: list[tuple[Path, str, s
         groups.setdefault((now.get("user.name", ""), now.get("user.email", ""), label(r.source())),
                           Counter())[owner(r.remote)] += 1
     over = [r for r in repos if r.local]
+    removable = {(id(r), k) for r, k in fixes(over)}
     short = short_names([r.path for r in over])
     blocks, unmatched = suggest(repos)
     pair = lambda d: {"name": d.get("user.name", ""), "email": d.get("user.email", "")}  # noqa: E731
@@ -411,7 +437,7 @@ def report(roots: list[Path], repos: list[Repo], failed: list[tuple[Path, str, s
             {"path": str(r.path), "short": short[r.path], "remote": redact_url(r.remote) or "", "owner": owner(r.remote),
              "now": pair(r.using()), "after": pair(r.after_fix()),
              "settings": [{"key": k, "value": v, "without": r.beneath.get(k)} for k, v in r.local.items()],
-             "fixable": [k for k in r.local if k in r.beneath]}
+             "fixable": [k for k in r.local if (id(r), k) in removable]}
             for r in over],
         "suggestions": blocks,
         "unmatched": [str(r.path) for r in unmatched],
@@ -420,7 +446,7 @@ def report(roots: list[Path], repos: list[Repo], failed: list[tuple[Path, str, s
 
 def fix(repos: list[Repo], state: Path, prog: str = "gitpro") -> tuple[list[tuple[Repo, str]], Path | None]:
     """Remove every override something else can replace; ([(repo, key) removed], script that puts them back)."""
-    pairs = [(r, k) for r in repos for k in r.local if k in r.beneath]
+    pairs = fixes(repos)
     if not pairs:
         return [], None
     # Written first, so an interrupted fix can still be undone.
