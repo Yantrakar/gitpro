@@ -1721,7 +1721,8 @@ xvfb-run -a npm run test:integration             # starts VS Code; drop xvfb-run
 
 `.venv/bin/pytest -q -rs` lists skipped tests; with every module present,
 only platform-specific tests may skip. `-n auto` (pytest-xdist) runs the
-tests in parallel, one worker per CPU; CI does the same.
+tests in parallel, one worker per CPU; CI does the same, with `--dist worksteal`
+so an idle worker takes queued tests from a busy one.
 The shared `home` fixture also starts in its isolated home and sets a Git
 discovery ceiling, so scratch directories inside a checkout cannot accidentally
 install project settings into that checkout.
