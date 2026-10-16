@@ -1,22 +1,22 @@
-# Publishes site/ to GitHub Pages (https://gitpro.dev) when it changes on main.
+# Publishes site/ to GitHub Pages (https://gitpro.dev). The release workflow
+# calls it at a release tag once the same version is on PyPI, so the site never
+# names a version that cannot be installed. A merge to main does not publish.
+# Run it by hand on main to publish a site-only fix between releases.
 name: pages
 
 on:
-  push:
-    branches: [main]
-    paths: ["site/**", ".github/workflows/pages.yml", "design/site_meta.py", "src/gitpro/__init__.py"]
+  workflow_call:
   workflow_dispatch:
 
 permissions:
   contents: read
 
-concurrency:
-  group: pages
-  cancel-in-progress: false
-
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    concurrency:
+      group: pages
+      cancel-in-progress: false
     permissions:
       pages: write
       id-token: write
