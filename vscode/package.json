@@ -1,7 +1,19 @@
 {
   "name": "gitpro",
   "displayName": "gitpro",
-  "description": "Shows the git name and email this repo commits with, finds repos that override gitpro, and runs gitpro setup, scan and pin.",
+  "description": "The right git name, email and SSH key for every repo, chosen by remote URL across your GitHub and GitLab accounts. Shows which identity this repo commits with, turns red when it is wrong, and runs gitpro setup, scan and pin.",
+  "keywords": [
+    "git",
+    "identity",
+    "multiple accounts",
+    "ssh",
+    "email",
+    "author",
+    "github",
+    "gitlab",
+    "ai agent",
+    "mcp"
+  ],
   "version": "0.4.0",
   "icon": "media/icon.png",
   "publisher": "yantrakar",
