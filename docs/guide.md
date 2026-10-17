@@ -1737,21 +1737,31 @@ in a disposable home, runs `gitpro apply`, and checks 45 remote URLs offline:
 git and gitpro must pick the same, expected identity, and a URL no pattern
 covers must get `gitpro why`'s `url_form` fix. CI runs it after the tests.
 
-To release, bump the version in `src/gitpro/__init__.py`, `vscode/package.json`
-and the plugin manifests, merge, then push a tag `vX.Y.Z`. The release workflow
-checks the tag against both versions, builds and tests once, and publishes the
-same files to GitHub Releases (with `SHA256SUMS`), PyPI (trusted publishing,
-environment `pypi`) and the VS Code Marketplace (`marketplace.yml`: a Microsoft
-Entra managed identity, variables `AZURE_CLIENT_ID` and `AZURE_TENANT_ID`,
-environment `marketplace`; skipped while the variables are unset, and runnable
-by hand for an existing tag). Once PyPI has the release, `mcp-registry.yml`
-publishes `server.json` to the MCP Registry, signed in with the workflow's
-GitHub OIDC token (environment `mcp-registry`). A registry version cannot be
-changed after it is published, so a version already there is skipped; run the
-workflow by hand to publish an existing tag. The site is also published only
-then (`pages.yml`), so it never names a version that cannot be installed; a
-merge to main does not publish it, and a site-only fix is published by running
-`pages.yml` by hand on main.
+To release, bump the version in `src/gitpro/__init__.py`, `vscode/package.json`,
+`server.json` and the plugin manifests, merge, then start the release workflow
+on main: `python scripts/release.py --as LOGIN`, or "Run workflow" on its
+Actions page. Pushing a tag starts nothing. The workflow checks that the
+versions match and that tag `vX.Y.Z` is new, runs the whole CI matrix, builds
+once, and publishes the same files. Each publishing job waits for its
+environment's reviewer:
+`release` creates the tag and the GitHub release (with `SHA256SUMS`); `pypi`
+publishes to PyPI (trusted publishing); `marketplace` publishes the VSIX
+(`marketplace.yml`: a Microsoft Entra managed identity, variables
+`AZURE_CLIENT_ID` and `AZURE_TENANT_ID`; skipped while the variables are
+unset); `mcp-registry` publishes `server.json` to the MCP Registry once PyPI
+has the release, signed in with the workflow's GitHub OIDC token. A registry
+version cannot be changed after it is published, so a version already there is
+skipped. Until the Marketplace variables are set, the VSIX is uploaded by hand:
+the script downloads it from the release, checks it against `SHA256SUMS`,
+opens the publisher page and waits for the Marketplace to list the version
+before it approves `mcp-registry`. `marketplace.yml` and `mcp-registry.yml`
+can also be run by hand for an existing tag. The site is published only once
+PyPI has the release (`pages.yml`), so it never names a version that cannot be
+installed; a merge to main does not publish it, and a site-only fix is
+published by running `pages.yml` by hand on main. `scripts/release.py`
+preflights the checkout (main, clean, up to date, versions, tag, PyPI,
+`gitpro why`), asks before each gate (`--yes` answers for you), resumes a run
+with `--run ID`, and verifies all five destinations at the end.
 
 Live GitHub qualification is separate and opt-in: `python tests/smoke_github.py --help`.
 It previews by default; `-y` authorizes a private clone/configuration, candidate

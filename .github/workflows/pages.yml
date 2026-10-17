@@ -1,5 +1,5 @@
 # Publishes site/ to GitHub Pages (https://gitpro.dev). The release workflow
-# calls it at a release tag once the same version is on PyPI, so the site never
+# calls it at the release commit once the same version is on PyPI, so the site never
 # names a version that cannot be installed. A merge to main does not publish.
 # Run it by hand on main to publish a site-only fix between releases.
 name: pages

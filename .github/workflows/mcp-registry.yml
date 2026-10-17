@@ -1,7 +1,8 @@
 name: MCP Registry
 
 # Publishes server.json at a release tag to the official MCP Registry
-# (registry.modelcontextprotocol.io), after the same version is on PyPI.
+# (registry.modelcontextprotocol.io). Release calls it with the tag its
+# github job created, after the same version is on PyPI.
 # It signs in with this workflow's GitHub OIDC token, which the registry
 # maps to the io.github.Yantrakar/* namespace; no token is stored. A
 # registry version cannot be changed once published, so a version that is
