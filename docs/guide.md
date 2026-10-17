@@ -1721,7 +1721,8 @@ xvfb-run -a npm run test:integration             # starts VS Code; drop xvfb-run
 
 `.venv/bin/pytest -q -rs` lists skipped tests; with every module present,
 only platform-specific tests may skip. `-n auto` (pytest-xdist) runs the
-tests in parallel, one worker per CPU; CI does the same.
+tests in parallel, one worker per CPU; CI does the same, with `--dist worksteal`
+so an idle worker takes queued tests from a busy one.
 The shared `home` fixture also starts in its isolated home and sets a Git
 discovery ceiling, so scratch directories inside a checkout cannot accidentally
 install project settings into that checkout.
@@ -1747,7 +1748,10 @@ by hand for an existing tag). Once PyPI has the release, `mcp-registry.yml`
 publishes `server.json` to the MCP Registry, signed in with the workflow's
 GitHub OIDC token (environment `mcp-registry`). A registry version cannot be
 changed after it is published, so a version already there is skipped; run the
-workflow by hand to publish an existing tag.
+workflow by hand to publish an existing tag. The site is also published only
+then (`pages.yml`), so it never names a version that cannot be installed; a
+merge to main does not publish it, and a site-only fix is published by running
+`pages.yml` by hand on main.
 
 Live GitHub qualification is separate and opt-in: `python tests/smoke_github.py --help`.
 It previews by default; `-y` authorizes a private clone/configuration, candidate
