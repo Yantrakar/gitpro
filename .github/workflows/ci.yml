@@ -2,15 +2,19 @@ name: CI
 
 # Runs before a PR is accepted, once per push to it; a newer push cancels the
 # older run. Main is not tested again after the merge, and a release tag is
-# tested by release.yml's build.
+# tested by release.yml's build. It can also be run by hand on any branch, or
+# called by another workflow; such a run has a group of its own (its run ID,
+# or the caller's), so it never cancels a PR run and is never cancelled by one.
 on:
   pull_request:
+  workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.event.pull_request.number }}
+  group: ci-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: true
 
 jobs:

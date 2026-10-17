@@ -137,10 +137,11 @@ Done on 2026-10-17, checked through the API:
   approves it.
 - `pypi`, `mcp-registry` and `github-pages`: deployment branch `main` and tag `v*`.
 - The ruleset on `main` (section 1).
+- `release`: required reviewer `sandeepshelke`, "Prevent self-review" off, deployment
+  branch `main` only.
 
 Still to do:
-1. Create the environment `release` with required reviewer `sandeepshelke`,
-   "Prevent self-review" off, and deployment branch `main` only.
+1. Done (`release` above).
 2. Once step 3 of section 11 has merged, remove the tag rule `v*` from `pypi`,
    `mcp-registry` and `github-pages`. A run started by hand on main runs on
    `refs/heads/main`, so the `main` rule covers it, and a tag no longer starts anything.
@@ -148,9 +149,9 @@ Still to do:
    reviewer and branch rule. A job that names an environment that doesn't exist creates
    it with no gate.
 
-Until setting 1 exists, the `github` job would create the `release` environment with no
-gate. So the workflow change (step 3 of section 11) merges only after setting 1 is in
-place.
+Without setting 1 the `github` job would have created the `release` environment with
+no gate, so the workflow change (step 3 of section 11) had to wait for it. It is in place
+since 2026-10-17.
 
 ## 6. `scripts/release.py`
 
@@ -268,6 +269,7 @@ replace. No test touches the network.
 
 1. `ci.yml` (section 3): add `workflow_dispatch` and `workflow_call` and the group's
    `github.run_id` fallback. Merge it on its own PR; that PR's CI is the test.
+   Opened 2026-10-17.
 2. The tests in section 10, failing, then `scripts/release.py` until they pass.
 3. `release.yml` (section 4), docs (section 9), full suite. This merges only after
    setting 1 in section 5 is in place.
