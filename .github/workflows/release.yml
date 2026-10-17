@@ -33,7 +33,7 @@ jobs:
           echo "tag=$tag python=$py vscode=$js"
           test "$tag" = "$py" && test "$tag" = "$js"
       - run: pip install -e . pytest pytest-xdist build
-      - run: pytest -q -n auto
+      - run: pytest -q -n auto --dist worksteal
       - run: python -m build --outdir dist .
       - run: python tests/smoke_wheel.py dist/*.whl
       - name: VS Code extension
