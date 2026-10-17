@@ -1,18 +1,64 @@
 name: Release
 
-# Push a tag vX.Y.Z whose version matches src/gitpro/__init__.py and
-# vscode/package.json. One build feeds GitHub, PyPI and the Marketplace;
-# server.json goes to the MCP Registry and site/ to gitpro.dev once PyPI
-# has the release.
+# Run by hand on main ("Run workflow", or scripts/release.py), never by a tag:
+# the versions in src/gitpro/__init__.py, vscode/package.json, server.json and
+# .claude-plugin must match, and tag vX.Y.Z must not exist yet. The full CI
+# matrix runs first; one build then feeds GitHub (which creates the tag),
+# PyPI and the Marketplace; server.json goes to the MCP Registry and site/ to
+# gitpro.dev once PyPI has the release. Each publishing job waits for its
+# environment's reviewer. Spec: docs/spec/20-release.md.
 on:
-  push:
-    tags: ["v*"]
+  workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - name: Runs on main
+        run: test "$GITHUB_REF" = refs/heads/main
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: The versions match
+        id: version
+        run: |
+          v=$(python3 -c 'import re,pathlib; print(re.search(r"^__version__ = \"(.+)\"", pathlib.Path("src/gitpro/__init__.py").read_text(), re.M)[1])')
+          echo "$v" | grep -Eqx '[0-9]+\.[0-9]+\.[0-9]+'
+          jq -e --arg v "$v" '.version == $v' vscode/package.json
+          jq -e --arg v "$v" '.version == $v' .claude-plugin/plugin.json
+          jq -e --arg v "$v" '.version == $v and ([.packages[].version] | all(. == $v))' server.json
+          jq -e --arg v "$v" '[.plugins[].version] | all(. == $v)' .claude-plugin/marketplace.json
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "tag=v$v" >> "$GITHUB_OUTPUT"
+      - name: The tag is new
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" --silent 2>err; then
+            echo "tag $TAG already exists"; exit 1
+          fi
+          grep -q "HTTP 404" err || { cat err; exit 1; }
+
+  ci:
+    needs: check
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+
   build:
+    needs: ci
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -25,15 +71,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Tag matches the versions
-        run: |
-          tag="${GITHUB_REF_NAME#v}"
-          py=$(python -c 'import re,pathlib; print(re.search(r"__version__ = \"(.+)\"", pathlib.Path("src/gitpro/__init__.py").read_text())[1])')
-          js=$(node -p 'require("./vscode/package.json").version')
-          echo "tag=$tag python=$py vscode=$js"
-          test "$tag" = "$py" && test "$tag" = "$js"
-      - run: pip install -e . pytest pytest-xdist build
-      - run: pytest -q -n auto --dist worksteal
+      - run: pip install build
       - run: python -m build --outdir dist .
       - run: python tests/smoke_wheel.py dist/*.whl
       - name: VS Code extension
@@ -50,8 +88,10 @@ jobs:
           if-no-files-found: error
 
   github:
-    needs: build
+    needs: [check, build]
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: release
     permissions:
       contents: write
     steps:
@@ -59,13 +99,24 @@ jobs:
         with:
           name: dist
           path: dist
+      # A tag made with the job's own token starts no other workflow.
+      - name: Create the tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.check.outputs.tag }}
+          VERSION: ${{ needs.check.outputs.version }}
+        run: |
+          sha=$(gh api "repos/$GITHUB_REPOSITORY/git/tags" -f tag="$TAG" -f message="gitpro $VERSION" \
+                -f object="$GITHUB_SHA" -f type=commit --jq .sha)
+          gh api "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$TAG" -f sha="$sha" --silent
       - name: Create the release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes --verify-tag
+          TAG: ${{ needs.check.outputs.tag }}
+        run: gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --title "$TAG" --generate-notes --verify-tag
 
   pypi:
-    needs: build
+    needs: github
     runs-on: ubuntu-latest
     environment:
       name: pypi
@@ -81,19 +132,19 @@ jobs:
       - uses: pypa/gh-action-pypi-publish@release/v1
 
   marketplace:
-    needs: github
+    needs: [check, github]
     uses: ./.github/workflows/marketplace.yml
     with:
-      tag: ${{ github.ref_name }}
+      tag: ${{ needs.check.outputs.tag }}
     permissions:
       contents: read
       id-token: write
 
   mcp-registry:
-    needs: pypi
+    needs: [check, pypi]
     uses: ./.github/workflows/mcp-registry.yml
     with:
-      tag: ${{ github.ref_name }}
+      tag: ${{ needs.check.outputs.tag }}
     permissions:
       contents: read
       id-token: write

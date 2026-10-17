@@ -114,10 +114,10 @@ Jobs, in order; each runs only when the one before it succeeded:
 | `check` | none | Fails unless `github.ref` is `refs/heads/main`. Reads the version from `src/gitpro/__init__.py` and checks that `vscode/package.json`, `server.json` (both places) and both `.claude-plugin` files match it. Fails if tag `vX.Y.Z` already exists on GitHub. Outputs `version` and `tag`. |
 | `ci` | none | `uses: ./.github/workflows/ci.yml`: the whole CI matrix (Linux 3.9/3.11/3.13, macOS 3.13, VS Code). |
 | `build` | none | Wheel, sdist, `smoke_wheel.py`, `npm ci`, `npm test`, `vsce package`, `SHA256SUMS`, uploaded as artifact `dist`. Its own `pytest` step is dropped, because `ci` has run the suite on the same commit. |
-| `github` | `release` | Creates the annotated tag `vX.Y.Z` ("gitpro X.Y.Z") on `github.sha`, pushes it with the job's token (`contents: write`), then `gh release create` with `dist/*`, `--generate-notes` and `--verify-tag`. |
+| `github` | `release` | Creates the annotated tag `vX.Y.Z` ("gitpro X.Y.Z") on `github.sha` with the job's token (`contents: write`), through the API (`POST git/tags`, then `POST git/refs`), so the job needs no checkout and no stored credentials. Then `gh release create` with `dist/*`, `--generate-notes` and `--verify-tag`. |
 | `pypi` | `pypi` | As today. It now needs `github`, not `build`. |
-| `marketplace` | `marketplace` | As today (`marketplace.yml`). It skips while the Azure variables are unset. |
-| `mcp-registry` | `mcp-registry` | As today (`mcp-registry.yml`), after `pypi`. |
+| `marketplace` | `marketplace` | As today (`marketplace.yml`). It skips while the Azure variables are unset. Its `tag` input is `check`'s output, because `github.ref_name` is now `main`. |
+| `mcp-registry` | `mcp-registry` | As today (`mcp-registry.yml`), after `pypi`, with the same `tag` input. It checks out `refs/tags/<tag>`, which `github` created. |
 | `site` | `github-pages` (no reviewer) | As today (`pages.yml`, since #22), after `pypi`. |
 
 Facts the design relies on:
@@ -162,7 +162,9 @@ Usage: `python scripts/release.py --as LOGIN [--yes] [--run ID]`
   account is never switched. The script stops if `gh api user` doesn't name LOGIN.
 - `--yes`: answer yes to every question. It still stops at the first failure.
 - `--run ID`: pick up an existing Release run (after Ctrl-C, or one started on the page)
-  instead of starting a new one. It skips step 2.
+  instead of starting a new one. It skips steps 1 and 2, because the tag and the PyPI
+  version may already exist by then. It still checks the login and the versions, and
+  stops unless the run is `Release` on `main`.
 
 Steps:
 
@@ -171,14 +173,17 @@ Steps:
    - a tracked file has changes (untracked files are allowed);
    - after `git fetch`, HEAD isn't `origin/main`;
    - the versions don't match (the same check as the `check` job);
-   - tag `vX.Y.Z` exists locally or on GitHub;
+   - tag `vX.Y.Z` exists locally;
+   - `gh api user` doesn't name LOGIN;
+   - tag `vX.Y.Z` exists on GitHub, or the API answers anything but 404;
    - PyPI already has X.Y.Z;
    - `gitpro why` exits non-zero.
 2. **Start.** Ask `Start release vX.Y.Z from <short sha>? [y/N]`. On yes, run
    `workflow run release.yml --ref main`. gh 2.45 doesn't print the new run's ID, so find
    it with `run list --workflow release.yml --event workflow_dispatch --json
-   databaseId,headSha,createdAt`: the newest run whose `headSha` is HEAD and that was
-   created after the start. Print its URL.
+   databaseId,headSha,createdAt`: the newest run whose `headSha` is HEAD and whose ID
+   wasn't listed before the start. Comparing IDs, not times, doesn't depend on the local
+   clock. It looks 12 times, 5 s apart, then stops. Print its URL.
 3. **Follow the run.** Poll `run view ID --json status,conclusion,jobs` every 15 s.
    - When a job fails or is cancelled, print its name, the run URL and the
      `run view ID --log-failed` hint, and exit 1.
@@ -191,6 +196,7 @@ Steps:
        "comment": "scripts/release.py"}`;
      - on no, exit 0 and print the run URL. The run keeps waiting; finish it on the page,
        or later with `--run ID`.
+   - An environment already approved in this run isn't asked about again.
 4. **VSIX (manual)**, once `github` has succeeded and before the `mcp-registry` gate is
    approved:
    - download `gitpro-X.Y.Z.vsix` from the release into `~/Downloads/gitpro-X.Y.Z/`;
@@ -199,15 +205,26 @@ Steps:
    - print "Upload it with ⋯ → Update";
    - poll the Marketplace's public extension query for `yantrakar.gitpro` every 30 s
      until X.Y.Z is listed, for up to 60 minutes. If it isn't listed by then, exit 1 with
-     what is missing. `--yes` doesn't skip this wait: no one else can do the upload.
+     what is missing and the `--run ID` to resume. `--yes` doesn't skip this wait: no one
+     else can do the upload.
+   - If the Marketplace already lists X.Y.Z (a resumed run, or `marketplace.yml`
+     published it), the step is skipped.
+   - The `pypi` gate doesn't wait for this step; only `mcp-registry` does. A run picked up
+     with `--run ID` at the `mcp-registry` gate does this step first.
 5. **Verify** after the run succeeds, and print one line for each:
    - PyPI lists X.Y.Z, with a wheel and an sdist;
    - the GitHub release has the wheel, the sdist, the VSIX and `SHA256SUMS`;
    - the MCP Registry has `io.github.Yantrakar/gitpro` X.Y.Z;
    - the Marketplace lists X.Y.Z;
-   - gitpro.dev names X.Y.Z.
+   - gitpro.dev names X.Y.Z (`"softwareVersion": "X.Y.Z"`), checked every 30 s for up
+     to 10 minutes, since GitHub Pages sends `Cache-Control: max-age=600` and a cache
+     may serve the old page until then.
 
    It exits 0 only when all five pass.
+
+Everything the script prints goes through `forge.redact` and `forge.safe`, so a token
+in a gh error never reaches the terminal. Ctrl-C exits 130; the run keeps going on
+GitHub and `--run ID` picks it up.
 
 ### 6.1 Gate descriptions
 
@@ -269,10 +286,12 @@ replace. No test touches the network.
 
 1. `ci.yml` (section 3): add `workflow_dispatch` and `workflow_call` and the group's
    `github.run_id` fallback. Merge it on its own PR; that PR's CI is the test.
-   Opened 2026-10-17.
+   Merged 2026-10-17 (#24).
 2. The tests in section 10, failing, then `scripts/release.py` until they pass.
+   Done 2026-10-17. The tests were written after the script, not before; each check
+   was then removed from the script in turn to see a test fail.
 3. `release.yml` (section 4), docs (section 9), full suite. This merges only after
-   setting 1 in section 5 is in place.
+   setting 1 in section 5 is in place (it is). Done 2026-10-17, in the same PR as step 2.
 4. Settings 2 and 3 in section 5.
 
 The ruleset that step 4 named on 2026-10-15 is in place (section 1).
