@@ -1741,7 +1741,9 @@ To release, put the new version and a short comment on a new first line of `src/
 (the old first line becomes line 2; line 1's first word is the version)
 (the one place the version is written; the workflows stamp it into the VSIX, `server.json` and the site), merge, then start the release workflow
 on main: `python scripts/release.py --as LOGIN`, or "Run workflow" on its
-Actions page. Pushing a tag starts nothing. The workflow checks that `src/gitpro/VERSION` is X.Y.Z and that tag `vX.Y.Z` is new, runs the whole CI matrix, builds
+Actions page. If the script stops (Ctrl-C, a failed job, a gate answered no), run the
+same command again: it follows the run still going on that commit, or offers to re-run
+the failed jobs of one that failed. Pushing a tag starts nothing. The workflow checks that `src/gitpro/VERSION` is X.Y.Z and that tag `vX.Y.Z` is new, runs the whole CI matrix, builds
 once, and publishes the same files. Each publishing job waits for its
 environment's reviewer:
 `release` creates the tag and the GitHub release (with `SHA256SUMS`); `pypi`

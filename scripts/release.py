@@ -42,9 +42,11 @@ MARKETPLACE_QUERY = "https://marketplace.visualstudio.com/_apis/public/gallery/e
 REGISTRY = "https://registry.modelcontextprotocol.io"
 
 POLL = 15                 # seconds between looks at the run
+HEARTBEAT = 120           # seconds without a progress line before follow() says what it still waits for
 FIND_TRIES = 12           # looks for the new run after starting it, POLL / 3 apart
 MARKETPLACE_POLL = 30
 MARKETPLACE_WAIT = 60 * 60
+MARKETPLACE_REMIND = 5 * 60
 SITE_POLL = 30
 SITE_WAIT = 10 * 60       # GitHub Pages sends Cache-Control: max-age=600
 
@@ -55,6 +57,7 @@ GATES = {
     "mcp-registry": "publishes server.json {v} to the MCP Registry (it cannot be changed later)",
 }
 FAILED = {"failure", "cancelled", "timed_out", "startup_failure"}
+MARKS = {"success": "✓", "skipped": "–", **{c: "✗" for c in FAILED}}
 
 
 class Stop(Exception):
@@ -137,6 +140,11 @@ def say(text: str = "") -> None:
     print(clean(text), flush=True)
 
 
+def mins(seconds: float) -> str:
+    s = max(0, int(seconds))
+    return f"{s // 60}m{s % 60:02d}s"
+
+
 def why_failed(r: subprocess.CompletedProcess) -> str:
     text = (r.stderr or r.stdout or "").strip().splitlines()
     return forge.redact(text[-1] if text else f"exit {r.returncode}")
@@ -210,7 +218,8 @@ def marketplace_versions() -> Optional[List[str]]:
 # ------------------------------------------------------------------ steps
 
 def preflight(acc: forge.Account) -> Tuple[str, str]:
-    """Step 1: (version, HEAD sha), or Stop with the reason. Reads only."""
+    """Step 1, the checks that hold for a new run and a resumed one: (version, HEAD sha), or Stop with
+    the reason. Reads only."""
     branch = git_out("rev-parse", "--abbrev-ref", "HEAD")
     if branch != "main":
         raise Stop(f"on branch {branch}, not main")
@@ -221,26 +230,69 @@ def preflight(acc: forge.Account) -> Tuple[str, str]:
     if head != upstream:
         raise Stop(f"HEAD {head[:7]} is not origin/main {upstream[:7]}")
     v = release_version()
-    tag = f"v{v}"
-    if cmd(["git", "rev-parse", "-q", "--verify", f"refs/tags/{tag}"]).returncode == 0:
-        raise Stop(f"tag {tag} already exists here")
     check_login(acc)
-    r = gh(acc, ["api", f"repos/{REPO}/git/ref/tags/{tag}"])
-    if r.returncode == 0:
-        raise Stop(f"tag {tag} already exists on GitHub")
-    if "HTTP 404" not in (r.stderr + r.stdout):
-        raise Stop(f"could not check tag {tag} on GitHub: {why_failed(r)}")
-    if on_pypi(v) is not None:
-        raise Stop(f"PyPI already has gitpro {v}")
     r = cmd(["gitpro", "why"])
     if r.returncode != 0:
         raise Stop(f"gitpro why exits {r.returncode}: {why_failed(r)}")
     return v, head
 
 
+def published(acc: forge.Account, v: str) -> Optional[str]:
+    """What of release v already exists (the tag here or on GitHub, PyPI's upload), or None. Reads only."""
+    tag = f"v{v}"
+    if cmd(["git", "rev-parse", "-q", "--verify", f"refs/tags/{tag}"]).returncode == 0:
+        return f"tag {tag} already exists here"
+    r = gh(acc, ["api", f"repos/{REPO}/git/ref/tags/{tag}"])
+    if r.returncode == 0:
+        return f"tag {tag} already exists on GitHub"
+    if "HTTP 404" not in (r.stderr + r.stdout):
+        raise Stop(f"could not check tag {tag} on GitHub: {why_failed(r)}")
+    if on_pypi(v) is not None:
+        return f"PyPI already has gitpro {v}"
+    return None
+
+
 def dispatch_runs(acc: forge.Account) -> List[dict]:
     return gh_json(acc, ["run", "list", "-R", REPO, "--workflow", WORKFLOW, "--event", "workflow_dispatch",
-                         "--limit", "20", "--json", "databaseId,headSha,createdAt"], "gh run list")
+                         "--limit", "20", "--json", "databaseId,headSha,createdAt,status,conclusion"], "gh run list")
+
+
+def latest_run(acc: forge.Account, head: str) -> Optional[dict]:
+    """The newest Release run started by hand on commit head, or None."""
+    mine = [r for r in dispatch_runs(acc) if r["headSha"] == head]
+    return max(mine, key=lambda r: r["createdAt"]) if mine else None
+
+
+def run_attempt(acc: forge.Account, run_id: int) -> int:
+    """The run's attempt number, from the REST API (gh run view has no attempt field before gh 2.47)."""
+    n = gh_json(acc, ["api", f"repos/{REPO}/actions/runs/{run_id}"], "gh api runs").get("run_attempt")
+    return n if isinstance(n, int) else 1
+
+
+def pick_up(acc: forge.Account, run_id: int, yes: bool) -> bool:
+    """For a run that exists: True to follow it. A run that failed or was cancelled gets its failed jobs
+    re-run first, when the user says yes (False when they say no). Every job is safe to run again
+    (section 8): the tag and the GitHub release are kept, PyPI and the Marketplace skip what they have,
+    and mcp-registry skips a version the registry has."""
+    run = gh_json(acc, ["run", "view", str(run_id), "-R", REPO, "--json", "status,conclusion,jobs"],
+                  "gh run view")
+    if run.get("status") != "completed" or run.get("conclusion") == "success":
+        return True
+    failed = [j.get("name") or "?" for j in run.get("jobs") or [] if j.get("conclusion") in FAILED]
+    say(f"Run {run_id} ended {run.get('conclusion')}" + (f" at {', '.join(failed)}" if failed else "")
+        + f": {run_url(run_id)}")
+    if not (yes or ask("Re-run its failed jobs?")):
+        say(f"Nothing re-run. Re-run them on {run_url(run_id)}, or run this script again.")
+        return False
+    attempt = run_attempt(acc, run_id)
+    gh_ok(acc, ["run", "rerun", str(run_id), "--failed", "-R", REPO], "gh run rerun")
+    for _ in range(FIND_TRIES):
+        sleep(POLL / 3)
+        n = run_attempt(acc, run_id)
+        if n > attempt:
+            say(f"✓ re-running the failed jobs (attempt {n})")
+            return True
+    raise Stop(f"asked GitHub to re-run the failed jobs, but run {run_id} has no new attempt; see {run_url(run_id)}")
 
 
 def start(acc: forge.Account, v: str, head: str, yes: bool) -> Optional[int]:
@@ -286,13 +338,19 @@ def vsix(acc: forge.Account, v: str, run_id: int) -> None:
     if not open_url(PUBLISHER_URL):
         say(f"Open {PUBLISHER_URL}")
     say(f"Upload {path} with ⋯ → Update. Waiting for the Marketplace to list {v}…")
-    deadline = now() + MARKETPLACE_WAIT
+    began = now()
+    deadline, remind = began + MARKETPLACE_WAIT, began + MARKETPLACE_REMIND
     while now() < deadline:
         sleep(MARKETPLACE_POLL)
         listed = marketplace_versions()
         if listed is not None and v in listed:
             say(f"✓ the Marketplace lists {v}")
             return
+        if now() >= remind:
+            remind += MARKETPLACE_REMIND
+            asked = "it could not be asked" if listed is None else f"it lists {', '.join(listed[:3]) or 'nothing'}"
+            say(f"… {mins(now() - began)}: the Marketplace doesn't list {v} yet ({asked}); waiting up to "
+                f"{MARKETPLACE_WAIT // 60} minutes. Upload {path} if you haven't.")
     raise Stop(f"the Marketplace doesn't list {v} after {MARKETPLACE_WAIT // 60} minutes; upload {path} "
                f"at {PUBLISHER_URL}, then run again with --run {run_id}")
 
@@ -331,21 +389,61 @@ def settle(acc: forge.Account, run_id: int, v: str, yes: bool, approved: set) ->
     return later
 
 
+class Progress:
+    """What follow() prints about the run, each line led by the time since it began following: a line
+    when a job changes state or starts another step, and after HEARTBEAT seconds without one, a line
+    naming what is still running or queued."""
+
+    def __init__(self) -> None:
+        self.start = self.last = now()
+        self.seen: Dict[str, Tuple[str, Optional[str]]] = {}
+
+    def line(self, text: str) -> None:
+        say(f"  {mins(now() - self.start):>7}  {text}")
+        self.last = now()
+
+    def update(self, jobs: List[dict]) -> None:
+        for job in jobs:
+            name = job.get("name") or "?"
+            done = job.get("status") == "completed"
+            state = (job.get("conclusion") or "done") if done else (job.get("status") or "queued")
+            step = None if done else next((s.get("name") for s in job.get("steps") or []
+                                           if s.get("status") == "in_progress"), None)
+            old = self.seen.get(name)
+            if old == (state, step):
+                continue
+            self.seen[name] = (state, step)
+            if old is None or old[0] != state:
+                self.line(f"{MARKS.get(state, '·')} {name}: {state.replace('_', ' ')}" + (f", {step}" if step else ""))
+            elif step:
+                self.line(f"  {name}: {step}")
+        if now() - self.last >= HEARTBEAT:
+            busy = [f"{n} ({st.replace('_', ' ')}{', ' + s if s else ''})" for n, (st, s) in self.seen.items()
+                    if st not in MARKS and st != "done"]
+            self.line("… still waiting on " + ", ".join(busy) if busy else "… waiting for the next job to start")
+
+
 def follow(acc: forge.Account, run_id: int, v: str, yes: bool) -> None:
     """Step 3 (and step 4 when its turn comes): until the run succeeds, or Stop."""
     approved, vsix_done = set(), False
+    progress = Progress()
     while True:
         run = gh_json(acc, ["run", "view", str(run_id), "-R", REPO, "--json", "status,conclusion,jobs"],
                       "gh run view")
         jobs = run.get("jobs") or []
+        progress.update(jobs)
         for job in jobs:
             if job.get("conclusion") in FAILED:
                 raise Stop(f"job {job.get('name')} {job['conclusion']}: {run_url(run_id)}\n"
-                           f"  gh run view {run_id} -R {REPO} --log-failed")
+                           f"  gh run view {run_id} -R {REPO} --log-failed\n"
+                           "Fix it, then run this script again: it offers to re-run the failed jobs.")
         if run.get("status") == "completed":
             if run.get("conclusion") == "success":
+                if not vsix_done:      # the run finished without this script (approved on the page)
+                    vsix(acc, v, run_id)
                 return
-            raise Stop(f"the run ended {run.get('conclusion')}: {run_url(run_id)}")
+            raise Stop(f"the run ended {run.get('conclusion')}: {run_url(run_id)}\n"
+                       "Run this script again: it offers to re-run the failed jobs.")
         later = settle(acc, run_id, v, yes, approved)
         github_done = any(j.get("name") == "github" and j.get("conclusion") == "success" for j in jobs)
         if github_done and not vsix_done:
@@ -355,6 +453,7 @@ def follow(acc: forge.Account, run_id: int, v: str, yes: bool) -> None:
             later = list(seen.values())
             vsix(acc, v, run_id)
             vsix_done = True
+            progress.last = now()
         for gate in later:
             if vsix_done:
                 approve(acc, run_id, gate, v, yes)
@@ -384,12 +483,16 @@ def verify(acc: forge.Account, v: str) -> bool:
     checks.append((f"the MCP Registry has {MCP_NAME} {v}", status == 200))
     listed = marketplace_versions()
     checks.append((f"the Marketplace lists {v}", listed is not None and v in listed))
-    deadline, site = now() + SITE_WAIT, False
+    deadline, site, told = now() + SITE_WAIT, False, False
     while True:
         status, text = http(SITE_URL)
         site = status == 200 and f'"softwareVersion": "{v}"' in text
         if site or now() >= deadline:
             break
+        if not told:
+            say(f"… gitpro.dev doesn't name {v} yet; looking every {SITE_POLL} s for up to "
+                f"{SITE_WAIT // 60} minutes (GitHub Pages caches for 10)")
+            told = True
         sleep(SITE_POLL)
     checks.append((f"gitpro.dev names {v}", site))
     for text, ok in checks:
@@ -402,17 +505,35 @@ def main(argv: Optional[List[str]] = None) -> int:
     p.add_argument("--as", dest="login", required=True, metavar="LOGIN",
                    help="the GitHub account that starts the run and approves its gates")
     p.add_argument("--yes", action="store_true", help="answer yes to every question")
-    p.add_argument("--run", type=int, metavar="ID", help="follow an existing Release run instead of starting one")
+    p.add_argument("--run", type=int, metavar="ID", help="follow an existing Release run instead of starting one "
+                   "(without it, an unfinished run on HEAD is offered first)")
     args = p.parse_args(argv)
     acc = forge.Account(forge.GITHUB, "gh", args.login)
     run_id = args.run
     try:
         if args.run is None:
             v, head = preflight(acc)
-            run_id = start(acc, v, head, args.yes)
-            if run_id is None:
-                say("Nothing started.")
-                return 0
+            prev = latest_run(acc, head)
+            if prev and prev.get("status") != "completed":
+                # never a second run while one for this commit is going or waits at a gate
+                say(f"Run {prev['databaseId']} for {head[:7]} is {str(prev.get('status')).replace('_', ' ')}: "
+                    f"{run_url(prev['databaseId'])}")
+                if not (args.yes or ask("Follow it?")):
+                    say("Nothing started.")
+                    return 0
+                run_id = prev["databaseId"]
+            elif (done := published(acc, v)) is not None:
+                if prev is None:
+                    raise Stop(f"{done}, and no Release run was started on {head[:7]}")
+                run_id = prev["databaseId"]
+                say(f"{done}: picking up run {run_id}")
+                if not pick_up(acc, run_id, args.yes):
+                    return 0
+            else:
+                run_id = start(acc, v, head, args.yes)
+                if run_id is None:
+                    say("Nothing started.")
+                    return 0
         else:
             v = release_version()
             check_login(acc)
@@ -426,6 +547,8 @@ def main(argv: Optional[List[str]] = None) -> int:
             if info.get("headSha") != head:
                 raise Stop(f"run {run_id} is for commit {str(info.get('headSha'))[:7]}, but HEAD is {head[:7]}; "
                            "check out the commit the run was started from")
+            if not pick_up(acc, run_id, args.yes):
+                return 0
         say(f"Release v{v}: {run_url(run_id)}")
         follow(acc, run_id, v, args.yes)
         say(f"✓ the run succeeded: {run_url(run_id)}")
@@ -434,8 +557,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         print(clean(str(e)), file=sys.stderr, flush=True)
         return e.code
     except KeyboardInterrupt:
-        again = f"--run {run_id}" if run_id else "--run ID once the run exists (gh run list)"
-        print(f"\nStopped. Pick the run up again with {again}.", file=sys.stderr)
+        again = f" (or with --run {run_id})" if run_id else ""
+        print(f"\nStopped. Run this script again to pick the run up{again}.", file=sys.stderr)
         return 130
 
 

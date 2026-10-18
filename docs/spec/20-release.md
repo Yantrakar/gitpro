@@ -166,7 +166,10 @@ Usage: `python scripts/release.py --as LOGIN [--yes] [--run ID]`
 - `--run ID`: pick up an existing Release run (after Ctrl-C, or one started on the page)
   instead of starting a new one. It skips steps 1 and 2, because the tag and the PyPI
   version may already exist by then. It still checks the login and the version, and
-  stops unless the run is `Release` on `main`.
+  stops unless the run is `Release` on `main` for the local HEAD. A failed run goes
+  through step 2a.
+- Without `--run`, the script finds the run itself (step 2), so after Ctrl-C, a failed
+  job or a gate answered no, running the same command again picks the release up.
 
 Steps:
 
@@ -175,20 +178,41 @@ Steps:
    - a tracked file has changes (untracked files are allowed);
    - after `git fetch`, HEAD isn't `origin/main`;
    - `src/gitpro/VERSION` is not X.Y.Z (the same check as the `check` job);
-   - tag `vX.Y.Z` exists locally;
    - `gh api user` doesn't name LOGIN;
-   - tag `vX.Y.Z` exists on GitHub, or the API answers anything but 404;
-   - PyPI already has X.Y.Z;
-   - `gitpro why` exits non-zero.
-2. **Start.** Ask `Start release vX.Y.Z from <short sha>? [y/N]`. On yes, run
+   - `gitpro why` exits non-zero;
+   - the tag check on GitHub answers anything but 200 or 404.
+2. **Start or pick up.** Look up the newest `workflow_dispatch` Release run on HEAD
+   (`run list … --json databaseId,headSha,createdAt,status,conclusion`).
+   - If it hasn't completed (queued, in progress, waiting at a gate), say so and ask
+     `Follow it? [y/N]`: never a second run for the same commit. No starts nothing.
+   - Else, if part of X.Y.Z exists (tag `vX.Y.Z` locally or on GitHub, or X.Y.Z on
+     PyPI): with that run, pick it up (step 2a); with none, stop with the reason, as a new
+     run would fail at "The tag is new".
+   - Else ask `Start release vX.Y.Z from <short sha>? [y/N]`. An older run on HEAD that
+     failed or was cancelled before anything was published doesn't stop a new start.
+     On yes, run
    `workflow run release.yml --ref main`. gh 2.45 doesn't print the new run's ID, so find
    it with `run list --workflow release.yml --event workflow_dispatch --json
    databaseId,headSha,createdAt`: the newest run whose `headSha` is HEAD and whose ID
    wasn't listed before the start. Comparing IDs, not times, doesn't depend on the local
    clock. It looks 12 times, 5 s apart, then stops. Print its URL.
+2a. **Re-run a failed run.** A picked-up run that ended in failure or was cancelled:
+   print the failed jobs and ask `Re-run its failed jobs? [y/N]`. On yes,
+   `run rerun ID --failed`, then wait (12 looks, 5 s apart) until the run's
+   `run_attempt` (`GET repos/Yantrakar/gitpro/actions/runs/ID`; gh 2.45's `run view` has no
+   attempt field) goes up, and follow it (step 3). GitHub asks for each re-run gate's
+   approval again. Every job is safe to run again (section 8). No exits 0 and writes
+   nothing. A run that succeeded goes to step 4 (skipped when the Marketplace lists
+   X.Y.Z) and then 5.
 3. **Follow the run.** Poll `run view ID --json status,conclusion,jobs` every 15 s.
-   - When a job fails or is cancelled, print its name, the run URL and the
-     `run view ID --log-failed` hint, and exit 1.
+   - Print a line, led by the time since following began (`  3m15s  ✓ build: success`),
+     when a job first shows up or changes state (queued, in progress, waiting, success
+     ✓, skipped –, failed ✗), and when a running job starts another step.
+   - After 2 minutes without such a line, print which jobs are still running or queued,
+     and the step each one is on.
+   - When a job fails or is cancelled, print its name, the run URL, the
+     `run view ID --log-failed` hint and that running the script again offers the
+     re-run, and exit 1.
    - When `GET repos/Yantrakar/gitpro/actions/runs/ID/pending_deployments` lists an
      environment:
      - if `current_user_can_approve` is false, stop and say so;
@@ -206,7 +230,8 @@ Steps:
    - open the publisher page (`xdg-open`, `open` on macOS, or print the URL);
    - print "Upload it with ⋯ → Update";
    - poll the Marketplace's public extension query for `yantrakar.gitpro` every 30 s
-     until X.Y.Z is listed, for up to 60 minutes. If it isn't listed by then, exit 1 with
+     until X.Y.Z is listed, for up to 60 minutes, saying every 5 minutes how long it has
+     waited and which versions the Marketplace lists. If it isn't listed by then, exit 1 with
      what is missing and the `--run ID` to resume. `--yes` doesn't skip this wait: no one
      else can do the upload.
    - If the Marketplace already lists X.Y.Z (a resumed run, or `marketplace.yml`
@@ -220,7 +245,7 @@ Steps:
    - the Marketplace lists X.Y.Z;
    - gitpro.dev names X.Y.Z (`"softwareVersion": "X.Y.Z"`), checked every 30 s for up
      to 10 minutes, since GitHub Pages sends `Cache-Control: max-age=600` and a cache
-     may serve the old page until then.
+     may serve the old page until then. The first miss prints one line saying so.
 
    It exits 0 only when all five pass.
 
@@ -248,8 +273,9 @@ the others. Step 4 of section 6 then finds the version already listed and goes o
 
 ## 8. Failures and recovery
 
-- A failed job: fix it, then "Re-run failed jobs" on the same run. GitHub asks for each
-  gate's approval again, so `--run ID` works for a re-run too.
+- A failed job: fix it, then run the script again (step 2a re-runs the failed jobs of the
+  same run), or "Re-run failed jobs" on the page and pick it up. GitHub asks for each
+  gate's approval again.
 - Rejecting a gate stops that run. If `github` never ran, nothing is published and a
   new run can start. Once the tag exists, a new run refuses (`check`, "The tag is new"),
   so re-run the jobs of the same run instead. That re-run works: the `github` job keeps
@@ -290,6 +316,15 @@ replace. No test touches the network.
 - A VSIX whose hash doesn't match `SHA256SUMS` stops the script.
 - Nothing the script prints contains the value the fake `gh auth token` returns.
 - `--run ID` skips the start and follows that run.
+- A run on HEAD that hasn't completed is offered (`Follow it?`), never started again; no
+  writes nothing.
+- With the tag or PyPI published and a failed run on HEAD, the script re-runs its failed
+  jobs after `y` (none after `n`) and follows the new attempt; with no run on HEAD it
+  stops before any question.
+- A succeeded run whose VSIX the Marketplace doesn't list gets step 4 before step 5.
+- Following prints each job and step change once, with the time, a reminder after 2
+  minutes without one, and a failed job's name; the Marketplace wait reminds every 5
+  minutes; the site check says once that it waits.
 
 ## 11. Steps
 

@@ -22,7 +22,7 @@ HEAD = "a" * 40
 OTHER = "b" * 40
 VSIX = b"the extension"
 GATE_IDS = {"release": 11, "pypi": 12, "marketplace": 13, "mcp-registry": 14, "github-pages": 15, "surprise": 16}
-WRITES = (["workflow", "run"], ["api", "-X", "POST"])
+WRITES = (["workflow", "run"], ["api", "-X", "POST"], ["run", "rerun"])
 
 
 def done(name):
@@ -52,7 +52,8 @@ class World:
         self.login = LOGIN
         self.remote_tag = "absent"            # absent | present | error
         self.on_pypi = False
-        self.before = [{"databaseId": 5, "headSha": HEAD, "createdAt": "2026-10-17T10:00:00Z"}]
+        self.before = [{"databaseId": 5, "headSha": HEAD, "createdAt": "2026-10-17T10:00:00Z",
+                        "status": "completed", "conclusion": "cancelled"}]
         self.after = [{"databaseId": 7, "headSha": HEAD, "createdAt": "2026-10-17T12:00:00Z"},
                       {"databaseId": 6, "headSha": OTHER, "createdAt": "2026-10-17T12:00:01Z"}]
         self.dispatched = False
@@ -69,6 +70,8 @@ class World:
         self.events = []
         self.clock = 0.0
         self.run_info = {"workflowName": "Release", "headBranch": "main", "headSha": HEAD}
+        self.attempt = 1
+        self.rerun_steps = None               # the run's steps after `gh run rerun --failed`
 
     # -- seams
     def cmd(self, argv):
@@ -109,6 +112,14 @@ class World:
                 return cp(json.dumps(self.run_info))
             view, _ = self.steps[min(self.step, len(self.steps) - 1)]
             return cp(json.dumps(view))
+        if argv[:2] == ["run", "rerun"]:
+            assert "--failed" in argv and self.rerun_steps is not None
+            self.events.append(("rerun", argv[2]))
+            self.attempt += 1
+            self.steps, self.step = self.rerun_steps, 0
+            return cp()
+        if argv[:1] == ["api"] and re.fullmatch(r"repos/[^/]+/[^/]+/actions/runs/\d+", argv[1]):
+            return cp(json.dumps({"run_attempt": self.attempt}))
         if argv[:3] == ["api", "-X", "POST"]:
             self.events.append(("post", json.loads(stdin)))
             return cp()
@@ -199,10 +210,12 @@ PREFLIGHT = {
     "branch": (lambda w: w.git.update(branch="feature"), "not main"),
     "tracked change": (lambda w: w.git.update(status=" M README.md\n"), "tracked files have changes"),
     "behind origin": (lambda w: w.git.update(upstream=OTHER), "is not origin/main"),
-    "local tag": (lambda w: w.git.update(local_tag=True), "already exists here"),
-    "tag on GitHub": (lambda w: setattr(w, "remote_tag", "present"), "already exists on GitHub"),
+    # published, with no run on this commit to pick up
+    "local tag": (lambda w: (w.git.update(local_tag=True), setattr(w, "before", [])), "already exists here"),
+    "tag on GitHub": (lambda w: (setattr(w, "remote_tag", "present"), setattr(w, "before", [])),
+                      "already exists on GitHub"),
     "tag check fails": (lambda w: setattr(w, "remote_tag", "error"), "could not check tag"),
-    "on PyPI": (lambda w: setattr(w, "on_pypi", True), "PyPI already has"),
+    "on PyPI": (lambda w: (setattr(w, "on_pypi", True), setattr(w, "before", [])), "PyPI already has"),
     "gitpro why": (lambda w: setattr(w, "why_rc", 1), "gitpro why exits 1"),
     "other login": (lambda w: setattr(w, "login", "someone-else"), "not releaser"),
 }
@@ -388,7 +401,7 @@ sys.exit(1)
     monkeypatch.setattr(rel, "release_version", lambda: V)
     assert release() == 1
     out, err = capsys.readouterr()
-    assert "could not check tag" in err
+    assert "HTTP 502: proxy said Authorization: token ***" in err      # the first gh call that fails
     assert token not in out + err and "Q" * 20 not in out + err
     assert any(c[:2] == ["api", "user"] for c in fake_bin.calls("gh"))
 
@@ -509,3 +522,142 @@ def test_workflows_are_safe_to_run_again():
     assert 'git/ref/tags/$TAG' in release_yml and '"$sha" = "$GITHUB_SHA"' in release_yml
     pages = (ROOT / ".github/workflows/pages.yml").read_text(encoding="utf-8")
     assert "persist-credentials: false" in pages
+
+
+# ------------------------------------------------------------------ progress
+
+def job(name, status, step=None, conclusion=""):
+    steps = [{"name": "Set up job", "status": "completed"}] + ([{"name": step, "status": "in_progress"}] if step else [])
+    return {"name": name, "status": status, "conclusion": conclusion, "steps": steps}
+
+
+def test_follow_prints_each_job_and_step_change_once_with_the_time(world, capsys):
+    running = ({"status": "in_progress", "conclusion": "", "jobs": [done("check"), job("build", "in_progress", "npm test")]}, [])
+    world.steps = [
+        ({"status": "in_progress", "conclusion": "", "jobs": [job("check", "in_progress", "Read the version")]}, []),
+        ({"status": "in_progress", "conclusion": "", "jobs": [job("check", "in_progress", "Check the tag")]}, []),
+        ({"status": "in_progress", "conclusion": "", "jobs": [done("check"), job("build", "queued")]}, []),
+        *[running] * 10,
+        ({"status": "completed", "conclusion": "success", "jobs": [done("check"), done("build"),
+                                                                  job("marketplace", "completed", conclusion="skipped")]}, []),
+    ]
+    world.market, world.on_pypi = [V], True
+    assert release("--run", "42", "--yes") == 0
+    lines = capsys.readouterr().out.splitlines()
+    progress = [ln.split(None, 1)[1] for ln in lines if re.match(r"  +\d+m\d\ds  ", ln)]
+    assert progress == [
+        "· check: in progress, Read the version",
+        "check: Check the tag",
+        "✓ check: success",
+        "· build: queued",
+        "· build: in progress, npm test",
+        "… still waiting on build (in progress, npm test)",
+        "✓ build: success",
+        "– marketplace: skipped",
+    ]
+    assert any(ln.lstrip().startswith("0m00s") for ln in lines) and any(ln.lstrip().startswith("3m") for ln in lines)
+
+
+def test_a_failed_job_is_named_in_the_progress_too(world, capsys):
+    world.steps = [({"status": "in_progress", "conclusion": "",
+                     "jobs": [job("ci / test (ubuntu-latest, 3.9)", "completed", conclusion="failure")]}, [])]
+    assert release("--run", "42", "--yes") == 1
+    out = capsys.readouterr()
+    assert "✗ ci / test (ubuntu-latest, 3.9): failure" in out.out and "--log-failed" in out.err
+
+
+def test_the_marketplace_wait_says_every_five_minutes_that_it_is_still_waiting(world, capsys):
+    full_run(world)
+    world.market_after = 25           # listed on the 25th poll, 12.5 minutes in
+    assert release("--yes") == 0
+    reminders = [ln for ln in capsys.readouterr().out.splitlines() if f"doesn't list {V} yet" in ln]
+    assert [ln.split(":")[0] for ln in reminders] == ["… 5m00s", "… 10m00s"]
+    assert all("it lists nothing" in ln and f"gitpro-{V}.vsix" in ln for ln in reminders)
+
+
+def test_the_site_check_says_once_that_it_waits_for_the_cache(world, monkeypatch, capsys):
+    full_run(world)
+    looks = []
+    real = world.http
+
+    def http(url, *a):
+        if url == rel.SITE_URL:
+            looks.append(url)
+            return (200, '"softwareVersion": "0.0.1"') if len(looks) < 4 else real(url, *a)
+        return real(url, *a)
+    monkeypatch.setattr(rel, "http", http)
+    assert release("--yes") == 0
+    out = capsys.readouterr().out
+    assert out.count(f"gitpro.dev doesn't name {V} yet") == 1 and f"✓ gitpro.dev names {V}" in out
+
+
+# ------------------------------------------------------------------ resume
+
+def test_a_run_still_going_on_head_is_followed_not_started_again(world, capsys):
+    world.before = [{"databaseId": 8, "headSha": HEAD, "createdAt": "2026-10-17T11:00:00Z",
+                     "status": "waiting", "conclusion": ""}]
+    world.answers = [True]
+    world.on_pypi = True
+    world.market = [V]
+    assert release() == 0
+    assert world.asked == ["Follow it?"] and not world.dispatched
+    assert "Run 8 for aaaaaaa is waiting" in capsys.readouterr().out
+
+
+def test_no_to_following_starts_nothing(world, capsys):
+    world.before = [{"databaseId": 8, "headSha": HEAD, "createdAt": "2026-10-17T11:00:00Z",
+                     "status": "in_progress", "conclusion": ""}]
+    assert release() == 0
+    assert world.writes() == [] and "Nothing started." in capsys.readouterr().out
+
+
+def test_a_failed_run_after_the_tag_reruns_its_failed_jobs(world, capsys):
+    """The tag exists and run 5 on HEAD failed at pypi: re-run, then follow the new attempt."""
+    world.remote_tag, world.on_pypi = "present", True
+    world.before[0].update(conclusion="failure")
+    world.steps = [({"status": "completed", "conclusion": "failure",
+                     "jobs": [done("github"), job("pypi", "completed", conclusion="failure")]}, [])]
+    world.rerun_steps = [
+        ({"status": "in_progress", "conclusion": "", "jobs": [done("github"), waiting("pypi")]}, [gate("pypi")]),
+        ({"status": "in_progress", "conclusion": "", "jobs": [done("github"), done("pypi")]}, [gate("mcp-registry")]),
+        ({"status": "completed", "conclusion": "success", "jobs": [done("github"), done("pypi")]}, []),
+    ]
+    world.market_after = 1
+    world.answers = [True, True, True]
+    assert release() == 0
+    out = capsys.readouterr().out
+    assert world.asked == ["Re-run its failed jobs?", "Approve pypi?", "Approve mcp-registry?"]
+    assert ("rerun", "5") in world.events and not world.dispatched
+    assert "Run 5 ended failure at pypi" in out and "attempt 2" in out
+
+
+def test_no_to_the_rerun_writes_nothing(world, capsys):
+    world.on_pypi = True
+    world.before[0].update(conclusion="failure")
+    world.steps = [({"status": "completed", "conclusion": "failure", "jobs": [job("site", "completed", conclusion="failure")]}, [])]
+    world.rerun_steps = []
+    assert release() == 0
+    assert world.writes() == [] and "Nothing re-run" in capsys.readouterr().out
+
+
+def test_run_id_of_a_failed_run_offers_the_rerun(world):
+    world.steps = [({"status": "completed", "conclusion": "cancelled", "jobs": [job("ci / vscode", "completed",
+                                                                                     conclusion="cancelled")]}, [])]
+    world.rerun_steps = [({"status": "completed", "conclusion": "success", "jobs": [done("github")]}, [])]
+    world.on_pypi, world.market, world.answers = True, [V], [True]
+    assert release("--run", "42") == 0
+    assert world.asked == ["Re-run its failed jobs?"] and ("rerun", "42") in world.events
+
+
+def test_a_succeeded_run_still_needs_the_marketplace(world, capsys):
+    """Approved on the page, without the script: the VSIX step runs before verify."""
+    world.on_pypi, world.market_after = True, 2
+    assert release("--run", "42", "--yes") == 0
+    assert any(c[:2] == ["release", "download"] for kind, c in world.calls if kind == "gh")
+    assert f"✓ the Marketplace lists {V}" in capsys.readouterr().out
+
+
+def test_a_failed_job_says_how_to_resume(world, capsys):
+    world.steps = [({"status": "in_progress", "conclusion": "", "jobs": [job("pypi", "completed", conclusion="failure")]}, [])]
+    assert release("--run", "42", "--yes") == 1
+    assert "run this script again: it offers to re-run the failed jobs" in capsys.readouterr().err
