@@ -21,7 +21,7 @@ V = "9.8.7"
 HEAD = "a" * 40
 OTHER = "b" * 40
 VSIX = b"the extension"
-GATE_IDS = {"release": 11, "pypi": 12, "marketplace": 13, "mcp-registry": 14, "github-pages": 15, "surprise": 16}
+GATE_IDS = {"release": 11, "pypi": 12, "marketplace": 13, "mcp-registry": 14, "github-pages": 15, "surprise": 16, "openvsx": 17}
 WRITES = (["workflow", "run"], ["api", "-X", "POST"], ["run", "rerun"])
 
 
@@ -62,6 +62,7 @@ class World:
         self.market = []                      # versions listed; becomes [V] after market_after looks
         self.market_after = 0
         self.market_looks = 0
+        self.openvsx = []                     # versions Open VSX lists
         self.vsix = VSIX
         self.sums_vsix = VSIX
         self.answers = []
@@ -149,6 +150,8 @@ class World:
             return 200, json.dumps({"results": [{"extensions": [{"versions": [{"version": x} for x in listed]}]}]})
         if url.startswith(rel.REGISTRY):
             return 200, "{}"
+        if url.startswith(rel.OPENVSX_API + "/"):
+            return (200, "{}") if url.rsplit("/", 1)[1] in self.openvsx else (404, "")
         if url == rel.SITE_URL:
             return 200, f'<script>{{"softwareVersion": "{V}"}}</script>'
         raise AssertionError(f"unexpected URL {url}")
@@ -364,6 +367,22 @@ def test_verify_reports_what_is_missing(world, monkeypatch, capsys):
     assert f"✗ the MCP Registry has {rel.MCP_NAME} {V}" in out and f"✓ gitpro.dev names {V}" in out
 
 
+def test_verify_skips_open_vsx_when_its_job_did_not_run(world, capsys):
+    world.openvsx = ["0.0.1"]              # listed, but this run didn't publish there
+    world.steps = [({"status": "completed", "conclusion": "success",
+                     "jobs": [done("github"), job("openvsx", "completed", conclusion="skipped")]}, [])]
+    assert release("--yes") == 0
+    assert "– Open VSX: the openvsx job didn't run; not checked" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("listed, rc, line", [([V], 0, f"✓ Open VSX lists {V}"), (["0.0.1"], 1, f"✗ Open VSX lists {V}")])
+def test_verify_checks_open_vsx_when_its_job_published(world, capsys, listed, rc, line):
+    world.openvsx = listed
+    world.steps = [({"status": "completed", "conclusion": "success", "jobs": [done("github"), done("openvsx")]}, [])]
+    assert release("--yes") == rc
+    assert line in capsys.readouterr().out
+
+
 # ------------------------------------------------------------------ --run
 
 def test_run_id_follows_that_run_without_starting_one(world):
@@ -450,6 +469,18 @@ def test_pypi_gate_that_shows_up_while_waiting_is_approved_before_the_vsix_wait(
     kinds = [e[0] for e in world.events]
     assert world.approved() == ["pypi"]
     assert kinds.index("post") < kinds.index("vsix")
+
+
+def test_an_openvsx_gate_is_approved_and_named(world, capsys):
+    world.market_after = 0
+    world.on_pypi = True
+    world.steps = [
+        ({"status": "in_progress", "conclusion": "", "jobs": [done("github")]}, [gate("openvsx")]),
+        ({"status": "completed", "conclusion": "success", "jobs": [done("github")]}, []),
+    ]
+    assert release("--run", "42", "--yes") == 0
+    assert world.approved() == ["openvsx"]
+    assert "publishes the VSIX to Open VSX" in capsys.readouterr().out
 
 
 def test_a_marketplace_gate_is_approved_and_named(world, capsys):

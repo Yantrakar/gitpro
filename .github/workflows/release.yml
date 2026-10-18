@@ -5,8 +5,8 @@ name: Release
 # must be X.Y.Z, and tag vX.Y.Z must not exist yet; the VSIX and server.json
 # are stamped with it at build time. The full CI
 # matrix runs first; one build then feeds GitHub (which creates the tag),
-# PyPI and the Marketplace; server.json goes to the MCP Registry and site/ to
-# gitpro.dev once PyPI has the release. Each publishing job waits for its
+# PyPI, the Marketplace and Open VSX; server.json goes to the MCP Registry
+# and site/ to gitpro.dev once PyPI has the release. Each publishing job waits for its
 # environment's reviewer. Spec: docs/spec/20-release.md.
 on:
   workflow_dispatch:
@@ -156,6 +156,27 @@ jobs:
     permissions:
       contents: read
       id-token: write
+
+  # Open VSX trusts this file and the openvsx environment as a trusted publisher, so no token is
+  # stored; it matches the run's top workflow, release.yml, not a file it calls. Off until the
+  # repository variable OPENVSX is true. --skip-duplicate keeps a re-run from failing.
+  openvsx:
+    needs: github
+    if: vars.OPENVSX == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: openvsx
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npx --yes ovsx@1.2.0 publish --packagePath dist/*.vsix --trusted-publishing --skip-duplicate
 
   mcp-registry:
     needs: [check, pypi]

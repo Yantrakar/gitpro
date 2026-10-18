@@ -2,7 +2,7 @@
 
 Depends on 05 (`forge.Account`, `forge.run`). Facts below are as of main 114d173
 (release 0.4.0 and #22) and the repository settings read on 2026-10-17. Written
-2026-10-15 after 0.3.4; refreshed 2026-10-17.
+2026-10-15 after 0.3.4; refreshed 2026-10-17. Open VSX added 2026-10-18 (section 13).
 
 Files this package may create or edit:
 - new: `scripts/release.py`, `tests/test_release_script.py`;
@@ -73,7 +73,7 @@ Repository settings on 2026-10-17:
   that owns the publisher has no Azure tenant). The script makes it one step.
 
 Not goals:
-- Open VSX, Homebrew or any other new channel.
+- Homebrew or any other new channel. (Open VSX was one until 2026-10-18; section 13.)
 - Steps on the releaser's own machine, such as upgrading their install or their agent
   skill. They stay outside this repo.
 - Changing what is published, or how PyPI and the Registry sign in.
@@ -118,6 +118,7 @@ Jobs, in order; each runs only when the one before it succeeded:
 | `github` | `release` | Creates the annotated tag `vX.Y.Z` ("gitpro X.Y.Z") on `github.sha` with the job's token (`contents: write`), through the API (`POST git/tags`, then `POST git/refs`), so the job needs no checkout and no stored credentials. Then `gh release create` with `dist/*`, `--generate-notes` and `--verify-tag`. |
 | `pypi` | `pypi` | As today. It now needs `github`, not `build`. |
 | `marketplace` | `marketplace` | As today (`marketplace.yml`). It skips while the Azure variables are unset. Its `tag` input is `check`'s output, because `github.ref_name` is now `main`. |
+| `openvsx` | `openvsx` | Section 13. After `github`; skipped unless the repository variable `OPENVSX` is `true`. |
 | `mcp-registry` | `mcp-registry` | As today (`mcp-registry.yml`), after `pypi`, with the same `tag` input. It checks out `refs/tags/<tag>`, which `github` created, runs `scripts/versions.py --stamp` (the committed `server.json` has no version) and checks that the version equals the tag. |
 | `site` | `github-pages` (no reviewer) | As today (`pages.yml`, since #22), after `pypi`. |
 
@@ -243,11 +244,14 @@ Steps:
    - the GitHub release has the wheel, the sdist, the VSIX and `SHA256SUMS`;
    - the MCP Registry has `io.github.Yantrakar/gitpro` X.Y.Z;
    - the Marketplace lists X.Y.Z;
+   - Open VSX lists X.Y.Z, when the run's `openvsx` job succeeded; when it was skipped
+     (the variable `OPENVSX` unset) the line is
+     `– Open VSX: the openvsx job didn't run; not checked` and doesn't count;
    - gitpro.dev names X.Y.Z (`"softwareVersion": "X.Y.Z"`), checked every 30 s for up
      to 10 minutes, since GitHub Pages sends `Cache-Control: max-age=600` and a cache
      may serve the old page until then. The first miss prints one line saying so.
 
-   It exits 0 only when all five pass.
+   It exits 0 only when every counted check passes.
 
 Everything the script prints goes through `forge.redact` and `forge.safe`, so a token
 in a gh error never reaches the terminal. Ctrl-C exits 130; the run keeps going on
@@ -260,6 +264,7 @@ GitHub and `--run ID` picks it up.
 | `release` | `creates tag vX.Y.Z and the GitHub release (wheel, sdist, VSIX, SHA256SUMS)` |
 | `pypi` | `publishes gitpro X.Y.Z to PyPI (a version can never be uploaded again)` |
 | `marketplace` | `publishes the VSIX to the VS Code Marketplace` |
+| `openvsx` | `publishes the VSIX to Open VSX` |
 | `mcp-registry` | `publishes server.json X.Y.Z to the MCP Registry (it cannot be changed later)` |
 
 An environment the table doesn't know gets `unknown gate`, and the script stops without
@@ -322,6 +327,9 @@ replace. No test touches the network.
   jobs after `y` (none after `n`) and follows the new attempt; with no run on HEAD it
   stops before any question.
 - A succeeded run whose VSIX the Marketplace doesn't list gets step 4 before step 5.
+- The `openvsx` gate is approved and named. Verify skips Open VSX when the `openvsx`
+  job was skipped, and when the job succeeded passes if Open VSX lists the version and
+  fails if it doesn't.
 - Following prints each job and step change once, with the time, a reminder after 2
   minutes without one, and a failed job's name; the Marketplace wait reminds every 5
   minutes; the site check says once that it waits.
@@ -350,3 +358,32 @@ None. The decisions are the user's, from 2026-10-15:
 - the VSIX upload stays manual.
 
 And from 2026-10-17: the site goes live only from a release, after PyPI has it (#22).
+
+## 13. Open VSX (added 2026-10-18)
+
+The `openvsx` job in `release.yml` publishes the VSIX from artifact `dist` with
+`npx --yes ovsx@1.2.0 publish --packagePath dist/*.vsix --trusted-publishing --skip-duplicate`.
+It has `id-token: write` and nothing else, and no token is stored. `ovsx` 1.1.0 added
+trusted publishing; 1.2.0 (2026-09-10) retries the token exchange on a 502, 503 or 504.
+`--skip-duplicate` makes a re-run pass when the version is already there.
+
+How Open VSX matches the run, from its source
+(`GitHubTrustedPublishingProviderSupport.java`, read 2026-10-18): the repository and
+owner ids, the `workflow_ref` claim without its `@ref`, and the environment if the
+registration names one. `workflow_ref` is the run's top workflow, so the registration
+names `release.yml`; `job_workflow_ref` (a called workflow) is only recorded. Open VSX
+doesn't check the branch, which is why the job has its own environment.
+
+Before the job can run (the Open VSX wiki, "Trusted Publishing" and "Namespace Access"):
+1. The namespace `yantrakar` exists (done 2026-10-18; not yet verified). Its case must
+   match `publisher` in `vscode/package.json`.
+2. The first version is uploaded with an access token, because a registration for an
+   extension with no active version is refused. 0.4.1 was uploaded on 2026-10-18 and is
+   active; Open VSX activates a version only after its scan.
+3. The user owns the namespace: creating it makes you a contributor; ownership is claimed
+   in a public issue (EclipseFdn/open-vsx.org#14393, opened 2026-10-18).
+4. Settings → Trusted Publishers, GitHub Actions: owner `Yantrakar`, repository `gitpro`,
+   workflow `release.yml`, environment `openvsx`. The access token is then deleted.
+5. The `openvsx` environment: required reviewer `sandeepshelke`, deployment branch
+   `main`, like `pypi`.
+6. The repository variable `OPENVSX` set to `true`.

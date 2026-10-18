@@ -1750,7 +1750,9 @@ environment's reviewer:
 publishes to PyPI (trusted publishing); `marketplace` publishes the VSIX
 (`marketplace.yml`: a Microsoft Entra managed identity, variables
 `AZURE_CLIENT_ID` and `AZURE_TENANT_ID`; skipped while the variables are
-unset); `mcp-registry` publishes `server.json` to the MCP Registry once PyPI
+unset); `openvsx` publishes the VSIX to Open VSX (trusted publishing,
+registered for `release.yml` and the `openvsx` environment; skipped unless
+the variable `OPENVSX` is `true`); `mcp-registry` publishes `server.json` to the MCP Registry once PyPI
 has the release, signed in with the workflow's GitHub OIDC token. A registry
 version cannot be changed after it is published, so a version already there is
 skipped. Until the Marketplace variables are set, the VSIX is uploaded by hand:
@@ -1763,7 +1765,8 @@ installed; a merge to main does not publish it, and a site-only fix is
 published by running `pages.yml` by hand on main. `scripts/release.py`
 preflights the checkout (main, clean, up to date, versions, tag, PyPI,
 `gitpro why`), asks before each gate (`--yes` answers for you), resumes a run
-with `--run ID`, and verifies all five destinations at the end.
+with `--run ID`, and verifies every destination at the end (Open VSX when its
+job ran).
 
 Live GitHub qualification is separate and opt-in: `python tests/smoke_github.py --help`.
 It previews by default; `-y` authorizes a private clone/configuration, candidate

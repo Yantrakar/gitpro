@@ -40,6 +40,7 @@ PUBLISHER_URL = "https://marketplace.visualstudio.com/manage/publishers/yantraka
 SITE_URL = "https://gitpro.dev/"
 MARKETPLACE_QUERY = "https://marketplace.visualstudio.com/_apis/public/gallery/extensionquery"
 REGISTRY = "https://registry.modelcontextprotocol.io"
+OPENVSX_API = "https://open-vsx.org/api/yantrakar/gitpro"
 
 POLL = 15                 # seconds between looks at the run
 HEARTBEAT = 120           # seconds without a progress line before follow() says what it still waits for
@@ -54,6 +55,7 @@ GATES = {
     "release": "creates tag v{v} and the GitHub release (wheel, sdist, VSIX, SHA256SUMS)",
     "pypi": "publishes gitpro {v} to PyPI (a version can never be uploaded again)",
     "marketplace": "publishes the VSIX to the VS Code Marketplace",
+    "openvsx": "publishes the VSIX to Open VSX",
     "mcp-registry": "publishes server.json {v} to the MCP Registry (it cannot be changed later)",
 }
 FAILED = {"failure", "cancelled", "timed_out", "startup_failure"}
@@ -423,8 +425,8 @@ class Progress:
             self.line("… still waiting on " + ", ".join(busy) if busy else "… waiting for the next job to start")
 
 
-def follow(acc: forge.Account, run_id: int, v: str, yes: bool) -> None:
-    """Step 3 (and step 4 when its turn comes): until the run succeeds, or Stop."""
+def follow(acc: forge.Account, run_id: int, v: str, yes: bool) -> List[dict]:
+    """Step 3 (and step 4 when its turn comes): until the run succeeds, or Stop; returns its jobs."""
     approved, vsix_done = set(), False
     progress = Progress()
     while True:
@@ -441,7 +443,7 @@ def follow(acc: forge.Account, run_id: int, v: str, yes: bool) -> None:
             if run.get("conclusion") == "success":
                 if not vsix_done:      # the run finished without this script (approved on the page)
                     vsix(acc, v, run_id)
-                return
+                return jobs
             raise Stop(f"the run ended {run.get('conclusion')}: {run_url(run_id)}\n"
                        "Run this script again: it offers to re-run the failed jobs.")
         later = settle(acc, run_id, v, yes, approved)
@@ -461,8 +463,9 @@ def follow(acc: forge.Account, run_id: int, v: str, yes: bool) -> None:
         sleep(POLL)
 
 
-def verify(acc: forge.Account, v: str) -> bool:
-    """Step 5: one line per place; True when all five have v."""
+def verify(acc: forge.Account, v: str, openvsx: bool) -> bool:
+    """Step 5: one line per place; True when every place has v. Open VSX is checked only when the run's
+    openvsx job published (`openvsx`); the job is skipped while the variable OPENVSX is unset."""
     checks = []
     try:
         files = {u["packagetype"] for u in (on_pypi(v) or {}).get("urls", [])}
@@ -483,6 +486,10 @@ def verify(acc: forge.Account, v: str) -> bool:
     checks.append((f"the MCP Registry has {MCP_NAME} {v}", status == 200))
     listed = marketplace_versions()
     checks.append((f"the Marketplace lists {v}", listed is not None and v in listed))
+    if openvsx:
+        checks.append((f"Open VSX lists {v}", http(f"{OPENVSX_API}/{v}")[0] == 200))
+    else:
+        checks.append(("Open VSX: the openvsx job didn't run; not checked", None))
     deadline, site, told = now() + SITE_WAIT, False, False
     while True:
         status, text = http(SITE_URL)
@@ -496,8 +503,8 @@ def verify(acc: forge.Account, v: str) -> bool:
         sleep(SITE_POLL)
     checks.append((f"gitpro.dev names {v}", site))
     for text, ok in checks:
-        say(("✓ " if ok else "✗ ") + text)
-    return all(ok for _, ok in checks)
+        say({True: "✓ ", False: "✗ ", None: "– "}[ok] + text)
+    return all(ok is not False for _, ok in checks)
 
 
 def main(argv: Optional[List[str]] = None) -> int:
@@ -550,9 +557,10 @@ def main(argv: Optional[List[str]] = None) -> int:
             if not pick_up(acc, run_id, args.yes):
                 return 0
         say(f"Release v{v}: {run_url(run_id)}")
-        follow(acc, run_id, v, args.yes)
+        jobs = follow(acc, run_id, v, args.yes)
         say(f"✓ the run succeeded: {run_url(run_id)}")
-        return 0 if verify(acc, v) else 1
+        openvsx = any(j.get("name") == "openvsx" and j.get("conclusion") == "success" for j in jobs)
+        return 0 if verify(acc, v, openvsx) else 1
     except Stop as e:
         print(clean(str(e)), file=sys.stderr, flush=True)
         return e.code
