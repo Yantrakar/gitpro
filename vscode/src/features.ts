@@ -25,7 +25,7 @@ export function registerFeatures(context: vscode.ExtensionContext, cli: Cli, cap
   return roots;
 }
 
-function repoDir(cli: Cli): string | undefined {
+export function repoDir(cli: Cli): string | undefined {
   const dir = cli.dir();
   if (!dir) {
     void ui.error("Open a file in a git repository first.");

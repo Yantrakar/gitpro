@@ -1656,20 +1656,10 @@ def _precheck(path: Path, t: Target, snippet: str) -> Optional[object]:
     """The file's JSON (None when missing); ConfigError for anything gitpro must not edit."""
     from . import jsonfile, undo
     from .config import ConfigError
-    shown = undo.tilde(path)
-    try:
-        text = path.read_text(encoding="utf-8")
-    except FileNotFoundError:
+    obj = jsonfile.read_object(path, snippet)
+    if obj is None:
         return None
-    try:
-        obj = json.loads(text)
-    except ValueError:
-        if jsonfile.strip_jsonc(text)[1]:
-            raise ConfigError(f"{shown} has comments; gitpro cannot edit it without losing them"
-                              f" — add this by hand: {snippet}") from None
-        raise ConfigError(f"{shown} is not valid JSON; fix it by hand (nothing written)") from None
-    if not isinstance(obj, dict):
-        raise ConfigError(f"{shown} is not a JSON object; fix it by hand (nothing written)")
+    shown = undo.tilde(path)
     hooks = obj.get("hooks", {})
     if not isinstance(hooks, dict):
         raise ConfigError(f"{shown}: hooks is not an object; fix it by hand (nothing written)")
@@ -1689,8 +1679,8 @@ def _repo_top() -> Optional[Path]:
 
 
 def _git_out(top: Path, *args: str, timeout: float = 30) -> subprocess.CompletedProcess:
-    env = {k: v for k, v in os.environ.items() if k not in ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE")}
-    return subprocess.run(["git", "-C", str(top), *args], capture_output=True, text=True, env=env,
+    from . import resolve
+    return subprocess.run(["git", "-C", str(top), *args], capture_output=True, text=True, env=resolve._child_env(),
                           stdin=subprocess.DEVNULL, timeout=timeout)
 
 
@@ -1722,20 +1712,6 @@ def _exclude_local(top: Path, script: Optional[Path]) -> bool:
     mode = exclude.stat().st_mode & 0o777 if old is not None else 0o644
     files.atomic_write(exclude, text, mode)
     return True
-
-
-def _confirm_with(args: argparse.Namespace, question: str) -> Callable[[str], bool]:
-    def confirm(diff: str) -> bool:
-        from .config import ConfigError
-        if args.yes:
-            return True
-        if not sys.stdin.isatty():
-            raise ConfigError("no terminal to confirm on; re-run with --yes")
-        from . import view
-        if diff:
-            print(diff, end="" if diff.endswith("\n") else "\n")
-        return view.confirm(question)
-    return confirm
 
 
 def _edit(args: argparse.Namespace, removing: bool) -> int:
@@ -1798,7 +1774,7 @@ def _edit(args: argparse.Namespace, removing: bool) -> int:
                                                   "hook": _snippet(t), "backup": None, "undo": None})
     question = f"{'remove' if removing else 'install'} the {title} hook?"
     res = jsonfile.edit_json(t.path, change, command=command, create={},
-                             confirm=_confirm_with(args, question), mkdir=True, snippet=_snippet(t))
+                             confirm=jsonfile.confirm_once(args, question), mkdir=True, snippet=_snippet(t))
     if not res.changed:
         from . import view
         view.aborted()

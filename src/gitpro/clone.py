@@ -24,7 +24,8 @@ from typing import Iterator, List, Optional, Sequence, Tuple
 
 from . import jsonout, resolve
 from .args import capability
-from .config import Config, ConfigError, Identity
+from .config import SCAN_CONTROL_RE, Config, ConfigError, Identity
+from .util import expand_home as _expand
 
 # scheme -> what kind of access it is ("auth" in --json for a URL that is kept as given)
 _SCHEMES = {"http": "https", "https": "https", "ssh": "ssh", "git+ssh": "ssh", "ssh+git": "ssh",
@@ -33,7 +34,6 @@ _SCHEME_RE = re.compile(r"^([A-Za-z][A-Za-z0-9+.-]*)://")
 _SEG = r"[A-Za-z0-9._-]+"
 _SHORT_RE = re.compile(rf"^{_SEG}(?:/{_SEG})+$")       # owner/repo, group/sub/repo, host/owner/repo
 _PLACEHOLDER_RE = re.compile(r"\{(host|owner|repo|id)\}")
-_CONTROL_RE = re.compile(r"[\x00-\x1f\x7f]")
 
 
 @dataclass(frozen=True)
@@ -79,7 +79,7 @@ def _find(cfg: Config, want: str) -> Identity:
 def _source(url: str, ident: Optional[Identity], cwd: Path) -> _Source:
     """What the user typed, classified: a URL with a scheme, scp-like, a local path, or a shorthand."""
     bad = ConfigError(f"cannot parse {url!r} as a git URL")
-    if not url.strip() or _CONTROL_RE.search(url) or url.startswith("-"):
+    if not url.strip() or SCAN_CONTROL_RE.search(url) or url.startswith("-"):
         raise bad
     m = _SCHEME_RE.match(url)
     if m:
@@ -115,10 +115,6 @@ def _source(url: str, ident: Optional[Identity], cwd: Path) -> _Source:
     if not local or not repo:
         raise bad
     return _Source(url, "local", None, None, repo)
-
-
-def _expand(p: str, home: Path) -> Path:
-    return home / p[2:] if p.startswith("~/") else Path(p)
 
 
 def _tilde(path: Path, home: Path) -> str:

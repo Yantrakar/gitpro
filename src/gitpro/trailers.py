@@ -120,11 +120,15 @@ def check(trailers: Sequence[Trailer], policy: Policy) -> List[str]:
 
 # ---------------------------------------------------------------- reading trailers
 
-def _interpret(argv: List[str], stdin: Optional[str] = None) -> List[Trailer]:
+def _interpret(argv: List[str], stdin: Optional[str] = None, cwd: Optional[Path] = None) -> List[Trailer]:
+    extra: dict = {} if stdin is not None else {"stdin": subprocess.DEVNULL}
+    if cwd is not None:   # outside a hook: read that repo's trailer.* config, not the caller's GIT_DIR
+        from . import resolve
+        extra.update(cwd=str(cwd), env=resolve._child_env())
     try:
         r = subprocess.run(["git", "interpret-trailers", "--parse", "--no-divider", *argv], input=stdin,
                            capture_output=True, text=True, encoding="utf-8", errors="replace",
-                           timeout=GIT_TIMEOUT, **({} if stdin is not None else {"stdin": subprocess.DEVNULL}))
+                           timeout=GIT_TIMEOUT, **extra)
     except FileNotFoundError:
         raise ConfigError("git not found") from None
     except subprocess.TimeoutExpired:
@@ -140,9 +144,9 @@ def parse(file: object) -> List[Trailer]:
     return _interpret([str(file)])
 
 
-def parse_text(message: str) -> List[Trailer]:
-    """parse() for a message held in a string."""
-    return _interpret([], message)
+def parse_text(message: str, cwd: Optional[Path] = None) -> List[Trailer]:
+    """parse() for a message held in a string (read in the repo at `cwd`, when given)."""
+    return _interpret([], message, cwd)
 
 
 # ---------------------------------------------------------------- commit-msg entry (01 §5.6)

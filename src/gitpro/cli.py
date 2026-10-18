@@ -35,10 +35,10 @@ from pathlib import Path
 from typing import Dict, Iterator, Optional, Tuple
 
 from . import __version__, config, deprecation, jsonout
-from .args import CAPABILITIES, capability, common, confirm, dry_run, fail, guarded, preview_only, preview_result
+from .args import CAPABILITIES, ask as _confirm, capability, common, confirm, dry_run, fail, guarded, preview_only, preview_result
+from .util import sh_tilde as _sh
 
 PROG = "gitpro"
-MIN_GIT = (2, 36)
 
 # One line per package, alphabetical by module name. 01 writes the whole list up front; a module that
 # is not built yet is skipped (see _extension_modules). No later package edits this file.
@@ -330,15 +330,6 @@ def _warn(cfg, env) -> None:
         view.warn(msg)
 
 
-def _confirm(question: str, yes: bool) -> bool:
-    if yes:
-        return True
-    if not sys.stdin.isatty():
-        raise config.ConfigError("no terminal to confirm on; re-run with --yes")
-    from . import view
-    return view.confirm(question)
-
-
 def _changes(cfg, env) -> list:
     from . import files, plan
     return files.diff(*plan.build(cfg, env))
@@ -374,7 +365,7 @@ def cmd_status(p: argparse.ArgumentParser, subs: Subs) -> int:
 def cmd_init(args) -> int:
     from importlib import resources
 
-    from . import view
+    from . import files, view
     target = (args.path or Path.home() / config.USER_CONFIG).expanduser()
     if target.exists():
         view.ok(f"{target} already exists, left unchanged")
@@ -383,10 +374,7 @@ def cmd_init(args) -> int:
     if preview_only(args):
         print(f"Would create {target}:\n{text}")
         return preview_result(args, "init", {"path": str(target), "content": text})
-    target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-    fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    with os.fdopen(fd, "w") as f:
-        f.write(text)
+    files.atomic_write(target, text, 0o600, overwrite=False)   # no half-written config for the next init to refuse
     extra = "" if args.path is None else f" -c {target}"
     view.ok(f"created {target}")
     view.step(f"replace the placeholders in it, then run: {PROG} plan{extra}")
@@ -594,12 +582,6 @@ def _lost(roots, exclude, cfg, paths, source) -> dict:
                         repos=paths, roots_source=source)
 
 
-def _sh(path: str) -> str:
-    """Quote a path for the shell, leaving a leading ~ unquoted so the shell still expands it."""
-    import shlex
-    return path if path == "~" else "~/" + shlex.quote(path[2:]) if path.startswith("~/") else shlex.quote(path)
-
-
 def _fix(args, repos: list, home: Path) -> int:
     from . import plan, scan
     state = Path(os.environ.get("XDG_STATE_HOME") or home / ".local/state") / PROG
@@ -699,10 +681,6 @@ def cmd_uninstall(args) -> int:
     return 0
 
 
-def _fail(msg: str, args) -> int:
-    return fail(msg, args)
-
-
 def main(argv: Optional[list] = None) -> int:
     global CALLER_UMASK
     if os.name != "posix":
@@ -714,7 +692,7 @@ def main(argv: Optional[list] = None) -> int:
     if args.version:
         return cmd_version(args)
     if os.geteuid() == 0:
-        return _fail("run as the user who owns these identities, not root", args)
+        return fail("run as the user who owns these identities, not root", args)
     CALLER_UMASK = os.umask(0o077)
     if args.command is None:
         return guarded(lambda a: cmd_status(p, subs), args)

@@ -9,6 +9,7 @@ from pathlib import Path
 import re
 from typing import Optional
 
+from .config import SCAN_CONTROL_RE
 from .operation_contract import OperationError, decode, digest
 
 MAX_POLICY = 65536
@@ -43,7 +44,7 @@ def _invalid(message: str) -> OperationError:
 
 
 def _path(value: object) -> Path:
-    if not isinstance(value, str) or not value or any(ord(c) < 32 or ord(c) == 127 for c in value):
+    if not isinstance(value, str) or not value or SCAN_CONTROL_RE.search(value):
         raise _invalid("Policy paths must be absolute, normalized paths without control characters.")
     path = Path(value)
     if not path.is_absolute() or ".." in path.parts or str(path) != value or path.resolve() != path:

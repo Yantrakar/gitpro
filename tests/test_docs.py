@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parent.parent
 GUIDE = (ROOT / "docs/guide.md").read_text(encoding="utf-8")
 README = (ROOT / "README.md").read_text(encoding="utf-8")
 SKILL = (ROOT / "skills/gitpro/SKILL.md").read_text(encoding="utf-8")
-VERSION = "0.4.0"
+VERSION = gitpro.__version__
 GIT_URL = "git+https://github.com/Yantrakar/gitpro.git"
 INSTALL = "pipx install gitpro"
 
@@ -402,15 +402,81 @@ def test_manifests_parse():
     assert "PATH" in plugin["description"] and INSTALL in plugin["description"]
 
 
-def test_versions_are_the_release():
-    assert gitpro.__version__ == VERSION
-    assert _json("vscode/package.json")["version"] == VERSION
-    assert _json(".claude-plugin/plugin.json")["version"] == VERSION
-    assert [p["version"] for p in _json(".claude-plugin/marketplace.json")["plugins"]] == [VERSION]
-    lock = _json("vscode/package-lock.json")
-    assert lock["version"] == VERSION and lock["packages"][""]["version"] == VERSION
-    server = _json("server.json")
-    assert server["version"] == VERSION and [p["version"] for p in server["packages"]] == [VERSION]
+def _versions_module():
+    sys.path.insert(0, str(ROOT / "scripts"))
+    try:
+        import versions
+    finally:
+        sys.path.remove(str(ROOT / "scripts"))
+    return versions
+
+
+# Files that must not carry the release version: it is written in src/gitpro/VERSION only. CHANGELOG, the
+# site's release history list and docs that name a past release on purpose are not in this list; the site's
+# version fields are placeholders (test_site_structured_data_is_the_release).
+NO_VERSION_COPIES = ["src/gitpro/__init__.py", "vscode/package.json", "vscode/package-lock.json", "server.json",
+                     ".claude-plugin/plugin.json", ".claude-plugin/marketplace.json"]
+
+
+def test_version_is_written_in_one_place():
+    versions = _versions_module()
+    assert versions.version(ROOT) == VERSION
+    for rel in NO_VERSION_COPIES:
+        text = (ROOT / rel).read_text(encoding="utf-8")
+        assert VERSION not in text, f"{rel} holds the release version {VERSION}; only src/gitpro/VERSION may"
+    # VS Code loads no extension without a version (the integration test runs before --stamp): a placeholder
+    assert _json("vscode/package.json")["version"] == "0.0.0" and "version" not in _json("server.json")
+    assert not any("version" in p for p in _json("server.json")["packages"])
+    assert "version" not in _json("vscode/package-lock.json")
+    assert "version" not in _json("vscode/package-lock.json")["packages"][""]
+    guide_numbers = set(re.findall(r"gitpro-(\d+\.\d+\.\d+)(?:\.vsix|-py3)", GUIDE))
+    assert not guide_numbers, f"docs/guide.md names a build by number: {guide_numbers}"
+    assert not re.search(r'^  "version": "\d', GUIDE, re.M), "the sample --version output has a number"
+
+
+def _version_lines():
+    return (ROOT / "src/gitpro/VERSION").read_text(encoding="utf-8").splitlines()
+
+
+def test_dunder_version_is_the_version_file():
+    assert gitpro.__version__ == _version_lines()[0].split()[0]
+
+
+def test_version_file_lines_are_version_and_comment():
+    lines = _version_lines()
+    assert lines and all(re.fullmatch(r"\d+\.\d+\.\d+(\s.*)?", ln) for ln in lines)
+
+
+def test_version_file_is_strictly_descending():
+    nums = [tuple(map(int, ln.split()[0].split("."))) for ln in _version_lines()]
+    assert nums == sorted(set(nums), reverse=True)
+
+
+def test_version_file_versions_are_changelog_headings():
+    headings = set(re.findall(r"^## (\d+\.\d+\.\d+)\b", (ROOT / "CHANGELOG.md").read_text(encoding="utf-8"), re.M))
+    assert {ln.split()[0] for ln in _version_lines()} <= headings
+
+
+def test_stamp_writes_the_version_and_nothing_else(tmp_path):
+    versions = _versions_module()
+    for rel in ("src/gitpro/VERSION", "vscode/package.json", "vscode/package-lock.json", "server.json"):
+        (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / rel).write_bytes((ROOT / rel).read_bytes())
+    (tmp_path / "src/gitpro/VERSION").write_text("7.6.5\n", encoding="utf-8")
+    before = {rel: (tmp_path / rel).read_text(encoding="utf-8") for rel in ("vscode/package.json", "server.json")}
+    placeholder = '  "version": "0.0.0",\n'
+    assert versions.stamp(tmp_path) == ["vscode/package.json", "server.json"]
+    for rel, old in before.items():
+        new = (tmp_path / rel).read_text(encoding="utf-8")
+        assert new != old and new.endswith("\n")
+        # taking the version lines out gives the committed bytes back: nothing else moved
+        assert re.sub(r'^ *"version": "7\.6\.5",\n', "", new, flags=re.M) == old.replace(placeholder, "")
+    assert json.loads((tmp_path / "vscode/package.json").read_text(encoding="utf-8"))["version"] == "7.6.5"
+    server = json.loads((tmp_path / "server.json").read_text(encoding="utf-8"))
+    assert server["version"] == "7.6.5" and [p["version"] for p in server["packages"]] == ["7.6.5"]
+    again = {rel: (tmp_path / rel).read_bytes() for rel in before}
+    versions.stamp(tmp_path)
+    assert {rel: (tmp_path / rel).read_bytes() for rel in before} == again      # stamping twice changes nothing
 
 
 def test_server_json_names_the_pypi_package():
@@ -450,9 +516,9 @@ def test_capabilities_only_grow_and_the_changelog_names_the_new_ones(tmp_path):
     assert not unnamed, f"CHANGELOG.md does not name the new capabilities {unnamed}"
 
 
-def test_vsix_name_matches_version():
-    assert f"gitpro-{VERSION}.vsix" in GUIDE
-    assert not re.search(r"gitpro-\d+\.\d+\.\d+\.vsix", GUIDE.replace(f"gitpro-{VERSION}.vsix", ""))
+def test_vsix_name_is_a_placeholder():
+    assert "gitpro-<version>.vsix" in GUIDE
+    assert not re.search(r"gitpro-\d+\.\d+\.\d+\.vsix", GUIDE)
 
 
 # ---------------------------------------------------------------- the skill
@@ -530,7 +596,9 @@ def test_site_title_and_description_fit_search_results():
 def test_site_structured_data_is_the_release():
     data = json.loads(re.search(r'<script type="application/ld\+json">(.+?)</script>', SITE, re.S)[1])
     app = next(n for n in data["@graph"] if n["@type"] == "SoftwareApplication")
-    assert app["softwareVersion"] == VERSION and f"v{VERSION}" in SITE
+    assert app["softwareVersion"] == "0.0.0"      # the committed copy holds a placeholder; deploy stamps it
+    stamped = _site_meta().with_version(SITE, VERSION)
+    assert f'"softwareVersion": "{VERSION}"' in stamped and f"· v{VERSION}</p>" in stamped
     assert not {"aggregateRating", "review"} & set(app), "gitpro has no ratings or reviews"
     assert "FAQPage" not in {n["@type"] for n in data["@graph"]}
 
@@ -557,12 +625,18 @@ def test_site_loads_nothing_from_other_hosts():
         assert (ROOT / "site" / url.lstrip("/")).is_file(), url
 
 
-def test_site_meta_writes_version_and_git_dates():
+def _site_meta():
     import importlib.util
     spec = importlib.util.spec_from_file_location("site_meta", ROOT / "design/site_meta.py")
     meta = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(meta)
-    assert meta.release() == VERSION and meta.with_version(SITE, VERSION) == SITE
+    return meta
+
+
+def test_site_meta_writes_version_and_git_dates():
+    meta = _site_meta()
+    assert meta.release() == VERSION
+    assert meta.with_version(SITE, "0.0.0") == SITE      # the committed placeholder is what deploy replaces
     bumped = meta.with_version(SITE, "9.8.7")
     assert '"softwareVersion": "9.8.7"' in bumped and "· v9.8.7</p>" in bumped
     sitemap = (ROOT / "site/sitemap.xml").read_text(encoding="utf-8")

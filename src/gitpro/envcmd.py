@@ -18,6 +18,7 @@ from typing import List, Optional, Sequence, Tuple
 from . import config, forge, jsonout, resolve
 from .args import capability, fail, guarded
 from .config import Config, ConfigError
+from .util import tilde as _tilde
 
 SHELLS = ("sh", "fish", "pwsh")
 KEYS = ("gh", "glab", "ssh", "author")
@@ -261,12 +262,6 @@ def lines(rep: resolve.Report, cfg: Config, shell: str = "sh", only: Optional[Se
             out += it.notes + [_set_line(shell, it)]
     out += [_comment("⚠ " + m) for m in plan.problems]
     return out + _tail(shell, keys, bool(only))
-
-
-def _tilde(path: Path) -> str:
-    home = str(Path.home())
-    s = str(path)
-    return "~" + s[len(home):] if s == home or s.startswith(home + "/") else s
 
 
 def as_json(rep: resolve.Report, cfg: Config, shell: str = "sh", only: Optional[Sequence[str]] = None,

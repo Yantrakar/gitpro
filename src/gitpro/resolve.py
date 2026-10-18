@@ -21,6 +21,7 @@ from typing import Callable, Dict, Iterable, List, Mapping, Optional, Sequence, 
 
 from . import config, jsonout
 from .config import Config, ConfigError, Identity, check
+from .util import tilde
 
 MIN_GIT = (2, 36)
 TIMEOUT = 30
@@ -956,12 +957,7 @@ def identity_conflicts(expected_email: Optional[str], own: Iterable[str], author
 # ---------------------------------------------------------------- display
 
 def _tilde(path: Optional[str]) -> str:
-    if not path:
-        return ""
-    home = str(Path.home())
-    if path == home:
-        return "~"
-    return "~/" + path[len(home) + 1:] if path.startswith(home + "/") else path
+    return tilde(path) if path else ""
 
 
 def _shown_origin(s: Setting, top: Path) -> str:

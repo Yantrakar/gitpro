@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from . import args as _args
+from .args import ask as _confirm
 from .config import HOOKS_DIR, ConfigError
 
 PROG = "gitpro"
@@ -643,15 +644,6 @@ def _check_strict(repo: Path) -> int:
 def _env(args):
     from . import plan
     return plan.Env(Path(getattr(args, "home", None) or Path.home()).expanduser().resolve())
-
-
-def _confirm(question: str, yes: bool) -> bool:
-    if yes:
-        return True
-    if not sys.stdin.isatty():
-        raise ConfigError("no terminal to confirm on; re-run with --yes")
-    from . import view
-    return view.confirm(question)
 
 
 def _need_yes_for_json(args) -> None:

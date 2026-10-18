@@ -8,7 +8,7 @@ from pathlib import Path
 
 from . import config
 from .approval_policy import AUTHORITY_SCHEMA
-from .operation_contract import MAX_REQUEST, OperationError
+from .operation_contract import DECISIONS, MAX_REQUEST, OperationError
 
 KINDS = {
     "configure": ("config_path", "toml"),
@@ -40,8 +40,7 @@ RESULT_SCHEMA = {
     "properties": {
         "version": {"const": 1}, "command": {"enum": ["change propose", "change approve", "change apply",
                                                       "change status", "change recover"]},
-        "ok": {"type": "boolean"}, "decision": {"enum": ["ready", "blocked", "needs_input",
-                                                          "needs_approval", "indeterminate"]},
+        "ok": {"type": "boolean"}, "decision": {"enum": list(DECISIONS)},
         "problems": {"type": "array", "items": {
             "type": "object", "required": ["code", "message", "decision"]}},
         "plan_id": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
@@ -100,13 +99,13 @@ def parse(raw: object) -> dict:
     if not source.is_absolute() or source.suffix != ".toml" or home not in source.parents:
         raise OperationError("invalid_config_path", "Use an absolute .toml configuration path inside your home.",
                              "needs_input")
-    if ".." in source.parts or any(ord(c) < 32 or ord(c) == 127 for c in str(source)):
+    if ".." in source.parts or config.SCAN_CONTROL_RE.search(str(source)):
         raise OperationError("invalid_config_path", "Use a normalized configuration path without control characters.",
                              "needs_input")
     out["config_path"] = str(source)
     if kind == "repo-identity":
         repo = Path(raw["repo"])
-        if not repo.is_absolute() or any(ord(c) < 32 or ord(c) == 127 for c in str(repo)):
+        if not repo.is_absolute() or config.SCAN_CONTROL_RE.search(str(repo)):
             raise OperationError("invalid_repo", "Supply an absolute worktree root.", "needs_input")
         out["repo"] = str(repo.resolve())
     return out

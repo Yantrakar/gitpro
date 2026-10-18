@@ -3,8 +3,8 @@ import * as os from "node:os";
 import * as path from "node:path";
 import * as vscode from "vscode";
 import { Capabilities, LiveCapabilities, loadCapabilities, setupCall, unpinCall } from "./capabilities";
-import { Cli, exec, killAll, makeCli, ui } from "./cli";
-import { registerFeatures } from "./features";
+import { Cli, exec, killAll, makeCli, redactText, ui } from "./cli";
+import { registerFeatures, repoDir } from "./features";
 import type { RootsSeam } from "./roots";
 import { Before, fixArgs, Fixed, fixedMessage, Group, isReport, plan, question, Repo, Report, scanArgs, summary, tilde,
   tree } from "./scan";
@@ -89,14 +89,6 @@ function registerCore(context: vscode.ExtensionContext, cli: Cli): void {
       cwd: cli.dir() || os.homedir() }).show();
   }
 
-  function repoDir(): string | undefined {
-    const dir = cli.dir();
-    if (!dir) {
-      void ui.error("Open a file in a git repository first.");
-    }
-    return dir;
-  }
-
   const commands: Record<string, () => Promise<unknown>> = {
     "gitpro.setup": async () => setup(),
     "gitpro.pin": async () => {
@@ -104,14 +96,14 @@ function registerCore(context: vscode.ExtensionContext, cli: Cli): void {
         void ui.warn("Pin on the host, where your identities are set up: run 'gitpro pin' in this repo there.");
         return;
       }
-      const dir = repoDir();
+      const dir = repoDir(cli);
       if (dir) {
         await cli.show(["pin", ...(cli.caps.has("dry-run-defaults.v1") ? ["-y"] : []), dir], { cwd: dir });
         await refresh();
       }
     },
     "gitpro.unpin": async () => {
-      const dir = repoDir();
+      const dir = repoDir(cli);
       if (dir) {
         await cli.show(unpinCall(cli.caps, dir), { cwd: dir });
         await refresh();
@@ -288,8 +280,8 @@ function repoOverrides(context: vscode.ExtensionContext, out: vscode.LogOutputCh
         if (r.code === 0) {
           out.info("  ✓ undone");
         } else {
-          (r.stdout + r.stderr).trimEnd().split("\n").forEach((l) => out.error(`  ${l}`));
-          void vscode.window.showErrorMessage(`Undo failed: ${r.stderr.trim().split("\n").pop() || r.code}`, "Show Log")
+          redactText(r.stdout + r.stderr).trimEnd().split("\n").forEach((l) => out.error(`  ${l}`));
+          void vscode.window.showErrorMessage(`Undo failed: ${redactText(r.stderr.trim().split("\n").pop() || String(r.code))}`, "Show Log")
             .then((p) => p && out.show());
         }
         await scan();

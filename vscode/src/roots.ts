@@ -8,8 +8,6 @@ import { Cli, ui } from "./cli";
 import { effectiveRoots, foldersOutside, outsideMessage, ROOTS_CAP, rootsLog, tomlSnippet, viewScan } from "./rootsModel";
 import { Report, tilde } from "./scan";
 
-export { effectiveRoots, foldersOutside } from "./rootsModel";
-
 type Action = "open" | "addFolder" | "addWorkspace" | "session" | "toml";
 
 interface Item extends vscode.QuickPickItem {

@@ -26,6 +26,7 @@ from typing import Dict, List, Optional, Sequence, Set, Tuple
 from . import jsonout
 from .args import capability, fail, guarded
 from .config import ConfigError
+from .util import first_line as _first, plural, sh_tilde as _sh, tilde
 
 KINDS = ("unpushed", "merged_gone", "stash", "dirty", "no_remote", "remote_gone", "duplicate", "stale", "empty")
 OFFLINE_KINDS = tuple(k for k in KINDS if k != "remote_gone")
@@ -53,10 +54,6 @@ def key(kind: str) -> str:
     return KEY.get(kind, kind)
 
 
-def plural(n: int, word: str) -> str:
-    return f"{n} {word}{'s' * (n != 1)}"
-
-
 # ---------------------------------------------------------------- git
 
 class _Timeout(Exception):
@@ -68,10 +65,6 @@ def _env(extra: Optional[Dict[str, str]] = None) -> Dict[str, str]:
     env.update(GIT_TERMINAL_PROMPT="0", GIT_OPTIONAL_LOCKS="0", GIT_NO_LAZY_FETCH="1", LC_ALL="C", LANGUAGE="C")
     env.update(extra or {})
     return env
-
-
-def _first(text: str) -> str:
-    return next((ln.strip() for ln in text.splitlines() if ln.strip()), "")
 
 
 def _kill(p: subprocess.Popen) -> None:
@@ -322,6 +315,9 @@ def _real_host(host: str, cfg) -> str:
 def dup_key(url: str, repo: str, cfg) -> str:
     """host/owner/repo of a remote url, lowercased, ssh alias mapped to its host; a local path otherwise."""
     from .resolve import parse_url
+    if re.match(r"[A-Za-z][A-Za-z0-9+.\-]*://", url) and not url.lower().startswith("file://"):
+        # the key is printed: no userinfo, query or fragment (a password or token may sit in any of them)
+        url = re.sub(r"^([A-Za-z][A-Za-z0-9+.\-]*://)[^/]*@", r"\1", url.split("#", 1)[0].split("?", 1)[0])
     host, owner, name = parse_url(url)
     if not host or not name:
         return _local_key(url, repo)
@@ -382,7 +378,7 @@ def _duplicates(results: List[dict], cfg) -> List[dict]:
 
 # ---------------------------------------------------------------- remote_gone (online)
 
-_TOKEN_RE = re.compile(r"\b(?:gh[pousr]_|github_pat_|glpat-)[A-Za-z0-9_\-]+")
+_TOKEN_RE = re.compile(r"\b(?:gh[pousr]_|github_pat_|glpat-)[A-Za-z0-9_\-]+")   # report.scan looks for these
 _USERINFO_RE = re.compile(r"\b([a-zA-Z][a-zA-Z0-9+.\-]*)://([^/@\s]+)@")
 
 
@@ -390,7 +386,8 @@ def redact(text: Optional[str]) -> Optional[str]:
     """text with GitHub/GitLab tokens and URL credentials replaced by [REDACTED] (an ssh:// user name stays)."""
     if not text:
         return text
-    text = _TOKEN_RE.sub("[REDACTED]", text)
+    from .forge import redact as forge_redact
+    text = _TOKEN_RE.sub("[REDACTED]", forge_redact(text, mask="[REDACTED]"))
 
     def userinfo(m: "re.Match") -> str:
         keep = m[1].lower() in ("ssh", "git+ssh", "ssh+git") and ":" not in m[2]
@@ -580,13 +577,7 @@ def _stash_n(ref: str) -> int:
 # ---------------------------------------------------------------- text
 
 def _tilde(path: str) -> str:
-    from .undo import tilde
     return tilde(Path(path))
-
-
-def _sh(path: str) -> str:
-    """A tilde path quoted for the shell, the leading ~ left unquoted (as cli._sh)."""
-    return path if path == "~" else "~/" + shlex.quote(path[2:]) if path.startswith("~/") else shlex.quote(path)
 
 
 def _fix_text(fix: str, repo: str) -> str:

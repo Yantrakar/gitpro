@@ -13,7 +13,6 @@ import os
 import re
 import shlex
 import sqlite3
-import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence
@@ -22,7 +21,7 @@ from urllib.parse import quote, urlsplit
 from . import config, forge, jsonout, policy, resolve, trailers
 from .config import Config, ConfigError
 from .operation_contract import (MAX_REQUEST, REQUEST_SCHEMA, RESULT_SCHEMA, VERSION,
-                                 OperationError, Request, decode, digest, failure, request_key)
+                                 OperationError, Request, decode, digest, exit_code, failure, read_text, request_key)
 from .operation_io import (Ledger, Process, configuration_lock, file_hash, locked_index, process,
                            repository_lock, state_dir, termination_signals)
 
@@ -787,15 +786,12 @@ def status(key: str) -> dict:
 
 
 def _read_request(path: str) -> object:
-    if path == "-":
-        return decode(sys.stdin.read(MAX_REQUEST + 1))
-    with open(path, encoding="utf-8") as stream:
-        return decode(stream.read(MAX_REQUEST + 1))
+    return decode(read_text(path, MAX_REQUEST))
 
 
 def _emit(result: dict) -> int:
     jsonout.emit(result["command"], result)
-    return 0 if result["ok"] else (3 if result["decision"] == "blocked" else 2)
+    return exit_code(result)
 
 
 def _command(args: argparse.Namespace) -> int:

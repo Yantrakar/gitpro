@@ -4,6 +4,43 @@ All notable changes to gitpro. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Release notes for
 earlier versions are on [GitHub releases](https://github.com/Yantrakar/gitpro/releases).
 
+## 0.4.1 (2026-10-18)
+
+### Fixed
+
+- `gitpro why` and the MCP `check_commit` tool mask a password or token in the
+  remote URL they name when a commit's identity is wrong.
+- The MCP server also masks secret query parameters (`?access_token=...`) in
+  every string it returns, and masks URL credentials in its error text.
+- `gitpro keys --health --online`, `gitpro keys --upload` and `gitpro doctor`
+  mask tokens in the gh and glab error output they print.
+- `gitpro scan --lost` no longer shows a password or token from a remote URL in
+  the key of a duplicate.
+- `gitpro why` and the MCP `check_commit` tool read commit trailers with the
+  same parser and the repo's own trailer settings as the commit-msg hook, so
+  their verdict matches the hook's.
+- `gitpro agent install --scope project` also clears `GIT_COMMON_DIR` and
+  `GIT_PREFIX` before running git, so inside a hook it can't write another
+  repo's `info/exclude`.
+- Writes are fsynced, including the directory after a rename, and text is
+  written as UTF-8 whatever the locale. Backups and incident records are
+  fsynced, and `gitpro init` writes its config atomically.
+- VS Code: the log masks tokens in CLI and git output, and the dev container
+  edit is written atomically and refused if the file changed while its dialog
+  was open.
+
+### Changed
+
+- The version is written in one place, `src/gitpro/VERSION`; the VSIX and the
+  MCP Registry entry get it at build time. The Claude Code plugin manifests no
+  longer carry a version, so Claude Code tracks the plugin by commit.
+- Release: re-running a failed job after the tag was created works, PyPI
+  uploads skip files already there, `scripts/release.py --run` checks that the
+  run is for the local commit, and the PyPI gate no longer waits behind the
+  Marketplace upload.
+- Shared helpers replace duplicated code in the CLI and the VS Code extension;
+  commands, flags, output and `--json` are unchanged.
+
 ## 0.4.0 (2026-10-16)
 
 ### Added

@@ -36,7 +36,8 @@ Issues = "https://github.com/Yantrakar/gitpro/issues"
 gitpro = "gitpro.hot:main"
 
 [tool.hatch.version]
-path = "src/gitpro/__init__.py"
+path = "src/gitpro/VERSION"
+pattern = '\A(?P<version>\d+\.\d+\.\d+)'
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/gitpro"]

@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING, Callable, Dict, Iterable, List, Optional, Set,
 from . import jsonout
 
 from .config import ConfigError
+from .util import first_line as _first_line, plural as _plural, sh_tilde, tilde
 
 if TYPE_CHECKING:
     from .config import Config
@@ -94,14 +95,18 @@ def _glab_env(host: str) -> Dict[str, str]:
     return env
 
 
-def run(acc: Account, argv: List[str], *, timeout: int = 30,
-        stdin=subprocess.DEVNULL) -> subprocess.CompletedProcess:
+def run(acc: Account, argv: List[str], *, timeout: int = 30, stdin=subprocess.DEVNULL,
+        redact_stderr: bool = False) -> subprocess.CompletedProcess:
     """[acc.cli, *argv] as acc, captured text. 127 when the CLI is missing, 124 on timeout; never raises
-    for a failing command (gh_env may raise ConfigError when gh has no such login)."""
+    for a failing command (gh_env may raise ConfigError when gh has no such login). redact_stderr: the
+    returned stderr has tokens masked, for a caller that prints it."""
     if not available(acc.cli):
         return subprocess.CompletedProcess([acc.cli, *argv], 127, "", f"{acc.cli}: command not found\n")
     env = gh_env(acc.host, acc.login) if acc.cli == "gh" else _glab_env(acc.host)
-    return _exec(acc, argv, env, timeout=timeout, stdin=stdin)
+    r = _exec(acc, argv, env, timeout=timeout, stdin=stdin)
+    if redact_stderr:   # for a caller that prints a line of it: this call's token never reaches the output
+        r.stderr = redact(r.stderr or "", [env.get(k, "") for k in ("GH_TOKEN", "GH_ENTERPRISE_TOKEN")])
+    return r
 
 
 def _exec(acc: Account, argv: List[str], env: Dict[str, str], *, timeout: int = 30,
@@ -117,6 +122,11 @@ def _exec(acc: Account, argv: List[str], env: Dict[str, str], *, timeout: int = 
         return subprocess.CompletedProcess(cmd, 124, "", f"{acc.cli} timed out after {timeout}s\n")
 
 
+def glab_logins(text: str, host: str) -> List[str]:
+    """The logins `glab auth status` reports for host."""
+    return [m[2].rstrip(".,") for m in _GLAB_AS_RE.finditer(text) if m[1].rstrip(".,:") == host]
+
+
 def logged_in(acc: Account) -> bool:
     """gh: the token works and `gh api user` names the login; glab: `glab auth status` names it."""
     if acc.cli == "gh":
@@ -127,10 +137,6 @@ def logged_in(acc: Account) -> bool:
         return r.returncode == 0 and r.stdout.strip().lower() == acc.login.lower()
     r = run(acc, ["auth", "status", "-h", acc.host])
     return r.returncode == 0 and acc.login.lower() in (r.stdout + r.stderr).lower()
-
-
-def _first_line(text: str) -> str:
-    return next((ln.strip() for ln in text.splitlines() if ln.strip()), "")
 
 
 def repo_exists(acc: Account, owner_repo: str, repo: Optional[str] = None) -> Tuple[str, Optional[str]]:
@@ -195,16 +201,16 @@ _RATE_RE = re.compile(r"rate limit|HTTP 429|abuse detection", re.I)    # checked
 _SCOPE_RE = re.compile(r"HTTP 40[34]|scope", re.I)
 
 
-def redact(text: str, secrets: Iterable[str] = ()) -> str:
+def redact(text: str, secrets: Iterable[str] = (), mask: str = "***") -> str:
     """text with token-looking words (ghp_, gho_, github_pat_, glpat-, gldt-, ..., a 40-hex token after
-    "token"), URL credentials and each exact value in secrets masked."""
+    "token"), URL credentials and each exact value in secrets replaced by mask."""
     from .resolve import redact_url
     for v in secrets:
         if v and len(v) >= 4:
-            text = text.replace(v, "***")
-    text = _SECRET_RE.sub("***", text)
-    text = _HEX_TOKEN_RE.sub(lambda m: m[1] + "***", text)
-    return _URL_RE.sub(lambda m: redact_url(m[0]) or "", text)
+            text = text.replace(v, mask)
+    text = _SECRET_RE.sub(mask, text)
+    text = _HEX_TOKEN_RE.sub(lambda m: m[1] + mask, text)
+    return _URL_RE.sub(lambda m: (redact_url(m[0]) or "").replace("***", mask), text)
 
 
 def safe(text: object) -> str:
@@ -230,25 +236,13 @@ def _err_line(r: subprocess.CompletedProcess) -> str:
 _FAILED = object()      # Session.json_call: the call failed (already warned); a parsed `null` is None
 
 
-def _plural(n: int, word: str) -> str:
-    return f"{n} {word}{'s' * (n != 1)}"
-
-
 def _tilde(path: object, home: Path) -> str:
-    p = Path(str(path))
-    try:
-        rest = p.relative_to(home)
-    except ValueError:
-        return str(p)
-    return "~" if str(rest) == "." else f"~/{rest}"
+    return tilde(Path(str(path)), home)
 
 
 def _sh_path(path: object, home: Path) -> str:
     """A path for a command line shown to the user: quoted, ~ kept for paths under home."""
-    shown = _tilde(path, home)
-    if shown == "~" or shown.startswith("~/"):
-        return "~" + ("/" + shlex.quote(shown[2:]) if shown != "~" else "")
-    return shlex.quote(shown)
+    return sh_tilde(_tilde(path, home))
 
 
 @dataclass(frozen=True)
@@ -522,7 +516,7 @@ class Session:
         if r is None:
             return None
         text = f"{r.stdout}\n{r.stderr}"
-        logins = [m[2].rstrip(".,") for m in _GLAB_AS_RE.finditer(text) if m[1].rstrip(".,:") == acc.host]
+        logins = glab_logins(text, acc.host)
         if logins:
             return logins[0]
         if r.returncode != 0:

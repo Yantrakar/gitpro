@@ -6,7 +6,7 @@ import * as path from "node:path";
 import * as vscode from "vscode";
 import type { Capabilities } from "./capabilities";
 import { settingsCall, UPDATE } from "./capabilities";
-import { Cli, exec, failure, Result, shq, ui } from "./cli";
+import { Cli, exec, failure, redactText, Result, shq, ui } from "./cli";
 import { parseOrigin, status as whichStatus } from "./identity";
 import { Action, actionsFor, BarState, inContainer, OtherFolder, pickFolder, scmRoot, stateFrom, tooltipFrom,
   undoPath, updateTooltip, WhyJson } from "./identityBar";
@@ -276,7 +276,7 @@ export function registerIdentityBar(context: vscode.ExtensionContext, cli: Cli, 
     let r: Result | undefined;
     if (argv[0] === "git") {
       r = await cli.git(argv.slice(1), dir);
-      (r.stdout + r.stderr).trimEnd().split("\n").filter(Boolean).forEach((l) => log.info(`  ${l}`));
+      redactText(r.stdout + r.stderr).trimEnd().split("\n").filter(Boolean).forEach((l) => log.info(`  ${l}`));
     } else if (argv[0] === "gitpro") {
       r = await cli.show(argv.slice(1), { cwd: dir, quiet: false });
     } else {

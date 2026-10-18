@@ -11,6 +11,7 @@ from rich.text import Text
 from rich.tree import Tree
 
 from .scan import skipped
+from .util import plural
 
 
 def console() -> Console:
@@ -46,10 +47,6 @@ def step(msg: str) -> None:
 
 def confirm(question: str) -> bool:
     return Confirm.ask(question, default=False)
-
-
-def plural(n: int, word: str, many: str = "") -> str:
-    return f"{n} {word if n == 1 else many or word + 's'}"
 
 
 def who(d: dict[str, str]) -> str:

@@ -26,6 +26,7 @@ from typing import Callable, Dict, List, Optional, Sequence, Tuple
 from . import config, jsonout
 from .args import capability, fail
 from .config import ConfigError
+from .util import expand_home as _expand, first_line as _first_line, plural as _plural, pub_path as _pub, tilde as _tilde
 
 PROBE_TIMEOUT = 5      # ssh-keygen -y, ssh-add -l
 LOCAL_TIMEOUT = 10     # ssh-keygen -l
@@ -41,30 +42,9 @@ _FP_RE = re.compile(r"^(\d+)\s+(\S+)\s+(.*?)\s*\(([A-Za-z0-9-]+)\)\s*$")
 
 # ---------------------------------------------------------------- small helpers
 
-def _expand(p: str, home: Path) -> Path:
-    return home / p[2:] if p.startswith("~/") else Path(p)
-
-
-def _pub(key: Path) -> Path:
-    return key.with_name(key.name + ".pub")
-
-
-def _tilde(path: object, home: Path) -> str:
-    p, h = str(path), str(home)
-    return "~" + p[len(h):] if p == h or p.startswith(h + "/") else p
-
-
 def _sh(shown: str) -> str:
     """Shell-quote a displayed path, keeping a leading ~/."""
     return "~/" + shlex.quote(shown[2:]) if shown.startswith("~/") else shlex.quote(shown)
-
-
-def _first_line(text: str) -> str:
-    return next((ln.strip() for ln in (text or "").splitlines() if ln.strip()), "")
-
-
-def _plural(n: int, word: str) -> str:
-    return f"{n} {word}{'' if n == 1 else 's'}"
 
 
 def _run(argv: List[str], timeout: float) -> Optional[subprocess.CompletedProcess]:
@@ -388,14 +368,14 @@ class Lister:
                 return Listing(error=wrong)
         try:
             if acc.cli == "gh":
-                r = forge.run(acc, ["ssh-key", "list"])
+                r = forge.run(acc, ["ssh-key", "list"], redact_stderr=True)
             else:
-                r = forge.run(acc, ["ssh-key", "list", "--output", "json"])
+                r = forge.run(acc, ["ssh-key", "list", "--output", "json"], redact_stderr=True)
                 got = parse_glab_keys(r.stdout) if r.returncode == 0 else None
                 if got is not None:
                     return got
                 if r.returncode != 127:
-                    r = forge.run(acc, ["ssh-key", "list"])
+                    r = forge.run(acc, ["ssh-key", "list"], redact_stderr=True)
         except ConfigError:
             return Listing(error=f"no {acc.cli} login for {acc.login} on {acc.host}; registered check skipped")
         if r.returncode == 127:
@@ -412,9 +392,6 @@ class Lister:
         return Listing(text.entries, False)
 
 
-_GLAB_AS_RE = re.compile(r"Logged in to (\S+) as (\S+)", re.I)
-
-
 def glab_login_error(acc) -> Optional[str]:
     """None when glab acts as acc.login on acc.host. glab has no per-login selection: every glab call acts
     as whoever `glab auth status` is logged in as, so another login must never be listed or uploaded to."""
@@ -423,7 +400,7 @@ def glab_login_error(acc) -> Optional[str]:
     if r.returncode == 127:
         return None                         # the listing reports a missing glab itself
     text = f"{r.stdout}\n{r.stderr}"
-    logins = [m[2].rstrip(".,") for m in _GLAB_AS_RE.finditer(text) if m[1].rstrip(".,:") == acc.host]
+    logins = forge.glab_logins(text, acc.host)
     if any(x.lower() == acc.login.lower() for x in logins):
         return None
     if not logins and forge.logged_in(acc):
@@ -1091,7 +1068,7 @@ def _add(acc, pub: Path, title: str, kinds: List[str], warn, where: str) -> Opti
     calls = _add_argv(acc, pub, title, kinds)
     for argv, kind in zip(calls, kinds if acc.cli == "gh" else ["+".join(kinds)]):
         try:
-            r = forge.run(acc, argv)
+            r = forge.run(acc, argv, redact_stderr=True)
         except ConfigError as e:
             warn(f"✗ {e}")
             break

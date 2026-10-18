@@ -50,7 +50,10 @@ jobs:
         env:
           TAG: ${{ inputs.tag }}
         run: |
-          v="${TAG#v}"
+          # the committed server.json holds no version: stamp it from src/gitpro/VERSION at the tag
+          python3 scripts/versions.py --stamp
+          v=$(python3 scripts/versions.py)
+          [ "v$v" = "$TAG" ] || { echo "the tag is $TAG but src/gitpro/VERSION is $v"; exit 1; }
           name=$(jq -r .name server.json)
           jq -e --arg v "$v" '.version == $v and ([.packages[].version] | all(. == $v))' server.json
           grep -Fqx "<!-- mcp-name: $name -->" README.md

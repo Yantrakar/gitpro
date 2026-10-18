@@ -66,6 +66,17 @@ def preview_result(args: object, command: str, data: dict) -> int:
     return 0
 
 
+def ask(question: str, yes: bool) -> bool:
+    """True for -y; else ask on the terminal. Without one, a ConfigError (the caller exits 2)."""
+    if yes:
+        return True
+    if not sys.stdin.isatty():
+        from .config import ConfigError
+        raise ConfigError("no terminal to confirm on; re-run with --yes")
+    from . import view
+    return view.confirm(question)
+
+
 def fail(msg: str, args: object) -> int:
     """Exit 2 with msg: the JSON error object on stdout under --json (nothing on stderr), else ✗ on stderr."""
     if getattr(args, "json", False):

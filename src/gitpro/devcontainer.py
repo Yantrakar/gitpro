@@ -20,6 +20,7 @@ from typing import List, Optional
 from . import config, jsonfile, jsonout, resolve
 from .args import capability, fail, guarded
 from .config import ConfigError
+from .util import tilde as _tilde
 
 KEY = "initializeCommand"
 CANDIDATES = (".devcontainer/devcontainer.json", ".devcontainer.json")
@@ -54,12 +55,6 @@ _PIN_RE = re.compile(r"gitpro\s+pin\b[^\n;|&]*?\s(?:-y|--yes)(?=\s|[;|&]|$)")
 
 
 # ---------------------------------------------------------------- pure parts
-
-def _tilde(path: Path) -> str:
-    home = str(Path.home())
-    s = str(path)
-    return "~" + s[len(home):] if s == home or s.startswith(home + "/") else s
-
 
 def locate(repo: Path) -> Optional[Path]:
     """DIR/.devcontainer/devcontainer.json, else DIR/.devcontainer.json, else None."""

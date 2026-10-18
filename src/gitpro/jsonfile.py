@@ -7,6 +7,7 @@ import json
 import os
 import re
 import shlex
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional, Tuple, Union
@@ -25,17 +26,23 @@ class Result:
     text: str  # what is (or would be) on disk after the edit
 
 
+def _string_end(text: str, i: int) -> int:
+    """The index just past the string literal that opens at text[i]."""
+    j = i + 1
+    while j < len(text) and text[j] != '"':
+        j += 2 if text[j] == "\\" else 1
+    return j + 1
+
+
 def strip_jsonc(text: str) -> Tuple[str, bool]:
     """(text without // and /* */ comments outside strings and without trailing commas, had comments)."""
     out, i, n, comments = [], 0, len(text), False
     while i < n:
         c = text[i]
         if c == '"':
-            j = i + 1
-            while j < n and text[j] != '"':
-                j += 2 if text[j] == "\\" else 1
-            out.append(text[i:j + 1])
-            i = j + 1
+            j = _string_end(text, i)
+            out.append(text[i:j])
+            i = j
         elif text.startswith("//", i):
             comments = True
             j = text.find("\n", i)
@@ -56,11 +63,9 @@ def _drop_trailing_commas(text: str) -> str:
     while i < n:
         c = text[i]
         if c == '"':
-            j = i + 1
-            while j < n and text[j] != '"':
-                j += 2 if text[j] == "\\" else 1
-            out.append(text[i:j + 1])
-            i = j + 1
+            j = _string_end(text, i)
+            out.append(text[i:j])
+            i = j
             continue
         if c == ",":
             m = re.compile(r"\s*[}\]]").match(text, i + 1)
@@ -74,9 +79,56 @@ def _drop_trailing_commas(text: str) -> str:
 
 def read(path: Path, *, jsonc: bool = False) -> Tuple[object, str]:
     """(parsed object, original text, line endings kept). Raises ConfigError("<path>: cannot parse (<error>)")."""
-    with open(path, encoding="utf-8", newline="") as f:
-        text = f.read()
+    text = _text(path)
     return _parse(path, text, jsonc)[0], text
+
+
+def _text(path: Path) -> str:
+    with open(path, encoding="utf-8", newline="") as f:
+        return f.read()
+
+
+def confirm_once(args: object, question: str) -> Callable[[str], bool]:
+    """A confirm callback for edit_json that asks at most once: after a yes (e.g. to `claude mcp add`, before
+    the fallback edits the file) later calls show their diff and go ahead. -y answers yes; with no terminal
+    and no -y it raises ConfigError."""
+    said_yes = []
+
+    def confirm(diff: str) -> bool:
+        if args.yes:
+            return True
+        if not said_yes and not sys.stdin.isatty():
+            raise ConfigError("no terminal to confirm on; re-run with --yes")
+        from . import view
+        if diff:
+            print(diff, end="" if diff.endswith("\n") else "\n")
+        if said_yes:
+            return True
+        ok = view.confirm(question)
+        if ok:
+            said_yes.append(True)
+        return ok
+    return confirm
+
+
+def read_object(path: Path, snippet: str) -> Optional[dict]:
+    """The file's JSON object (None when missing); ConfigError for anything gitpro must not edit
+    (comments, invalid JSON, not an object). snippet is what to add by hand."""
+    shown = undo.tilde(path)
+    try:
+        text = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return None
+    try:
+        obj = json.loads(text)
+    except ValueError:
+        if strip_jsonc(text)[1]:
+            raise ConfigError(f"{shown} has comments; gitpro cannot edit it without losing them"
+                              f" — add this by hand: {snippet}") from None
+        raise ConfigError(f"{shown} is not valid JSON; fix it by hand (nothing written)") from None
+    if not isinstance(obj, dict):
+        raise ConfigError(f"{shown} is not a JSON object; fix it by hand (nothing written)")
+    return obj
 
 
 def _parse(path: Path, text: str, jsonc: bool) -> Tuple[object, bool]:
@@ -127,8 +179,7 @@ def _backup(path: Path, text: str) -> Path:
 def _current(path: Path) -> Optional[str]:
     """The file's text with its own line endings (newline=""), None when it does not exist."""
     try:
-        with open(path, encoding="utf-8", newline="") as f:
-            return f.read()
+        return _text(path)
     except FileNotFoundError:
         return None
 

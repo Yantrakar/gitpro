@@ -28,8 +28,9 @@ from pathlib import Path
 from typing import Dict, Iterator, List, Optional, Tuple
 from urllib.parse import quote, unquote, urlsplit
 
-from . import config, files, jsonout, undo
+from . import config, files, jsonout
 from .config import EMAIL_RE, HOST_RE, ID_RE, OWNER_RE, PATH_RE, PLACEHOLDER_RE
+from .util import plural as _plural, tilde
 
 PROG = "gitpro"
 SOURCES = ("history", "vscode", "jetbrains", "ssh", "includeif", "repos", "gh", "glab")
@@ -69,16 +70,9 @@ _BLOCK_MARK = re.compile(r"^# (BEGIN|END) (?:gitpro|git-identities|git_identitie
 
 # ---------------------------------------------------------------- small helpers
 
-def _plural(n: int, word: str, many: Optional[str] = None) -> str:
-    return f"{n} {word if n == 1 else (many or word + 's')}"
-
-
 def _tilde(path, home: Optional[Path] = None) -> str:
     """path with the home directory (--home, else the real one) shown as ~."""
-    if home is None:
-        return undo.tilde(Path(path))
-    p, h = str(path), str(home).rstrip("/")
-    return "~" if p == h else "~/" + p[len(h) + 1:] if p.startswith(h + "/") else p
+    return tilde(Path(path) if home is None else path, home)
 
 
 def _temp_dirs() -> List[str]:
@@ -748,11 +742,7 @@ def _pub_email(key: Optional[str], home: Path) -> Optional[str]:
 
 
 def _git(*args: str, cwd: Path) -> Optional[subprocess.CompletedProcess]:
-    try:
-        return subprocess.run(["git", *args], cwd=str(cwd), stdin=subprocess.DEVNULL, capture_output=True,
-                              text=True, errors="replace", timeout=TIMEOUT, env=_env())
-    except (OSError, subprocess.SubprocessError):
-        return None
+    return _run_cli(["git", *args], _env(), cwd=str(cwd))
 
 
 def _gitdir_root(pattern: str, home: Path, origin: Optional[Path]) -> Optional[str]:
@@ -875,10 +865,10 @@ def _includeif(home: Path, ctx: _Ctx) -> List[dict]:
 
 # ---------------------------------------------------------------- online: gh / glab
 
-def _run_cli(argv: List[str], env: Dict[str, str]) -> Optional[subprocess.CompletedProcess]:
+def _run_cli(argv: List[str], env: Dict[str, str], cwd: Optional[str] = None) -> Optional[subprocess.CompletedProcess]:
     try:
-        return subprocess.run(argv, stdin=subprocess.DEVNULL, capture_output=True, text=True, errors="replace",
-                              timeout=TIMEOUT, env=env)
+        return subprocess.run(argv, cwd=cwd, stdin=subprocess.DEVNULL, capture_output=True, text=True,
+                              errors="replace", timeout=TIMEOUT, env=env)
     except (OSError, subprocess.SubprocessError):
         return None
 

@@ -26,6 +26,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          persist-credentials: false
           fetch-depth: 0   # site_meta.py dates the sitemap from git history
       - run: python3 design/site_meta.py
       - uses: actions/configure-pages@v5

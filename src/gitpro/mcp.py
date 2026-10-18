@@ -27,6 +27,7 @@ from typing import Callable, Dict, IO, List, Optional, Tuple
 
 from . import __version__, commitcheck, deprecation
 from .config import ConfigError
+from .util import tilde as _shown
 from .operation_contract import REQUEST_SCHEMA, OperationError, unique_members
 from .change_contract import REQUEST_SCHEMA as CHANGE_REQUEST_SCHEMA
 
@@ -543,11 +544,11 @@ def validate(schema: dict, args: object) -> None:
 # ---------------------------------------------------------------- the server
 
 def redact(value: object) -> object:
-    """value with a password or token in any URL userinfo replaced by *** (resolve.redact_url), in every
-    string and key, however deep: the backstop that keeps credentials in remote URLs from the model."""
+    """value with a password or token in any URL (userinfo or secret query parameter) replaced by ***
+    (resolve.redact_url), in every string and key, however deep: the backstop that keeps credentials in remote URLs from the model."""
     from .resolve import redact_text
     if isinstance(value, str):
-        return redact_text(value) if "@" in value else value
+        return redact_text(value)
     if isinstance(value, dict):
         return {redact(k): redact(v) for k, v in value.items()}
     if isinstance(value, (list, tuple)):
@@ -693,7 +694,7 @@ class Server:
 
     @staticmethod
     def failed(message: str) -> dict:
-        return {"content": [{"type": "text", "text": f"✗ {message}"}], "isError": True}
+        return {"content": [{"type": "text", "text": f"✗ {redact(message)}"}], "isError": True}
 
 
 def _error(mid: object, code: int, message: str) -> dict:
@@ -802,45 +803,10 @@ def _ours(value: object, entry: dict) -> bool:
 def _precheck(path: Path, key: str, snippet: str) -> Optional[dict]:
     """The file's JSON (None when missing); ConfigError for anything gitpro must not edit."""
     from . import jsonfile, undo
-    shown = undo.tilde(path)
-    try:
-        text = path.read_text(encoding="utf-8")
-    except FileNotFoundError:
-        return None
-    try:
-        obj = json.loads(text)
-    except ValueError:
-        if jsonfile.strip_jsonc(text)[1]:
-            raise ConfigError(f"{shown} has comments; gitpro cannot edit it without losing them"
-                              f" — add this by hand: {snippet}") from None
-        raise ConfigError(f"{shown} is not valid JSON; fix it by hand (nothing written)") from None
-    if not isinstance(obj, dict):
-        raise ConfigError(f"{shown} is not a JSON object; fix it by hand (nothing written)")
-    if not isinstance(obj.get(key, {}), dict):
-        raise ConfigError(f"{shown}: {key} is not an object; fix it by hand (nothing written)")
+    obj = jsonfile.read_object(path, snippet)
+    if obj is not None and not isinstance(obj.get(key, {}), dict):
+        raise ConfigError(f"{undo.tilde(path)}: {key} is not an object; fix it by hand (nothing written)")
     return obj
-
-
-def _confirm_with(args: argparse.Namespace, question: str) -> Callable[[str], bool]:
-    """A confirm callback that asks at most once: after a yes (e.g. to `claude mcp add`, before the
-    fallback edits the file) later calls show their diff and go ahead."""
-    said_yes = []
-
-    def confirm(diff: str) -> bool:
-        if args.yes:
-            return True
-        if not said_yes and not sys.stdin.isatty():
-            raise ConfigError("no terminal to confirm on; re-run with --yes")
-        from . import view
-        if diff:
-            print(diff, end="" if diff.endswith("\n") else "\n")
-        if said_yes:
-            return True
-        ok = view.confirm(question)
-        if ok:
-            said_yes.append(True)
-        return ok
-    return confirm
 
 
 def _foreign(path: Path, current: object) -> str:
@@ -930,7 +896,7 @@ def _report(args, path: Path, removing: bool, outcome: dict) -> int:
 
 def _edit(args: argparse.Namespace, removing: bool) -> int:
     from .args import fail, preview_only, preview_result
-    from . import view
+    from . import jsonfile, view
     if args.json and not args.yes and not preview_only(args):
         return fail("--write --json needs -y (there is no confirmation in JSON mode)", args)
     path, key, entry = _target(args)
@@ -952,7 +918,7 @@ def _edit(args: argparse.Namespace, removing: bool) -> int:
         return preview_result(args, "mcp uninstall" if removing else "mcp install",
                               {"file": str(path), "changed": False, "entry": entry,
                                "action": "remove" if removing else "install", "backup": None, "undo": None})
-    confirm = _confirm_with(args, "Remove it?" if removing else "Register it?")
+    confirm = jsonfile.confirm_once(args, "Remove it?" if removing else "Register it?")
     outcome = None
     if args.agent == "claude" and args.scope == "user" and shutil.which("claude"):
         outcome = _claude_cli(args, removing, confirm)
@@ -986,11 +952,6 @@ def cmd_uninstall(args: argparse.Namespace) -> int:
 
 
 # ---------------------------------------------------------------- doctor
-
-def _shown(path: Path, home: Path) -> str:
-    p, h = str(path), str(home)
-    return "~" + p[len(h):] if p == h or p.startswith(h + "/") else p
-
 
 def status_data(home: Path) -> dict:
     """Which agents' user configs register the gitpro server; reads files only (never runs `claude`)."""

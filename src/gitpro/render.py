@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Callable
 
 from .config import Default, Identity, check, signs
+from .util import pub_path
 
 TOOL = "gitpro"
 # Also recognise what earlier versions wrote (git-identities, git_identities.py), so existing setups migrate.
@@ -72,10 +73,6 @@ def merge(a: dict, b: dict) -> dict:
 
 
 # ---------------------------------------------------------------- helpers
-
-def pub_path(key: Path) -> Path:
-    return key.with_name(key.name + ".pub")
-
 
 def _shell_path(p: str) -> str:
     return "~/" + shlex.quote(p[2:]) if p.startswith("~/") else shlex.quote(p)

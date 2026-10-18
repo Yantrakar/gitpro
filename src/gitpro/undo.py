@@ -7,6 +7,8 @@ import time
 from pathlib import Path
 from typing import List, Optional
 
+from .util import tilde as _tilde
+
 PROG = "gitpro"
 
 
@@ -30,14 +32,7 @@ def slug(command: str) -> str:
 
 def tilde(path: Path) -> str:
     """path with the home directory shown as ~ (display only)."""
-    home = Path.home()
-    p = Path(path)
-    if p == home:
-        return "~"
-    try:
-        return "~/" + str(p.relative_to(home))
-    except ValueError:
-        return str(p)
+    return _tilde(Path(path))
 
 
 def write(command: str, lines: List[str], *, what: str, state: Optional[Path] = None) -> Path:

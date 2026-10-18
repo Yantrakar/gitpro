@@ -3,7 +3,9 @@ no test touches the network."""
 import hashlib
 import importlib.util
 import json
+import re
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -12,6 +14,7 @@ ROOT = Path(__file__).resolve().parent.parent
 _spec = importlib.util.spec_from_file_location("release_script", ROOT / "scripts" / "release.py")
 rel = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(rel)
+REAL_RELEASE_VERSION = rel.release_version
 
 LOGIN = "releaser"
 V = "9.8.7"
@@ -65,7 +68,7 @@ class World:
         self.calls = []
         self.events = []
         self.clock = 0.0
-        self.run_info = {"workflowName": "Release", "headBranch": "main"}
+        self.run_info = {"workflowName": "Release", "headBranch": "main", "headSha": HEAD}
 
     # -- seams
     def cmd(self, argv):
@@ -102,7 +105,7 @@ class World:
             self.dispatched = True
             return cp()
         if argv[:2] == ["run", "view"]:
-            if argv[-1] == "workflowName,headBranch":
+            if argv[-1] == "workflowName,headBranch,headSha":
                 return cp(json.dumps(self.run_info))
             view, _ = self.steps[min(self.step, len(self.steps) - 1)]
             return cp(json.dumps(view))
@@ -170,7 +173,7 @@ def world(tmp_path, monkeypatch):
     monkeypatch.setattr(rel, "now", lambda: w.clock)
     monkeypatch.setattr(rel, "open_url", lambda url: w.events.append(("open", url)) or True)
     monkeypatch.setattr(rel, "downloads", lambda: tmp_path / "Downloads")
-    monkeypatch.setattr(rel, "versions", lambda: {"src/gitpro/__init__.py": V, "vscode/package.json": V})
+    monkeypatch.setattr(rel, "release_version", lambda: V)
     return w
 
 
@@ -215,21 +218,11 @@ def test_preflight_stops_before_any_question_or_write(world, capsys, case):
     assert world.asked == [] and world.writes() == []
 
 
-def test_mismatched_versions_stop_before_any_question(world, monkeypatch, capsys):
-    monkeypatch.setattr(rel, "versions", lambda: {"src/gitpro/__init__.py": V, "server.json version": "9.8.6"})
-    world.answers = [True]
-    assert release() == 1
-    err = capsys.readouterr().err
-    assert "versions don't match" in err and "server.json version 9.8.6" in err
-    assert world.asked == [] and world.writes() == []
-
-
-def test_versions_read_every_place_in_the_repo():
-    found = rel.versions()
-    assert set(found) >= {"src/gitpro/__init__.py", "vscode/package.json", "server.json version",
-                          "server.json packages[0]", ".claude-plugin/plugin.json",
-                          ".claude-plugin/marketplace.json plugins[0]"}
-    assert len(set(found.values())) == 1
+def test_release_version_is_the_one_in_the_version_file():
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import versions
+    text = (ROOT / "src/gitpro/VERSION").read_text(encoding="utf-8").split()[0]
+    assert rel.release_version() == versions.version(ROOT) == text
 
 
 def test_no_at_the_start_starts_nothing(world, capsys):
@@ -366,11 +359,11 @@ def test_run_id_follows_that_run_without_starting_one(world):
     assert world.writes() == []
     views = [c for kind, c in world.calls if kind == "gh" and c[:2] == ["run", "view"]]
     assert views and all(c[2] == "42" for c in views)
-    assert not any(kind == "cmd" for kind, _ in world.calls)
+    assert [c for kind, c in world.calls if kind == "cmd"] == [["git", "rev-parse", "HEAD"]]
 
 
 def test_run_id_of_another_workflow_stops(world, capsys):
-    world.run_info = {"workflowName": "CI", "headBranch": "main"}
+    world.run_info = {"workflowName": "CI", "headBranch": "main", "headSha": HEAD}
     assert release("--run", "42") == 1
     assert "not Release on main" in capsys.readouterr().err and world.writes() == []
 
@@ -392,9 +385,127 @@ sys.exit(1)
     w = World(tmp_path)
     monkeypatch.setattr(rel, "cmd", w.cmd)
     monkeypatch.setattr(rel, "http", w.http)
-    monkeypatch.setattr(rel, "versions", lambda: {"src/gitpro/__init__.py": V})
+    monkeypatch.setattr(rel, "release_version", lambda: V)
     assert release() == 1
     out, err = capsys.readouterr()
     assert "could not check tag" in err
     assert token not in out + err and "Q" * 20 not in out + err
     assert any(c[:2] == ["api", "user"] for c in fake_bin.calls("gh"))
+
+
+def test_versions_script_prints_the_version_and_refuses_a_bad_one(tmp_path):
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import versions
+    (tmp_path / "src/gitpro").mkdir(parents=True)
+    vfile = tmp_path / "src/gitpro/VERSION"
+    with pytest.raises(ValueError, match="src/gitpro/VERSION"):
+        versions.version(tmp_path)
+    for text, why in (("1.2  note\n", "is not X.Y.Z"), ("\n", "is not X.Y.Z"), ("v1.2.3 x\n", "is not X.Y.Z")):
+        vfile.write_text(text, encoding="utf-8")
+        with pytest.raises(ValueError, match=why):
+            versions.version(tmp_path)
+    r = subprocess.run([sys.executable, str(ROOT / "scripts/versions.py")], capture_output=True, text=True)
+    assert r.returncode == 0 and r.stdout.strip() == rel.release_version()
+
+
+# ------------------------------------------------------------------ run id, order, and the checks that must bite
+
+def test_run_for_another_commit_is_refused(world, capsys):
+    world.run_info = {"workflowName": "Release", "headBranch": "main", "headSha": OTHER}
+    assert release("--run", "42") == 1
+    err = capsys.readouterr().err
+    assert "run 42 is for commit bbbbbbb, but HEAD is aaaaaaa" in err and world.writes() == []
+
+
+def test_run_on_another_branch_is_refused(world, capsys):
+    world.run_info = {"workflowName": "Release", "headBranch": "dev", "headSha": HEAD}
+    assert release("--run", "42") == 1
+    assert "not Release on main" in capsys.readouterr().err and world.writes() == []
+
+
+def test_pypi_gate_that_shows_up_while_waiting_is_approved_before_the_vsix_wait(world, monkeypatch):
+    """github is done on the poll where pypi is not yet pending; the VSIX wait blocks for minutes, so the
+    gate that appears next is approved first."""
+    world.on_pypi = True
+    world.steps = [
+        ({"status": "in_progress", "conclusion": "", "jobs": [done("github"), waiting("pypi")]}, []),
+        ({"status": "in_progress", "conclusion": "", "jobs": [done("github"), waiting("pypi")]}, [gate("pypi")]),
+        ({"status": "completed", "conclusion": "success", "jobs": [done("github"), done("pypi")]}, []),
+    ]
+    monkeypatch.setattr(rel, "vsix", lambda acc, v, run_id: world.events.append(("vsix", v)))
+    assert release("--run", "42", "--yes") == 0
+    kinds = [e[0] for e in world.events]
+    assert world.approved() == ["pypi"]
+    assert kinds.index("post") < kinds.index("vsix")
+
+
+def test_a_marketplace_gate_is_approved_and_named(world, capsys):
+    world.market_after = 0                 # already listed: no upload wait
+    world.on_pypi = True
+    world.steps = [
+        ({"status": "in_progress", "conclusion": "", "jobs": [done("github")]}, [gate("marketplace")]),
+        ({"status": "completed", "conclusion": "success", "jobs": [done("github")]}, []),
+    ]
+    assert release("--run", "42", "--yes") == 0
+    assert world.approved() == ["marketplace"]
+    assert "publishes the VSIX to the VS Code Marketplace" in capsys.readouterr().out
+
+
+def test_ctrl_c_exits_130_and_names_the_run(world, monkeypatch, capsys):
+    def interrupted(*a, **k):
+        raise KeyboardInterrupt
+    monkeypatch.setattr(rel, "follow", interrupted)
+    assert release("--run", "42") == 130
+    assert "--run 42" in capsys.readouterr().err
+
+
+def test_a_version_that_is_not_x_y_z_stops(world, monkeypatch, capsys):
+    monkeypatch.setattr(rel, "release_version", REAL_RELEASE_VERSION)
+    monkeypatch.setattr(rel._versions, "version", lambda root=None: (_ for _ in ()).throw(
+        ValueError("version 1.2 is not X.Y.Z")))
+    assert release("--yes") == 1
+    assert "version 1.2 is not X.Y.Z" in capsys.readouterr().err and world.writes() == []
+
+
+def test_pypi_without_a_wheel_and_an_sdist_fails_the_check(world, monkeypatch, capsys):
+    full_run(world)
+    real = world.http
+    def http(url, body=None, headers=None):
+        if url.startswith("https://pypi.org/") and world.dispatched:
+            return 200, json.dumps({"urls": [{"packagetype": "bdist_wheel"}]})
+        return real(url, body, headers)
+    monkeypatch.setattr(rel, "http", http)
+    assert release("--yes") == 1
+    assert "✗ PyPI lists gitpro" in capsys.readouterr().out
+
+
+def test_a_release_missing_an_asset_fails_the_check(world, monkeypatch, capsys):
+    full_run(world)
+    real = world.gh
+    def gh(acc, argv, stdin=None):
+        if argv[:2] == ["release", "view"]:
+            return cp(json.dumps({"assets": [{"name": f"gitpro-{V}.vsix"}]}))
+        return real(acc, argv, stdin)
+    monkeypatch.setattr(rel, "gh", gh)
+    assert release("--yes") == 1
+    out = capsys.readouterr().out
+    assert "✗" in out and "SHA256SUMS" in out
+
+
+def test_pypi_answering_200_without_json_stops_cleanly(monkeypatch):
+    monkeypatch.setattr(rel, "http", lambda url, body=None, headers=None: (200, "<html>maintenance</html>"))
+    with pytest.raises(rel.Stop, match="not with JSON"):
+        rel.on_pypi("1.2.3")
+
+
+def test_workflows_are_safe_to_run_again():
+    """release.yml: an existing tag at this commit or an existing release is kept, another sha stops; PyPI
+    skips files it has. pages.yml keeps no git credentials."""
+    release_yml = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+    assert "python3 scripts/versions.py" in release_yml
+    assert "skip-existing: true" in release_yml
+    assert "gh release upload" in release_yml and "--clobber" in release_yml
+    assert "gh release create" in release_yml and "--verify-tag" in release_yml
+    assert 'git/ref/tags/$TAG' in release_yml and '"$sha" = "$GITHUB_SHA"' in release_yml
+    pages = (ROOT / ".github/workflows/pages.yml").read_text(encoding="utf-8")
+    assert "persist-credentials: false" in pages

@@ -19,8 +19,9 @@ from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Set, Tuple
 
 from . import config, jsonout, resolve, trailers, undo
-from .args import capability, dry_run, preview_only
+from .args import ask as _confirm, capability, dry_run, preview_only
 from .config import Config, ConfigError
+from .util import sh_tilde as _sh
 
 PROG = "gitpro"
 DEFAULT_RANGE = "HEAD --not --remotes"
@@ -591,10 +592,6 @@ def _rewrite_cmd(data: dict, args) -> str:
     return shown + " " + _sh(resolve._tilde(data["repo"]))
 
 
-def _sh(path: str) -> str:
-    return path if path == "~" else "~/" + shlex.quote(path[2:]) if path.startswith("~/") else shlex.quote(path)
-
-
 def render(data: dict, args) -> List[str]:
     """The text report, one line per item."""
     verbose = bool(getattr(args, "verbose", False))
@@ -670,15 +667,6 @@ def _public(data: dict) -> dict:
     if isinstance(out.get("rewrite"), dict):
         out["rewrite"] = {k: v for k, v in out["rewrite"].items() if not k.startswith("_")}
     return out
-
-
-def _confirm(question: str, yes: bool) -> bool:
-    if yes:
-        return True
-    if not sys.stdin.isatty():
-        raise ConfigError("no terminal to confirm on; re-run with --yes")
-    from . import view
-    return view.confirm(question)
 
 
 def _preview(data: dict, exp) -> List[str]:

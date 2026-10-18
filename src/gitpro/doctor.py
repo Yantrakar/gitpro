@@ -21,6 +21,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+from .util import plural as _plural, tilde
+
 STATUSES = ("ok", "warning", "error", "skipped", "missing")
 SYMBOL = {"ok": "✓", "warning": "⚠", "error": "✗", "skipped": "·", "missing": "·"}
 GIT_HINT = "install git 2.36+ (Ubuntu: ppa:git-core/ppa, macOS: brew install git)"
@@ -57,8 +59,7 @@ class Ctx:
         return plan.Env(self.home)
 
     def tilde(self, path: object) -> str:
-        p, h = str(path), str(self.home)
-        return "~" + p[len(h):] if p == h or p.startswith(h + "/") else p
+        return tilde(path, self.home)
 
 
 def section(status: str = "ok", summary: str = "", problems=(), details=(), quiet: bool = False) -> dict:
@@ -504,10 +505,6 @@ def run(cfg_path: Optional[Path], dir: Optional[Path], online: bool, *, verbose:
         versions.update(gitpro=__version__, python=platform.python_version(), os=platform.system().lower())
     return {"ok": errors == 0, "command": "doctor", "versions": versions, "sections": sections,
             "summary": {"problems": errors, "warnings": warnings}}
-
-
-def _plural(n: int, word: str) -> str:
-    return f"{n} {word}{'' if n == 1 else 's'}"
 
 
 def _fixtext(p: dict) -> str:

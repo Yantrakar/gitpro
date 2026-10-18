@@ -10,7 +10,6 @@ import { Cli, ui } from "./cli";
 import { KindNode, LostJson, LostNode, lostSummary, lostTree } from "./lostTree";
 import { tilde } from "./scan";
 
-export { lostSummary, lostTree, unpushedText } from "./lostTree";
 export type { ItemNode, KindNode, LostJson, LostNode, RepoNode } from "./lostTree";
 
 const TIMEOUT = 600_000;

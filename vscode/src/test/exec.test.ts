@@ -3,7 +3,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { after, test } from "node:test";
-import { Child, exec, KILL_GRACE, killAll, liveCount, redactUrl, within } from "../exec";
+import { Child, exec, KILL_GRACE, killAll, liveCount, redactText, redactUrl, within } from "../exec";
 
 const node = process.execPath;
 const posix = process.platform !== "win32";
@@ -194,6 +194,14 @@ test("redactUrl masks secret query values; the same cases as tests/test_mcp.py Q
   for (const [url, shown] of cases) {
     assert.equal(redactUrl(url), shown, url);
     assert.equal(redactUrl(url), shown, `${url} (again: the global regex keeps no state)`);
+  }
+});
+
+test("redactText masks every URL in a line of process output, and leaves other text alone", () => {
+  const line = "fatal: unable to access 'https://user:pw_FAKE@github.com/o/r.git/' and https://h/o/r.git?access_token=ghp_FAKEFAKEFAKE&x=1: 403";
+  assert.equal(redactText(line), "fatal: unable to access 'https://user:***@github.com/o/r.git/' and https://h/o/r.git?access_token=***&x=1: 403");
+  for (const same of ["exit 1: no such file", "git@github.com:o/r.git", "ssh://git@host/o/r"]) {
+    assert.equal(redactText(same), same);
   }
 });
 

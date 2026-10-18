@@ -1453,7 +1453,7 @@ $ gitpro --version --json
 {
   "ok": true,
   "command": "version",
-  "version": "0.4.0",
+  "version": "<version>",
   "python": "3.12.3",
   "capabilities": [
     "agent-check",
@@ -1690,7 +1690,7 @@ and exits 2; set `GITPRO_DEBUG=1` to also see the traceback.
   the fix, and runs `setup`, `scan`, `pin`, `clone` and more. It has views for
   repo-level overrides and lost work. Install it from the Marketplace with
   `code --install-extension yantrakar.gitpro`, or build it from source with
-  `cd vscode && npm ci && npx vsce package && code --install-extension gitpro-0.4.0.vsix`.
+  `cd vscode && npm ci && npx vsce package && code --install-extension gitpro-<version>.vsix`.
   See [`vscode/README.md`](../vscode/README.md).
 - **Claude Code**: a [skill](../skills/gitpro/SKILL.md) teaches Claude to
   edit the config from plain requests, show `setup -n`, and run `setup -y` only after you
@@ -1713,7 +1713,7 @@ and exits 2; set `GITPRO_DEBUG=1` to also see the traceback.
 ```sh
 python -m venv .venv && .venv/bin/pip install -e . pytest pytest-xdist && .venv/bin/pytest -n auto
 .venv/bin/python -m pip wheel --no-deps --wheel-dir dist .
-.venv/bin/python tests/smoke_wheel.py dist/gitpro-0.4.0-py3-none-any.whl
+.venv/bin/python tests/smoke_wheel.py dist/gitpro-<version>-py3-none-any.whl
 .venv/bin/python tests/smoke_providers.py      # remote URL forms of common git hosts (-v: every case)
 cd vscode && npm ci && npm test                  # extension unit tests
 xvfb-run -a npm run test:integration             # starts VS Code; drop xvfb-run with a display
@@ -1737,11 +1737,11 @@ in a disposable home, runs `gitpro apply`, and checks 45 remote URLs offline:
 git and gitpro must pick the same, expected identity, and a URL no pattern
 covers must get `gitpro why`'s `url_form` fix. CI runs it after the tests.
 
-To release, bump the version in `src/gitpro/__init__.py`, `vscode/package.json`,
-`server.json` and the plugin manifests, merge, then start the release workflow
+To release, put the new version and a short comment on a new first line of `src/gitpro/VERSION`
+(the old first line becomes line 2; line 1's first word is the version)
+(the one place the version is written; the workflows stamp it into the VSIX, `server.json` and the site), merge, then start the release workflow
 on main: `python scripts/release.py --as LOGIN`, or "Run workflow" on its
-Actions page. Pushing a tag starts nothing. The workflow checks that the
-versions match and that tag `vX.Y.Z` is new, runs the whole CI matrix, builds
+Actions page. Pushing a tag starts nothing. The workflow checks that `src/gitpro/VERSION` is X.Y.Z and that tag `vX.Y.Z` is new, runs the whole CI matrix, builds
 once, and publishes the same files. Each publishing job waits for its
 environment's reviewer:
 `release` creates the tag and the GitHub release (with `SHA256SUMS`); `pypi`

@@ -6,13 +6,13 @@ import * as path from "node:path";
 import * as vscode from "vscode";
 import type { Capabilities } from "./capabilities";
 import { missing } from "./capabilities";
-import { exec, redactUrl, Result, RunOptions } from "./exec";
+import { exec, redactText, redactUrl, Result, RunOptions } from "./exec";
 import { isCrash } from "./report";
 import { tilde } from "./scan";
 
 export const INSTALL = "pipx install gitpro";
 
-export { exec, killAll, redactUrl, within } from "./exec";
+export { exec, killAll, redactText, redactUrl, within } from "./exec";
 export type { Child, Result, RunOptions } from "./exec";
 
 export interface Cli {
@@ -61,12 +61,12 @@ export function failure(r: Result): string {
   try {
     const e = (JSON.parse(r.stdout) as { error?: unknown }).error;
     if (typeof e === "string" && e) {
-      return e;
+      return redactText(e);
     }
   } catch {
     // not JSON
   }
-  return r.stderr.trim().split("\n").pop()?.replace(/^✗ /, "") || `gitpro exited with ${r.code}`;
+  return redactText(r.stderr.trim().split("\n").pop()?.replace(/^✗ /, "") || `gitpro exited with ${r.code}`);
 }
 
 export function makeCli(context: vscode.ExtensionContext, log: vscode.LogOutputChannel, caps: Capabilities,
@@ -105,7 +105,7 @@ export function makeCli(context: vscode.ExtensionContext, log: vscode.LogOutputC
       log.debug(`  aborted after ${took} (superseded)`);
       return r;
     }
-    const lines = r.stderr.trimEnd().split("\n").filter(Boolean);
+    const lines = redactText(r.stderr).trimEnd().split("\n").filter(Boolean);
     const okCodes = opts.accept ?? [0];
     if (typeof r.code === "number" && okCodes.includes(r.code)) {
       say(`  exit ${r.code} after ${took}`);
@@ -115,7 +115,7 @@ export function makeCli(context: vscode.ExtensionContext, log: vscode.LogOutputC
       bad(`  ✗ exit ${r.code} after ${took}`);
       lines.forEach((l) => bad(`  ${l}`));
     }
-    log.trace(`  stdout:\n${r.stdout}`);
+    log.trace(`  stdout:\n${redactText(r.stdout)}`);
     if (r.code === "ENOENT") {
       log.warn(`  ✗ ${exe} not found: set gitpro.path, or install it with ${INSTALL}`);
       if (!opts.quiet) {
@@ -133,7 +133,7 @@ export function makeCli(context: vscode.ExtensionContext, log: vscode.LogOutputC
     if (!r) {
       return undefined;
     }
-    r.stdout.trimEnd().split("\n").forEach((l) => log.info(l));
+    redactText(r.stdout).trimEnd().split("\n").forEach((l) => log.info(l));
     log.show(true);
     if (!(typeof r.code === "number" && (opts.accept ?? [0]).includes(r.code)) && !opts.quiet) {
       failed(r);
@@ -155,7 +155,7 @@ export function makeCli(context: vscode.ExtensionContext, log: vscode.LogOutputC
     try {
       return JSON.parse(r.stdout) as T;
     } catch {
-      log.error(`  ✗ no JSON in the output; is gitpro up to date?\n${r.stdout.slice(0, 4000)}`);
+      log.error(`  ✗ no JSON in the output; is gitpro up to date?\n${redactText(r.stdout.slice(0, 4000))}`);
       if (!opts.quiet) {
         void ui.error("gitpro printed no JSON; is it up to date?", "Show Log").then((pick) => pick && log.show());
       }
@@ -167,7 +167,7 @@ export function makeCli(context: vscode.ExtensionContext, log: vscode.LogOutputC
     log.debug(`$ git ${args.map((a) => shq(redactUrl(a))).join(" ")}    (in ${tilde(cwd, os.homedir())})`);
     const r = await exec("git", args, { ...opts, cwd });
     if (r.code !== 0) {
-      log.debug(`  exit ${r.code}: ${r.stderr.trim().split("\n").pop() ?? ""}`);
+      log.debug(`  exit ${r.code}: ${redactText(r.stderr.trim().split("\n").pop() ?? "")}`);
     }
     return r;
   }

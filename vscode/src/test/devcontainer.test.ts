@@ -5,8 +5,8 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { test } from "node:test";
-import { editRefusal, fileHasPin, hasPin, inspectText, LINE, locate, MERGED, NOTE, Proposal, proposeLine, question, snippet,
-  stripJsonc, withInitializeCommand } from "../devcontainer";
+import { editRefusal, fileHasPin, hasPin, inspectText, LINE, locate, MERGED, NOTE, Proposal, proposeLine, question, replaceIfUnchanged,
+  snippet, stripJsonc, withInitializeCommand } from "../devcontainer";
 
 /** [existing initializeCommand, what gitpro proposes]. */
 const CASES: [unknown, unknown][] = [
@@ -169,6 +169,36 @@ test("editRefusal: a normal file may be written, a symlink out of the repo may n
     fs.rmSync(file);
     fs.symlinkSync(outside, file);
     assert.match(editRefusal(file, repo) ?? "", /outside the repo/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("replaceIfUnchanged writes through a temp file and keeps the mode, and leaves nothing behind", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gitpro-dc-"));
+  try {
+    const file = path.join(dir, "devcontainer.json");
+    fs.writeFileSync(file, "{}\n", { mode: 0o640 });
+    fs.chmodSync(file, 0o640);
+    assert.equal(replaceIfUnchanged(file, "{}\n", '{"a": 1}\n'), undefined);
+    assert.equal(fs.readFileSync(file, "utf8"), '{"a": 1}\n');
+    assert.equal(fs.statSync(file).mode & 0o777, 0o640);
+    assert.deepEqual(fs.readdirSync(dir), ["devcontainer.json"]);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("replaceIfUnchanged refuses a file edited since it was shown", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gitpro-dc-"));
+  try {
+    const file = path.join(dir, "devcontainer.json");
+    fs.writeFileSync(file, "{}\n");
+    fs.writeFileSync(file, '{"mine": true}\n');   // edited while the dialog was open
+    const why = replaceIfUnchanged(file, "{}\n", '{"a": 1}\n');
+    assert.match(why ?? "", /changed since it was shown; nothing written/);
+    assert.equal(fs.readFileSync(file, "utf8"), '{"mine": true}\n');
+    assert.deepEqual(fs.readdirSync(dir), ["devcontainer.json"]);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

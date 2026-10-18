@@ -1,8 +1,9 @@
 name: Release
 
 # Run by hand on main ("Run workflow", or scripts/release.py), never by a tag:
-# the versions in src/gitpro/__init__.py, vscode/package.json, server.json and
-# .claude-plugin must match, and tag vX.Y.Z must not exist yet. The full CI
+# the version in src/gitpro/VERSION (the only place the version is written)
+# must be X.Y.Z, and tag vX.Y.Z must not exist yet; the VSIX and server.json
+# are stamped with it at build time. The full CI
 # matrix runs first; one build then feeds GitHub (which creates the tag),
 # PyPI and the Marketplace; server.json goes to the MCP Registry and site/ to
 # gitpro.dev once PyPI has the release. Each publishing job waits for its
@@ -30,15 +31,10 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - name: The versions match
+      - name: The version is X.Y.Z
         id: version
         run: |
-          v=$(python3 -c 'import re,pathlib; print(re.search(r"^__version__ = \"(.+)\"", pathlib.Path("src/gitpro/__init__.py").read_text(), re.M)[1])')
-          echo "$v" | grep -Eqx '[0-9]+\.[0-9]+\.[0-9]+'
-          jq -e --arg v "$v" '.version == $v' vscode/package.json
-          jq -e --arg v "$v" '.version == $v' .claude-plugin/plugin.json
-          jq -e --arg v "$v" '.version == $v and ([.packages[].version] | all(. == $v))' server.json
-          jq -e --arg v "$v" '[.plugins[].version] | all(. == $v)' .claude-plugin/marketplace.json
+          v=$(python3 scripts/versions.py)
           echo "version=$v" >> "$GITHUB_OUTPUT"
           echo "tag=v$v" >> "$GITHUB_OUTPUT"
       - name: The tag is new
@@ -79,6 +75,7 @@ jobs:
         run: |
           npm ci
           npm test
+          python3 ../scripts/versions.py --stamp
           npx vsce package --out ../dist/
       - run: cd dist && sha256sum * > SHA256SUMS && cat SHA256SUMS
       - uses: actions/upload-artifact@v4
@@ -99,13 +96,25 @@ jobs:
         with:
           name: dist
           path: dist
-      # A tag made with the job's own token starts no other workflow.
+      # A tag made with the job's own token starts no other workflow. Re-running a failed job must
+      # not fail on what the first attempt already did: a tag at this commit and a release are kept.
       - name: Create the tag
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.check.outputs.tag }}
           VERSION: ${{ needs.check.outputs.version }}
         run: |
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" --jq '.object | .type + " " + .sha' >ref 2>err; then
+            read -r type sha < ref
+            if [ "$type" = tag ]; then
+              sha=$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$sha" --jq .object.sha)
+            fi
+            if [ "$sha" = "$GITHUB_SHA" ]; then
+              echo "tag $TAG already points at $GITHUB_SHA"; exit 0
+            fi
+            echo "tag $TAG exists at $sha, not at $GITHUB_SHA"; exit 1
+          fi
+          grep -q "HTTP 404" err || { cat err; exit 1; }
           sha=$(gh api "repos/$GITHUB_REPOSITORY/git/tags" -f tag="$TAG" -f message="gitpro $VERSION" \
                 -f object="$GITHUB_SHA" -f type=commit --jq .sha)
           gh api "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$TAG" -f sha="$sha" --silent
@@ -113,7 +122,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.check.outputs.tag }}
-        run: gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --title "$TAG" --generate-notes --verify-tag
+        run: |
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>err; then
+            gh release upload "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            grep -q "release not found" err || { cat err; exit 1; }
+            gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --title "$TAG" --generate-notes --verify-tag
+          fi
 
   pypi:
     needs: github
@@ -130,6 +145,8 @@ jobs:
           path: dist
       - run: rm dist/*.vsix dist/SHA256SUMS
       - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          skip-existing: true
 
   marketplace:
     needs: [check, github]

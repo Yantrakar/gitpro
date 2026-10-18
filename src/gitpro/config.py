@@ -9,6 +9,8 @@ from dataclasses import MISSING, dataclass, field, fields, replace
 from pathlib import Path
 from typing import Optional, Tuple
 
+from .util import expand_home as _expand
+
 if sys.version_info >= (3, 11):
     import tomllib
 else:
@@ -317,10 +319,6 @@ def _check_extras(obj: "Default | Identity", where: str) -> None:
 LAYOUT_RE = re.compile(r"^(?:\{(?:host|owner|repo|id)\}|[A-Za-z0-9._/-])+$")
 TOP_LEVEL = ("agents", "clone", "default", "forge", "guard", "identity", "policy", "scan")
 HOOKS_DIR = ".config/gitpro/hooks"  # gitpro's own global hooks dir, relative to home (06)
-
-
-def _expand(p: str, home: Path) -> Path:
-    return home / p[2:] if p.startswith("~/") else Path(p)
 
 
 def scan_root_error(r: object) -> str | None:

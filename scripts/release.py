@@ -29,6 +29,9 @@ sys.path.insert(0, str(ROOT / "src"))
 from gitpro import forge  # noqa: E402
 from gitpro.config import ConfigError  # noqa: E402
 
+sys.path.insert(0, str(ROOT / "scripts"))
+import versions as _versions  # noqa: E402
+
 REPO = "Yantrakar/gitpro"
 WORKFLOW = "release.yml"
 EXTENSION = "yantrakar.gitpro"
@@ -157,33 +160,12 @@ def gh_json(acc: forge.Account, argv: List[str], what: str):
         raise Stop(f"{what}: gh did not return JSON") from None
 
 
-def versions() -> Dict[str, str]:
-    """{place: version} for every file that names the release version."""
-    def load(rel: str) -> dict:
-        return json.loads((ROOT / rel).read_text(encoding="utf-8"))
-    init = (ROOT / "src/gitpro/__init__.py").read_text(encoding="utf-8")
-    m = re.search(r'^__version__ = "([^"]+)"', init, re.M)
-    server = load("server.json")
-    out = {"src/gitpro/__init__.py": m[1] if m else "",
-           "vscode/package.json": load("vscode/package.json").get("version", ""),
-           "server.json version": server.get("version", ""),
-           ".claude-plugin/plugin.json": load(".claude-plugin/plugin.json").get("version", "")}
-    for i, p in enumerate(server.get("packages", [])):
-        out[f"server.json packages[{i}]"] = p.get("version", "")
-    for i, p in enumerate(load(".claude-plugin/marketplace.json").get("plugins", [])):
-        out[f".claude-plugin/marketplace.json plugins[{i}]"] = p.get("version", "")
-    return out
-
-
 def release_version() -> str:
-    found = versions()
-    distinct = set(found.values())
-    if len(distinct) != 1 or "" in distinct:
-        raise Stop("the versions don't match: " + ", ".join(f"{k} {v or '(none)'}" for k, v in found.items()))
-    v = distinct.pop()
-    if not re.fullmatch(r"\d+\.\d+\.\d+", v):
-        raise Stop(f"version {v} is not X.Y.Z")
-    return v
+    """The release version: the content of src/gitpro/VERSION, the only place it is written."""
+    try:
+        return _versions.version(ROOT)
+    except ValueError as e:
+        raise Stop(str(e)) from None
 
 
 def git_out(*args: str) -> str:
@@ -205,7 +187,10 @@ def on_pypi(v: str) -> Optional[dict]:
         return None
     if status != 200:
         raise Stop(f"PyPI answered {status or 'nothing'} for gitpro {v}")
-    return json.loads(text)
+    try:
+        return json.loads(text)
+    except ValueError:
+        raise Stop(f"PyPI answered 200 for gitpro {v}, but not with JSON") from None
 
 
 def marketplace_versions() -> Optional[List[str]]:
@@ -326,6 +311,26 @@ def approve(acc: forge.Account, run_id: int, gate: dict, v: str, yes: bool) -> N
     say(f"✓ approved {env}")
 
 
+def settle(acc: forge.Account, run_id: int, v: str, yes: bool, approved: set) -> List[dict]:
+    """Read the pending gates and approve each one that is due now; return the mcp-registry ones, which wait
+    for the extension."""
+    pending = gh_json(acc, ["api", f"repos/{REPO}/actions/runs/{run_id}/pending_deployments"],
+                      "pending deployments")
+    later = []
+    for gate in pending:
+        env = gate["environment"]["name"]
+        if env not in GATES:
+            raise Stop(f"unknown gate {env}; nothing approved. See {run_url(run_id)}")
+        if env in approved:
+            continue
+        if env == "mcp-registry":
+            later.append(gate)
+            continue
+        approve(acc, run_id, gate, v, yes)
+        approved.add(env)
+    return later
+
+
 def follow(acc: forge.Account, run_id: int, v: str, yes: bool) -> None:
     """Step 3 (and step 4 when its turn comes): until the run succeeds, or Stop."""
     approved, vsix_done = set(), False
@@ -341,22 +346,13 @@ def follow(acc: forge.Account, run_id: int, v: str, yes: bool) -> None:
             if run.get("conclusion") == "success":
                 return
             raise Stop(f"the run ended {run.get('conclusion')}: {run_url(run_id)}")
-        pending = gh_json(acc, ["api", f"repos/{REPO}/actions/runs/{run_id}/pending_deployments"],
-                          "pending deployments")
-        later = []
-        for gate in pending:
-            env = gate["environment"]["name"]
-            if env not in GATES:
-                raise Stop(f"unknown gate {env}; nothing approved. See {run_url(run_id)}")
-            if env in approved:
-                continue
-            if env == "mcp-registry":
-                later.append(gate)
-                continue
-            approve(acc, run_id, gate, v, yes)
-            approved.add(env)
+        later = settle(acc, run_id, v, yes, approved)
         github_done = any(j.get("name") == "github" and j.get("conclusion") == "success" for j in jobs)
         if github_done and not vsix_done:
+            # vsix() blocks for minutes: approve what has become pending since the read above first
+            seen = {g["environment"]["name"]: g for g in later}
+            seen.update({g["environment"]["name"]: g for g in settle(acc, run_id, v, yes, approved)})
+            later = list(seen.values())
             vsix(acc, v, run_id)
             vsix_done = True
         for gate in later:
@@ -409,6 +405,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     p.add_argument("--run", type=int, metavar="ID", help="follow an existing Release run instead of starting one")
     args = p.parse_args(argv)
     acc = forge.Account(forge.GITHUB, "gh", args.login)
+    run_id = args.run
     try:
         if args.run is None:
             v, head = preflight(acc)
@@ -420,11 +417,15 @@ def main(argv: Optional[List[str]] = None) -> int:
             v = release_version()
             check_login(acc)
             run_id = args.run
-            info = gh_json(acc, ["run", "view", str(run_id), "-R", REPO, "--json", "workflowName,headBranch"],
+            info = gh_json(acc, ["run", "view", str(run_id), "-R", REPO, "--json", "workflowName,headBranch,headSha"],
                            "gh run view")
             if info.get("workflowName") != "Release" or info.get("headBranch") != "main":
                 raise Stop(f"run {run_id} is {info.get('workflowName')} on {info.get('headBranch')}, "
                            "not Release on main")
+            head = git_out("rev-parse", "HEAD")
+            if info.get("headSha") != head:
+                raise Stop(f"run {run_id} is for commit {str(info.get('headSha'))[:7]}, but HEAD is {head[:7]}; "
+                           "check out the commit the run was started from")
         say(f"Release v{v}: {run_url(run_id)}")
         follow(acc, run_id, v, args.yes)
         say(f"✓ the run succeeded: {run_url(run_id)}")
@@ -433,7 +434,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         print(clean(str(e)), file=sys.stderr, flush=True)
         return e.code
     except KeyboardInterrupt:
-        print("\nStopped. Pick the run up again with --run ID.", file=sys.stderr)
+        again = f"--run {run_id}" if run_id else "--run ID once the run exists (gh run list)"
+        print(f"\nStopped. Pick the run up again with {again}.", file=sys.stderr)
         return 130
 
 

@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 """Write the release version and the sitemap dates into site/ before gitpro.dev is published.
 
-The version (from src/gitpro/__init__.py) goes into the hero eyebrow and the JSON-LD softwareVersion of
-index.html. Each sitemap <lastmod> becomes the date of the last commit that changed its page, so it needs the
+The version (from src/gitpro/VERSION) goes into the hero eyebrow and the JSON-LD softwareVersion of
+index.html; the committed copy holds the placeholder 0.0.0. Each sitemap <lastmod> becomes the date of the last commit that changed its page, so it needs the
 full history: pages.yml checks out with fetch-depth 0. Run: python3 design/site_meta.py [--check]
 
 --check changes nothing and exits 1 when a file would change.
 """
 from __future__ import annotations
 
+import importlib.util
 import re
 import subprocess
 import sys
@@ -21,7 +22,14 @@ ORIGIN = "https://gitpro.dev/"
 
 
 def release() -> str:
-    return re.search(r'^__version__ = "([^"]+)"', (ROOT / "src/gitpro/__init__.py").read_text(), re.M)[1]
+    """The release version, read by scripts/versions.py (stdlib only, so it is loaded by path)."""
+    spec = importlib.util.spec_from_file_location("versions", ROOT / "scripts/versions.py")
+    versions = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(versions)
+    try:
+        return versions.version(ROOT)
+    except ValueError as e:
+        raise SystemExit(str(e)) from None
 
 
 def with_version(index: str, version: str) -> str:

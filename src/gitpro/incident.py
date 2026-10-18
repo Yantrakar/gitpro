@@ -7,13 +7,13 @@ only: never an exception message, a local variable, an argument or a path outsid
 from __future__ import annotations
 
 import json
-import os
 import re
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 
 from . import __version__
+from .undo import state_dir   # the same directory, so the denials sit next to the undo scripts
 
 PROG = "gitpro"
 CRASH = "last-crash.json"
@@ -29,32 +29,14 @@ _WORD_RE = re.compile(r"^[A-Za-z0-9_.-]{1,40}$")
 _CODE_RE = re.compile(r"^[a-z_]{1,32}$")
 
 
-def state_dir() -> Path:
-    """The same directory as undo.state_dir(): $XDG_STATE_HOME/gitpro or ~/.local/state/gitpro, 0700."""
-    base = os.environ.get("XDG_STATE_HOME") or str(Path.home() / ".local/state")
-    path = Path(base) / PROG
-    path.mkdir(mode=0o700, parents=True, exist_ok=True)
-    return path
-
-
 def _now() -> str:
     return time.strftime("%Y-%m-%dT%H:%MZ", time.gmtime())
 
 
 def _write(path: Path, text: str) -> None:
     """Atomically replace path with text, mode 0600."""
-    tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            f.write(text)
-        os.replace(tmp, path)
-    except BaseException:
-        try:
-            tmp.unlink()
-        except OSError:
-            pass
-        raise
+    from . import files   # not at import: the hooks import this module
+    files.atomic_write(path, text, 0o600, follow_symlinks=False)
 
 
 def _frames(tb: Any) -> "tuple[List[list], int]":

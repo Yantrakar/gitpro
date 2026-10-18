@@ -50,11 +50,12 @@ Release 0.4.0 (run 38978075243, 2026-10-16) went like this:
   can also be run by hand on main for a site-only fix.
 
 Repository settings on 2026-10-17:
-- Environments:
+- Environments (every one: deployment branch `main` only, no tag rules):
   - `pypi` and `mcp-registry`: required reviewer `sandeepshelke`, "Prevent self-review"
-    off; deployment branch `main` and tag `v*`;
-  - `github-pages`: no reviewer; deployment branch `main` and tag `v*`;
-  - there is no `marketplace` or `release` environment.
+    off;
+  - `release`: a required reviewer (section 5);
+  - `github-pages`: no reviewer;
+  - there is no `marketplace` environment.
 - Ruleset `main` on the default branch, enforced, no bypass: no deletion, no force push,
   a pull request with 0 approvals, and the checks `test (ubuntu-latest, 3.9)`,
   `test (ubuntu-latest, 3.11)`, `test (ubuntu-latest, 3.13)`,
@@ -111,13 +112,13 @@ Jobs, in order; each runs only when the one before it succeeded:
 
 | Job | Environment (gate) | Does |
 |---|---|---|
-| `check` | none | Fails unless `github.ref` is `refs/heads/main`. Reads the version from `src/gitpro/__init__.py` and checks that `vscode/package.json`, `server.json` (both places) and both `.claude-plugin` files match it. Fails if tag `vX.Y.Z` already exists on GitHub. Outputs `version` and `tag`. |
+| `check` | none | Fails unless `github.ref` is `refs/heads/main`. Reads the version from the first word of line 1 of `src/gitpro/VERSION` (older versions and comments follow, newest first), the only place it is written, and checks that it is X.Y.Z (`scripts/versions.py`). Fails if tag `vX.Y.Z` already exists on GitHub. Outputs `version` and `tag`. |
 | `ci` | none | `uses: ./.github/workflows/ci.yml`: the whole CI matrix (Linux 3.9/3.11/3.13, macOS 3.13, VS Code). |
-| `build` | none | Wheel, sdist, `smoke_wheel.py`, `npm ci`, `npm test`, `vsce package`, `SHA256SUMS`, uploaded as artifact `dist`. Its own `pytest` step is dropped, because `ci` has run the suite on the same commit. |
+| `build` | none | Wheel, sdist, `smoke_wheel.py`, `npm ci`, `npm test`, `scripts/versions.py --stamp` (the committed `vscode/package.json` holds the placeholder `0.0.0`, because VS Code loads no extension without a version), `vsce package`, `SHA256SUMS`, uploaded as artifact `dist`. Its own `pytest` step is dropped, because `ci` has run the suite on the same commit. |
 | `github` | `release` | Creates the annotated tag `vX.Y.Z` ("gitpro X.Y.Z") on `github.sha` with the job's token (`contents: write`), through the API (`POST git/tags`, then `POST git/refs`), so the job needs no checkout and no stored credentials. Then `gh release create` with `dist/*`, `--generate-notes` and `--verify-tag`. |
 | `pypi` | `pypi` | As today. It now needs `github`, not `build`. |
 | `marketplace` | `marketplace` | As today (`marketplace.yml`). It skips while the Azure variables are unset. Its `tag` input is `check`'s output, because `github.ref_name` is now `main`. |
-| `mcp-registry` | `mcp-registry` | As today (`mcp-registry.yml`), after `pypi`, with the same `tag` input. It checks out `refs/tags/<tag>`, which `github` created. |
+| `mcp-registry` | `mcp-registry` | As today (`mcp-registry.yml`), after `pypi`, with the same `tag` input. It checks out `refs/tags/<tag>`, which `github` created, runs `scripts/versions.py --stamp` (the committed `server.json` has no version) and checks that the version equals the tag. |
 | `site` | `github-pages` (no reviewer) | As today (`pages.yml`, since #22), after `pypi`. |
 
 Facts the design relies on:
@@ -135,16 +136,17 @@ Done on 2026-10-17, checked through the API:
 - `pypi`: required reviewer `sandeepshelke`.
 - "Prevent self-review" off in `pypi` and `mcp-registry`. The person who starts the run
   approves it.
-- `pypi`, `mcp-registry` and `github-pages`: deployment branch `main` and tag `v*`.
+- `pypi`, `mcp-registry` and `github-pages`: deployment branch `main` (the tag rule `v*`
+  was removed later, see "Still to do" 2).
 - The ruleset on `main` (section 1).
 - `release`: required reviewer `sandeepshelke`, "Prevent self-review" off, deployment
   branch `main` only.
 
 Still to do:
 1. Done (`release` above).
-2. Once step 3 of section 11 has merged, remove the tag rule `v*` from `pypi`,
-   `mcp-registry` and `github-pages`. A run started by hand on main runs on
-   `refs/heads/main`, so the `main` rule covers it, and a tag no longer starts anything.
+2. Done: the tag rule `v*` is removed from `pypi`, `mcp-registry` and `github-pages`.
+   A run started by hand on main runs on `refs/heads/main`, so the `main` rule covers
+   it, and a tag no longer starts anything.
 3. If the Azure variables are ever set, create `marketplace` first, with the same
    reviewer and branch rule. A job that names an environment that doesn't exist creates
    it with no gate.
@@ -163,7 +165,7 @@ Usage: `python scripts/release.py --as LOGIN [--yes] [--run ID]`
 - `--yes`: answer yes to every question. It still stops at the first failure.
 - `--run ID`: pick up an existing Release run (after Ctrl-C, or one started on the page)
   instead of starting a new one. It skips steps 1 and 2, because the tag and the PyPI
-  version may already exist by then. It still checks the login and the versions, and
+  version may already exist by then. It still checks the login and the version, and
   stops unless the run is `Release` on `main`.
 
 Steps:
@@ -172,7 +174,7 @@ Steps:
    - the branch isn't `main`;
    - a tracked file has changes (untracked files are allowed);
    - after `git fetch`, HEAD isn't `origin/main`;
-   - the versions don't match (the same check as the `check` job);
+   - `src/gitpro/VERSION` is not X.Y.Z (the same check as the `check` job);
    - tag `vX.Y.Z` exists locally;
    - `gh api user` doesn't name LOGIN;
    - tag `vX.Y.Z` exists on GitHub, or the API answers anything but 404;
@@ -249,8 +251,15 @@ the others. Step 4 of section 6 then finds the version already listed and goes o
 - A failed job: fix it, then "Re-run failed jobs" on the same run. GitHub asks for each
   gate's approval again, so `--run ID` works for a re-run too.
 - Rejecting a gate stops that run. If `github` never ran, nothing is published and a
-  new run can start. Once the tag exists, a new run refuses (`check`), so re-run the jobs
-  of the same run instead.
+  new run can start. Once the tag exists, a new run refuses (`check`, "The tag is new"),
+  so re-run the jobs of the same run instead. That re-run works: the `github` job keeps
+  a tag that already points at the run's commit (and fails if the tag is at another
+  commit), uploads to a release that exists with `gh release upload --clobber` instead of
+  creating it, and the PyPI step has `skip-existing: true`.
+- The refusal is real: run 39018352548, started when the tag already existed, failed at
+  "The tag is new" in `check` with every other job skipped.
+- `--run ID` also needs the run's commit to be the local HEAD, and the script approves
+  a gate that turns pending while it waits for the VSIX.
 - `mcp-registry.yml` and `marketplace.yml` keep their own `workflow_dispatch`, to publish
   an existing tag by hand.
 
@@ -259,7 +268,7 @@ the others. Step 4 of section 6 then finds the version already listed and goes o
 - `docs/guide.md`, the developing paragraph: "CI runs it" stays true; CI runs on pull
   requests and in Release.
 - `docs/guide.md`, the release paragraph (starting "To release, bump the version"):
-  bump, merge, then start Release with `python scripts/release.py --as LOGIN` or with
+  put the new version and its comment on a new first line of `src/gitpro/VERSION` (the old first line becomes line 2; the first word of line 1 is the version; the only place; the workflows stamp the rest), merge, then start Release with `python scripts/release.py --as LOGIN` or with
   "Run workflow" on the Actions page. List the four gates and the manual VSIX step.
 - The header comments of `release.yml` and `mcp-registry.yml`.
 

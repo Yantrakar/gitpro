@@ -19,7 +19,7 @@ from typing import Iterator, Optional
 from . import change_contract as contract
 from . import approval_policy
 from . import config, files, jsonout, resolve
-from .operation_contract import MAX_REQUEST, OperationError, decode, digest
+from .operation_contract import MAX_REQUEST, OperationError, decode, digest, exit_code, read_text
 from .operation_io import Ledger, configuration_lock, process, repository_lock, state_dir, termination_signals
 from .operation_io import sync_path as _sync
 
@@ -199,7 +199,7 @@ class Store(Ledger):
                 continue
             if (current.st_dev, current.st_ino, current.st_ctime_ns) == (device, inode, ctime):
                 path.unlink()
-                _sync_dir(path.parent)
+                _sync(path.parent, directory=True)
 
 
 class Builder:
@@ -510,10 +510,6 @@ def approve(proposal: object) -> dict:
                               "be durably recorded. Inspect change status.", "indeterminate"))
 
 
-def _sync_dir(path: Path) -> None:
-    _sync(path, directory=True)
-
-
 @contextlib.contextmanager
 def _target_lock(path: Path, store: Store, identifier: str) -> Iterator[None]:
     lock = path.with_name(path.name + ".lock")
@@ -534,7 +530,7 @@ def _target_lock(path: Path, store: Store, identifier: str) -> Iterator[None]:
         if current and (st.st_dev, st.st_ino, st.st_ctime_ns) == (
                 current.st_dev, current.st_ino, current.st_ctime_ns):
             lock.unlink()
-            _sync_dir(lock.parent)
+            _sync(lock.parent, directory=True)
 
 
 def _replace(path: Path, expected: Optional[dict], wanted: Optional[dict], store: Store, identifier: str) -> None:
@@ -542,7 +538,7 @@ def _replace(path: Path, expected: Optional[dict], wanted: Optional[dict], store
     missing = [p for p in path.parents if not p.exists()]
     for parent in reversed(missing):
         parent.mkdir(mode=0o700)
-        _sync_dir(parent.parent)
+        _sync(parent.parent, directory=True)
     with _target_lock(path, store, identifier):
         if _snapshot(path) != expected:
             raise OperationError("stale_plan", f"A file changed before replacement: {path}", "blocked")
@@ -553,7 +549,7 @@ def _replace(path: Path, expected: Optional[dict], wanted: Optional[dict], store
             files.atomic_write(path, _bytes(wanted), wanted["mode"], follow_symlinks=False,
                                overwrite=expected is not None)
             _sync(path)
-        _sync_dir(path.parent)
+        _sync(path.parent, directory=True)
         if not _same_content(_snapshot(path), wanted):
             raise OperationError("verification_failed", f"Replacement could not be verified: {path}", "indeterminate")
 
@@ -571,7 +567,7 @@ def _rollback(document: dict, store: Store) -> list[str]:
             if _same_content(current, change["before"]):
                 if current is not None:
                     _sync(path)
-                _sync_dir(path.parent)
+                _sync(path.parent, directory=True)
                 continue
             if not _same_content(current, change["after"]):
                 conflicts.append(str(path))
@@ -773,11 +769,7 @@ def command(args: argparse.Namespace) -> int:
                 if not source:
                     raise OperationError("missing_input", "Supply the request/proposal JSON file.", "needs_input")
                 limit = MAX_REQUEST if action == "propose" else MAX_PLAN
-                if source == "-":
-                    text = sys.stdin.read(limit + 1)
-                else:
-                    with open(source, encoding="utf-8") as stream:
-                        text = stream.read(limit + 1)
+                text = read_text(source, limit)
                 if action == "propose":
                     result = propose(decode(text), args.config, policy_path=args.approval_policy)
                 else:
@@ -824,7 +816,7 @@ def command(args: argparse.Namespace) -> int:
             result = contract.error(action, OperationError("invalid_request", "Could not read the JSON input.",
                                                            "needs_input"))
         jsonout.emit(result["command"], result)
-        return 0 if result["ok"] else (3 if result["decision"] == "blocked" else 2)
+        return exit_code(result)
 
 
 def register(sub: argparse._SubParsersAction, common: argparse.ArgumentParser,

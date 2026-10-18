@@ -220,6 +220,11 @@ export function redactUrl(s: string): string {
   return `${m[1]}://${info}@${s.slice(m[0].length)}`;
 }
 
+/** Text for the log: every URL in it goes through redactUrl, so a token in output a process printed is masked too. */
+export function redactText(s: string): string {
+  return s.replace(/[A-Za-z][A-Za-z0-9+.-]*:\/\/[^\s'"<>]+/g, redactUrl);
+}
+
 /** Resolves like p (e.g. Child.exited), or to undefined when p has not settled after `ms`. */
 export function within<T>(p: Promise<T>, ms: number): Promise<T | undefined> {
   let timer: NodeJS.Timeout | undefined;

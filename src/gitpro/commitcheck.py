@@ -23,8 +23,9 @@ def _who(rep) -> str:
 
 
 def _where(rep) -> str:
+    from .resolve import redact_url
     m = rep.expected.match
-    return f"{m.remote} ({m.url})" if m.remote and m.url else str(rep.repo)
+    return f"{m.remote} ({redact_url(m.url)})" if m.remote and m.url else str(rep.repo)
 
 
 def identity_problems(rep, cfg, committer_email: Optional[str] = None,
@@ -61,9 +62,13 @@ def trailer_problems(repo: Path, rep, cfg, message: str, warnings: List[str]) ->
         warnings.append("message not checked: trailer rules need gitpro's audit package")
         return []
     try:
-        r = subprocess.run(["git", "-C", str(repo), "interpret-trailers", "--parse"], input=message,
-                           capture_output=True, text=True, timeout=10)
-        pairs = [tuple(s.strip() for s in ln.split(":", 1)) for ln in r.stdout.splitlines() if ":" in ln]
+        if hasattr(trailers, "parse_text"):   # exactly what the commit-msg hook reads
+            pairs = trailers.parse_text(message, repo)
+        else:
+            r = subprocess.run(["git", "-C", str(repo), "interpret-trailers", "--parse", "--no-divider"],
+                               input=message, capture_output=True, text=True, encoding="utf-8",
+                               errors="replace", timeout=10)
+            pairs = [tuple(s.strip() for s in ln.split(":", 1)) for ln in r.stdout.splitlines() if ":" in ln]
         # 08 §11: trailers.policy_for(identity, default), trailers.check(trailers, policy) -> list[str]
         policy = call_spec(trailers.policy_for, [("identity", rep.expected.match.identity),
                                                   ("default", cfg.default)])

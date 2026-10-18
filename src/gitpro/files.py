@@ -84,20 +84,23 @@ def _backup(path: Path, data: bytes | None = None) -> Path:
             continue
         with os.fdopen(fd, "wb") as f:
             f.write(data)
+            f.flush()
+            os.fsync(f.fileno())
         return bak
     raise OSError(f"no free backup name for {path}")
 
 
 def atomic_write(path: Path, text: str | bytes, mode: int, *,
                  follow_symlinks: bool = True, overwrite: bool = True) -> None:
-    """Replace path's content atomically: temp file in the same directory, fsync, rename.
+    """Replace path's content atomically: temp file in the same directory, fsync, rename, fsync of the directory.
+    A str is written as UTF-8.
     By default symlinks are followed. Callers can replace the entry itself instead,
     or require exclusive creation without overwriting any existing entry."""
     path = Path(os.path.realpath(path)) if overwrite and follow_symlinks and Path(path).is_symlink() else Path(path)
     path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.")
     try:
-        with os.fdopen(fd, "wb" if isinstance(text, bytes) else "w") as f:
+        with (os.fdopen(fd, "wb") if isinstance(text, bytes) else os.fdopen(fd, "w", encoding="utf-8")) as f:
             f.write(text)
             f.flush()
             os.fsync(f.fileno())
@@ -111,6 +114,12 @@ def atomic_write(path: Path, text: str | bytes, mode: int, *,
         with contextlib.suppress(FileNotFoundError):
             os.unlink(tmp)
         raise
+    with contextlib.suppress(OSError):   # so the rename survives a power loss; not every platform can fsync a directory
+        dfd = os.open(path.parent, os.O_RDONLY)
+        try:
+            os.fsync(dfd)
+        finally:
+            os.close(dfd)
 
 
 _atomic_write = atomic_write  # the pre-0.2 name; kept for one release

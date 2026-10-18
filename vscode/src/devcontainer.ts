@@ -257,6 +257,34 @@ export function editRefusal(file: string, repo: string): string | undefined {
   return undefined;
 }
 
+/** Replaces `file` with `next`, unless its content is no longer `shown` (what the dialogs asked about): written to
+ * a temporary file in the same directory, then renamed, so an interruption leaves the old file or the new one.
+ * Returns why it did not write, else undefined. A symlink is written through, as editRefusal checked. */
+export function replaceIfUnchanged(file: string, shown: string, next: string): string | undefined {
+  let tmp: string | undefined;
+  try {
+    const real = fs.realpathSync(file);
+    if (fs.readFileSync(real, "utf8") !== shown) {
+      return `${file} changed since it was shown; nothing written`;
+    }
+    tmp = path.join(path.dirname(real), `.${path.basename(real)}.${process.pid}.tmp`);
+    const fd = fs.openSync(tmp, "wx", fs.statSync(real).mode & 0o777);
+    try {
+      fs.writeFileSync(fd, next);
+      fs.fsyncSync(fd);
+    } finally {
+      fs.closeSync(fd);
+    }
+    fs.renameSync(tmp, real);
+    return undefined;
+  } catch (e) {
+    if (tmp) {
+      fs.rmSync(tmp, { force: true });
+    }
+    return String(e);
+  }
+}
+
 /** Registers gitpro.devcontainerSetup and the nudge for workspace folders. */
 export function registerDevcontainer(context: vscode.ExtensionContext, cli: Cli): void {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -312,10 +340,9 @@ export function registerDevcontainer(context: vscode.ExtensionContext, cli: Cli)
         return undefined;
       }
     }
-    try {
-      fs.writeFileSync(file0, withInitializeCommand(text, p.proposed));
-    } catch (e) {
-      void ui.error(`Cannot write ${file}: ${String(e)}`);
+    const failed = replaceIfUnchanged(file0, text, withInitializeCommand(text, p.proposed));
+    if (failed) {
+      void ui.error(`Cannot write ${file}: ${failed}`);
       return undefined;
     }
     cli.log.info(`✓ ${file}: initializeCommand runs gitpro pin on the next container start`);

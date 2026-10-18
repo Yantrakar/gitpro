@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Optional
 
 from . import config, operations as op, policy, resolve
-from .operation_contract import OperationError, Request, digest, failure, request_key
+from .operation_contract import DECISIONS, OperationError, Request, digest, failure, request_key
 from .operation_io import Ledger, configuration_lock, file_hash, repository_lock
 
 SCHEMA = {
@@ -16,8 +16,7 @@ SCHEMA = {
     "required": ["version", "command", "ok", "decision", "problems", "status", "retry_safe", "attribution"],
     "properties": {
         "version": {"const": 1}, "command": {"const": "operation-reconcile"},
-        "ok": {"type": "boolean"}, "decision": {"enum": ["ready", "blocked", "needs_input",
-                                                          "needs_approval", "indeterminate"]},
+        "ok": {"type": "boolean"}, "decision": {"enum": list(DECISIONS)},
         "problems": {"type": "array", "items": {"type": "object"}},
         "operation": {"type": ["string", "null"]}, "repo": {"type": ["string", "null"]},
         "idempotency_key": {"type": "string"}, "ledger_status": {"type": "string"},

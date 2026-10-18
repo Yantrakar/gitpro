@@ -4,9 +4,12 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
+
+from .config import SCAN_CONTROL_RE
 
 VERSION = 1
 MAX_REQUEST = 131072
@@ -114,6 +117,18 @@ def decode(text: str, *, limit: int = MAX_REQUEST) -> object:
         raise OperationError("invalid_request", "Request must be a JSON object.", "needs_input") from None
 
 
+def read_text(source: str, limit: int) -> str:
+    """Up to limit + 1 characters from a file, or from stdin for "-"."""
+    if source == "-":
+        return sys.stdin.read(limit + 1)
+    with open(source, encoding="utf-8") as stream:
+        return stream.read(limit + 1)
+
+
+def exit_code(result: dict) -> int:
+    return 0 if result["ok"] else (3 if result["decision"] == "blocked" else 2)
+
+
 @dataclass(frozen=True)
 class Request:
     operation: str
@@ -147,7 +162,7 @@ class Request:
         if ("author_name" in raw) != ("author_email" in raw):
             raise OperationError("missing_input", "Supply both author_name and author_email.", "needs_input")
         for key in ("author_name", "author_email", "remote", "branch", "base", "head", "title"):
-            if key in raw and (any(ord(c) < 32 or ord(c) == 127 for c in raw[key]) or
+            if key in raw and (SCAN_CONTROL_RE.search(raw[key]) or
                                (key != "title" and raw[key].startswith("-"))):
                 raise OperationError("invalid_request", f"Invalid {key}.", "needs_input")
         repo = Path(raw["repo"])
