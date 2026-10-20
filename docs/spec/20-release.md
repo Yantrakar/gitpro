@@ -3,12 +3,14 @@
 Depends on 05 (`forge.Account`, `forge.run`). Facts below are as of main 114d173
 (release 0.4.0 and #22) and the repository settings read on 2026-10-17. Written
 2026-10-15 after 0.3.4; refreshed 2026-10-17. Open VSX added 2026-10-18 (section 13).
-Marketplace publishing from the run added 2026-10-20 (section 14).
+Marketplace publishing from the run added 2026-10-20 (section 14). The site goes last and
+the MCP Registry waits for PyPI alone since 2026-10-21 (section 15).
 
 Files this package may create or edit:
 - new: `scripts/release.py`, `tests/test_release_script.py`;
 - edit: `.github/workflows/ci.yml` (triggers only), `.github/workflows/release.yml`,
-  `.github/workflows/mcp-registry.yml` (header comment only), `docs/guide.md` (the
+  `.github/workflows/mcp-registry.yml` and `.github/workflows/pages.yml` (header comments
+  only), `docs/guide.md` (the
   developing and releasing paragraphs named in section 9), and this spec.
 
 Nothing else. `marketplace.yml` changes only as section 14 says.
@@ -123,7 +125,7 @@ Jobs, in order; each runs only when the one before it succeeded:
 | `marketplace` | `marketplace` | As today (`marketplace.yml`). It skips while the Azure variables are unset. Its `tag` input is `check`'s output, because `github.ref_name` is now `main`. |
 | `openvsx` | `openvsx` | Section 13. After `github`; skipped unless the repository variable `OPENVSX` is `true`. |
 | `mcp-registry` | `mcp-registry` | As today (`mcp-registry.yml`), after `pypi`, with the same `tag` input. It checks out `refs/tags/<tag>`, which `github` created, runs `scripts/versions.py --stamp` (the committed `server.json` has no version) and checks that the version equals the tag. |
-| `site` | `github-pages` (no reviewer) | As today (`pages.yml`, since #22), after `pypi`. |
+| `site` | `github-pages` (no reviewer) | `pages.yml` (since #22), last: after `pypi`, `marketplace`, `openvsx` and `mcp-registry` (section 15). |
 
 Facts the design relies on:
 - A tag pushed with the workflow's own `GITHUB_TOKEN` starts no other workflow. GitHub
@@ -207,8 +209,8 @@ Steps:
    `run_attempt` (`GET repos/Yantrakar/gitpro/actions/runs/ID`; gh 2.45's `run view` has no
    attempt field) goes up, and follow it (step 3). GitHub asks for each re-run gate's
    approval again. Every job is safe to run again (section 8). No exits 0 and writes
-   nothing. A run that succeeded goes to step 4 (skipped when the Marketplace lists
-   X.Y.Z) and then 5.
+   nothing. A run that succeeded goes to step 4 (nothing to do when the `marketplace`
+   job published or the Marketplace lists X.Y.Z) and then 5.
 3. **Follow the run.** Poll `run view ID --json status,conclusion,jobs` every 15 s.
    - Print a line, led by the time since following began (`  3m15s  ✓ build: success`),
      when a job first shows up or changes state (queued, in progress, waiting, success
@@ -227,16 +229,12 @@ Steps:
        "comment": "scripts/release.py"}`;
      - on no, exit 0 and print the run URL. The run keeps waiting; finish it on the page,
        or later with `--run ID`.
-   - An environment already approved in this run isn't asked about again.
-4. **VSIX**, once `github` has succeeded and the job `marketplace / publish` has
-   completed, and before the `mcp-registry` gate is approved. While that job isn't in
-   the run's job list yet, or is queued, waiting or running, the script keeps following
-   (and asks for the `marketplace` gate). A failed one stops it, like any failed job.
-   - If the Marketplace already lists X.Y.Z (a resumed run, or the job published it and
-     the listing is up), the step is skipped.
-   - If the job succeeded, print "The marketplace job published X.Y.Z", then wait for
-     the listing as below, without downloading or opening anything. If it isn't listed in
-     time, exit 1 with the publisher URL to check and the `--run ID` to resume.
+   - An environment already approved in this run isn't asked about again. Every gate is
+     approved as it appears; none waits for another channel (section 15).
+4. **VSIX**, after the run has succeeded.
+   - If the job `marketplace / publish` succeeded, there is nothing to do here; step 5
+     waits for the listing.
+   - If the Marketplace already lists X.Y.Z (a resumed run), the step is skipped.
    - If the job was skipped (the Azure variables unset), or the run completed without
      one, the upload is manual:
    - download `gitpro-X.Y.Z.vsix` from the release into `~/Downloads/gitpro-X.Y.Z/`;
@@ -248,8 +246,7 @@ Steps:
      waited and which versions the Marketplace lists. If it isn't listed by then, exit 1 with
      what is missing and the `--run ID` to resume. `--yes` doesn't skip this wait: no one
      else can do the upload.
-   - The `pypi` gate doesn't wait for this step; only `mcp-registry` does. A run picked up
-     with `--run ID` at the `mcp-registry` gate does this step first.
+   - Without the `marketplace` job the site has gone live before this upload (section 15).
 5. **Verify** after the run succeeds, and print one line for each:
    - PyPI lists X.Y.Z, with a wheel and an sdist;
    - the GitHub release has the wheel, the sdist, the VSIX and `SHA256SUMS`;
@@ -258,9 +255,14 @@ Steps:
    - Open VSX lists X.Y.Z, when the run's `openvsx` job succeeded; when it was skipped
      (the variable `OPENVSX` unset) the line is
      `– Open VSX: the openvsx job didn't run; not checked` and doesn't count;
-   - gitpro.dev names X.Y.Z (`"softwareVersion": "X.Y.Z"`), checked every 30 s for up
-     to 10 minutes, since GitHub Pages sends `Cache-Control: max-age=600` and a cache
-     may serve the old page until then. The first miss prints one line saying so.
+   - gitpro.dev names X.Y.Z (`"softwareVersion": "X.Y.Z"`).
+
+   The last three show a new version minutes after it is published, so the script looks
+   at them every 30 s, for up to 20 minutes, until all three pass. The first miss prints
+   one line naming what isn't there yet. In release 0.4.2 the Marketplace listed the
+   version at most 5.5 minutes after the job published it (23:03:45 to 23:09:17 UTC,
+   2026-10-20), and Open VSX at most 2 minutes after (23:13:27 to 23:15:19). GitHub Pages
+   sends `Cache-Control: max-age=600`, so a cache may serve the old page for 10 minutes.
 
    It exits 0 only when every counted check passes.
 
@@ -285,8 +287,7 @@ approving it. `github-pages` has no reviewer, so it never waits for a gate.
 
 `marketplace.yml` and its job stay. They skip while `AZURE_CLIENT_ID` is unset. Since
 2026-10-20 the variables are set (section 14): the `marketplace` gate shows up and the
-script approves it like the others, and step 4 of section 6 waits for the job and then
-for the listing.
+script approves it like the others, and step 5 of section 6 waits for the listing.
 
 ## 8. Failures and recovery
 
@@ -301,8 +302,7 @@ for the listing.
   creating it, and the PyPI step has `skip-existing: true`.
 - The refusal is real: run 39018352548, started when the tag already existed, failed at
   "The tag is new" in `check` with every other job skipped.
-- `--run ID` also needs the run's commit to be the local HEAD, and the script approves
-  a gate that turns pending while it waits for the VSIX.
+- `--run ID` also needs the run's commit to be the local HEAD.
 - `mcp-registry.yml` and `marketplace.yml` keep their own `workflow_dispatch`, to publish
   an existing tag by hand.
 
@@ -314,7 +314,7 @@ for the listing.
   put the new version and its comment on a new first line of `src/gitpro/VERSION` (the old first line becomes line 2; the first word of line 1 is the version; the only place; the workflows stamp the rest), merge, then start Release with `python scripts/release.py --as LOGIN` or with
   "Run workflow" on the Actions page. List the gates; the VSIX upload is manual only
   when the `marketplace` job is skipped.
-- The header comments of `release.yml` and `mcp-registry.yml`.
+- The header comments of `release.yml`, `mcp-registry.yml` and `pages.yml`.
 
 ## 10. Tests (`tests/test_release_script.py`)
 
@@ -330,7 +330,11 @@ replace. No test touches the network.
   `{"environment_ids": [id], "state": "approved", "comment": "scripts/release.py"}`.
 - `--yes` approves every known gate. An unknown environment is never approved.
 - A failed job exits 1, and no gate after it is approved.
-- The `mcp-registry` gate isn't approved until the Marketplace lists the version.
+- The `mcp-registry` gate is approved as it appears, while `marketplace / publish` still
+  runs and before any Marketplace look; a resumed run at that gate approves it before the
+  upload by hand.
+- In `release.yml`, `site` needs `pypi`, `marketplace`, `openvsx` and `mcp-registry`
+  with the condition of section 15, and `mcp-registry` needs `check` and `pypi`.
 - A VSIX whose hash doesn't match `SHA256SUMS` stops the script.
 - Nothing the script prints contains the value the fake `gh auth token` returns.
 - `--run ID` skips the start and follows that run.
@@ -339,17 +343,18 @@ replace. No test touches the network.
 - With the tag or PyPI published and a failed run on HEAD, the script re-runs its failed
   jobs after `y` (none after `n`) and follows the new attempt; with no run on HEAD it
   stops before any question.
-- A succeeded run whose VSIX the Marketplace doesn't list gets step 4 before step 5.
-- When `marketplace / publish` succeeded, step 4 waits for the listing without
-  downloading, opening the publisher page or asking for an upload, and its timeout names
-  no upload. Step 4 doesn't start while that job isn't listed yet. A failed one stops the
-  script before `mcp-registry`.
+- A succeeded run whose VSIX the Marketplace doesn't list gets step 4 before step 5. Step 4
+  runs once, after every gate; an upload not listed in time exits 1 with `--run ID`.
+- When `marketplace / publish` succeeded, nothing is downloaded, opened or asked for; a
+  listing that doesn't come within 20 minutes fails step 5's Marketplace line. A failed
+  job stops the script, and nothing is approved after it.
 - The `openvsx` gate is approved and named. Verify skips Open VSX when the `openvsx`
   job was skipped, and when the job succeeded passes if Open VSX lists the version and
   fails if it doesn't.
 - Following prints each job and step change once, with the time, a reminder after 2
   minutes without one, and a failed job's name; the Marketplace wait reminds every 5
-  minutes; the site check says once that it waits.
+  minutes; step 5 says once that it waits, and looks again at Open VSX and the
+  Marketplace until they list the version.
 
 ## 11. Steps
 
@@ -375,6 +380,7 @@ None. The decisions are the user's, from 2026-10-15:
 - the VSIX upload stays manual (replaced on 2026-10-20, section 14).
 
 And from 2026-10-17: the site goes live only from a release, after PyPI has it (#22).
+Since 2026-10-21 it goes live after every channel has it (section 15).
 
 ## 13. Open VSX (added 2026-10-18)
 
@@ -392,15 +398,22 @@ names `release.yml`; `job_workflow_ref` (a called workflow) is only recorded. Op
 doesn't check the branch, which is why the job has its own environment.
 
 Before the job can run (the Open VSX wiki, "Trusted Publishing" and "Namespace Access"):
-1. The namespace `yantrakar` exists (done 2026-10-18; not yet verified). Its case must
+1. The namespace `yantrakar` exists (done 2026-10-18; verified 2026-10-20). Its case must
    match `publisher` in `vscode/package.json`.
 2. The first version is uploaded with an access token, because a registration for an
    extension with no active version is refused. 0.4.1 was uploaded on 2026-10-18 and is
    active; Open VSX activates a version only after its scan.
 3. The user owns the namespace: creating it makes you a contributor; ownership is claimed
-   in a public issue (EclipseFdn/open-vsx.org#14393, opened 2026-10-18).
+   in a public issue (EclipseFdn/open-vsx.org#14393, opened 2026-10-18, granted
+   2026-10-20).
 4. Settings → Trusted Publishers, GitHub Actions: owner `Yantrakar`, repository `gitpro`,
    workflow `release.yml`, environment `openvsx`. The access token is then deleted.
+   Type the owner and repository exactly as GitHub shows them. The ids are looked up
+   from them, but the registered `workflow_ref` is built from the text as typed
+   (`owner + "/" + repo + "/.github/workflows/" + workflow`) and compared with the
+   token's case-sensitively. Registered as `yantrakar`, release 0.4.2's `openvsx` job
+   failed with "No trusted publisher matches the presented token." (run 39511833013,
+   attempt 1); registered again as `Yantrakar`, attempt 2 published.
 5. The `openvsx` environment: required reviewer `sandeepshelke`, deployment branch
    `main`, like `pypi`.
 6. The repository variable `OPENVSX` set to `true`.
@@ -443,3 +456,46 @@ The setup, done 2026-10-20:
 
 The test, run 39503916911's second attempt on tag v0.4.1: `verify-pat` passed and
 `publish` printed "Version 0.4.1 is already published. Skipping publish."
+
+## 15. Announcement last (added 2026-10-21)
+
+The user, 2026-10-21, after release 0.4.2: "make it right. streamline and standard.
+announcement last. mcp on pypi".
+
+What release 0.4.2 (run 39511833013) showed:
+- `site` needed only `pypi`. gitpro.dev named 0.4.2 from 23:04:08 UTC on 2026-10-20,
+  while the Marketplace didn't list it yet (it did at 23:09:17) and the `openvsx` job
+  had failed (23:03:52). Had that failure stayed, the site would have announced a
+  version one channel didn't have.
+- The `mcp-registry` gate waited for the Marketplace listing only in `scripts/release.py`.
+  Approved on the run page, it didn't wait at all; Open VSX was in no wait.
+
+The order now:
+- `pypi`, `marketplace` and `openvsx` publish after `github`, each behind its gate, as
+  before. PyPI can't be held back: it is the step that can never be undone.
+- `mcp-registry` needs `check` and `pypi` only. The MCP Registry checks the package on
+  PyPI, so PyPI is the one channel it depends on. The script approves its gate as it
+  appears.
+- `site`, the announcement, goes last:
+
+      needs: [pypi, marketplace, openvsx, mcp-registry]
+      if: ${{ !cancelled() && !failure() && needs.pypi.result == 'success' && needs.mcp-registry.result == 'success' }}
+
+  `!failure()` is false when any job it depends on, directly or through `needs`, failed;
+  a rejected gate fails its job. So the site waits for every channel and doesn't go
+  live after a failure. A channel that is off (`marketplace` without the Azure
+  variables, `openvsx` without `OPENVSX`) is skipped, and a skipped job doesn't hold the
+  site back. The two `result` checks keep PyPI and the MCP Registry required.
+- The script follows the run, approving each gate as it appears, then does the upload by
+  hand only when the `marketplace` job didn't publish, then checks every place, waiting
+  for the listings that come late (section 6, steps 4 and 5).
+
+What this costs: the site waits behind the `mcp-registry` gate. A run stopped there, or
+a failed channel, leaves the site on the previous version until it is fixed; `pages.yml`
+can still be run by hand on main for a site-only fix.
+
+Rule 1 of section 0 says every existing test passes unchanged. The tests that encoded
+the old order were changed with it, because the user changed the order: the
+`mcp-registry` gate no longer waits for the Marketplace, the upload by hand comes after
+the run, and the Marketplace's listing is checked in step 5. Each changed test checks
+the new order instead of the old one; section 10 lists them.

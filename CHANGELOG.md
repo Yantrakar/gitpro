@@ -4,6 +4,17 @@ All notable changes to gitpro. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Release notes for
 earlier versions are on [GitHub releases](https://github.com/Yantrakar/gitpro/releases).
 
+## Unreleased
+
+### Changed
+
+- Release: gitpro.dev is published last, once PyPI, the Marketplace, Open VSX
+  and the MCP Registry have the version; a failed channel keeps it on the
+  previous one. The MCP Registry waits for PyPI only, and `scripts/release.py`
+  approves each gate as it appears, uploads the VSIX by hand after the run only
+  when the `marketplace` job is skipped, and waits for the late listings in its
+  final check.
+
 ## 0.4.2 (2026-10-20)
 
 ### Added

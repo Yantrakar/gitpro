@@ -6,8 +6,9 @@ name: Release
 # are stamped with it at build time. The full CI
 # matrix runs first; one build then feeds GitHub (which creates the tag),
 # PyPI, the Marketplace and Open VSX; server.json goes to the MCP Registry
-# and site/ to gitpro.dev once PyPI has the release. Each publishing job waits for its
-# environment's reviewer. Spec: docs/spec/20-release.md.
+# once PyPI has the release. site/ goes to gitpro.dev last, once every channel
+# has it. Each publishing job waits for its environment's reviewer.
+# Spec: docs/spec/20-release.md.
 on:
   workflow_dispatch:
 
@@ -187,8 +188,12 @@ jobs:
       contents: read
       id-token: write
 
+  # The announcement goes last: gitpro.dev names the version only once every channel has it.
+  # A channel that is off (marketplace without the Azure variables, openvsx without OPENVSX)
+  # is skipped and doesn't hold the site back; a failed, rejected or cancelled job does.
   site:
-    needs: pypi
+    needs: [pypi, marketplace, openvsx, mcp-registry]
+    if: ${{ !cancelled() && !failure() && needs.pypi.result == 'success' && needs.mcp-registry.result == 'success' }}
     uses: ./.github/workflows/pages.yml
     permissions:
       contents: read

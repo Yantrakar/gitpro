@@ -1755,13 +1755,14 @@ registered for `release.yml` and the `openvsx` environment; skipped unless
 the variable `OPENVSX` is `true`); `mcp-registry` publishes `server.json` to the MCP Registry once PyPI
 has the release, signed in with the workflow's GitHub OIDC token. A registry
 version cannot be changed after it is published, so a version already there is
-skipped. The script waits for the `marketplace` job and for the Marketplace to
-list the version before it approves `mcp-registry`. When that job is skipped,
-the VSIX is uploaded by hand: the script downloads it from the release, checks
-it against `SHA256SUMS`, opens the publisher page and waits for the listing. `marketplace.yml` and `mcp-registry.yml`
-can also be run by hand for an existing tag. The site is published only once
-PyPI has the release (`pages.yml`), so it never names a version that cannot be
-installed; a merge to main does not publish it, and a site-only fix is
+skipped. The script approves each gate as it appears. When the `marketplace`
+job is skipped, the VSIX is uploaded by hand after the run: the script
+downloads it from the release, checks it against `SHA256SUMS`, opens the
+publisher page and waits for the listing. `marketplace.yml` and `mcp-registry.yml`
+can also be run by hand for an existing tag. The site (`pages.yml`) is
+published last, once PyPI, the Marketplace, Open VSX and the MCP Registry have
+the release (a channel that is off doesn't hold it back, a failed one does), so
+it never names a version that cannot be installed; a merge to main does not publish it, and a site-only fix is
 published by running `pages.yml` by hand on main. `scripts/release.py`
 preflights the checkout (main, clean, up to date, versions, tag, PyPI,
 `gitpro why`), asks before each gate (`--yes` answers for you), resumes a run

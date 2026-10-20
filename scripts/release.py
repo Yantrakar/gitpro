@@ -4,9 +4,9 @@
     python scripts/release.py --as LOGIN [--yes] [--run ID]
 
 Spec: docs/spec/20-release.md, section 6. Every gh call runs as LOGIN through gitpro's
-forge.run, so the global gh account is never switched and no token is printed. The
-marketplace job publishes the VSIX; when it is skipped (the Azure variables unset), the
-script has you upload it by hand. Either way it waits for the Marketplace to list the version.
+forge.run, so the global gh account is never switched and no token is printed. Each gate is
+approved as it appears. The marketplace job publishes the VSIX; when it is skipped (the Azure
+variables unset), the script has you upload it by hand after the run. Then it checks every place.
 """
 from __future__ import annotations
 
@@ -49,8 +49,8 @@ FIND_TRIES = 12           # looks for the new run after starting it, POLL / 3 ap
 MARKETPLACE_POLL = 30
 MARKETPLACE_WAIT = 60 * 60
 MARKETPLACE_REMIND = 5 * 60
-SITE_POLL = 30
-SITE_WAIT = 10 * 60       # GitHub Pages sends Cache-Control: max-age=600
+LATE_POLL = 30
+LATE_WAIT = 20 * 60       # the Marketplace, Open VSX and gitpro.dev show a version minutes late (spec 20, 6)
 
 GATES = {
     "release": "creates tag v{v} and the GitHub release (wheel, sdist, VSIX, SHA256SUMS)",
@@ -322,25 +322,16 @@ def marketplace_job(jobs: List[dict]) -> Optional[dict]:
     return next((j for j in jobs if (j.get("name") or "").split(" / ")[0] == "marketplace"), None)
 
 
-def vsix_due(jobs: List[dict]) -> bool:
-    """Step 4 is due once github has succeeded and the marketplace job has finished: published, or skipped
-    because the Azure variables are unset. A failed one stops follow() before this is asked."""
-    market = marketplace_job(jobs)
-    return (any(j.get("name") == "github" and j.get("conclusion") == "success" for j in jobs)
-            and market is not None and market.get("status") == "completed")
-
-
 def vsix(acc: forge.Account, v: str, run_id: int, jobs: List[dict]) -> None:
-    """Step 4: when the marketplace job published, wait until the Marketplace lists v. When it was skipped,
-    download and check the VSIX for an upload by hand first."""
+    """Step 4, after the run: when the marketplace job didn't publish (skipped because the Azure
+    variables are unset, or not in the run), download and check the VSIX for an upload by hand, and
+    wait until the Marketplace lists v. When the job published, verify() waits for the listing."""
+    market = marketplace_job(jobs)
+    if market is not None and market.get("conclusion") == "success":
+        return
     listed = marketplace_versions()
     if listed is not None and v in listed:
         say(f"✓ the Marketplace lists {v}")
-        return
-    market = marketplace_job(jobs)
-    if market is not None and market.get("conclusion") == "success":
-        say(f"The marketplace job published {v}. Waiting for the Marketplace to list it…")
-        wait_listed(v, run_id, None)
         return
     dest = downloads() / f"gitpro-{v}"
     dest.mkdir(parents=True, exist_ok=True)
@@ -363,10 +354,8 @@ def vsix(acc: forge.Account, v: str, run_id: int, jobs: List[dict]) -> None:
     wait_listed(v, run_id, path)
 
 
-def wait_listed(v: str, run_id: int, path: Optional[Path]) -> None:
-    """Poll until the Marketplace lists v, or Stop after MARKETPLACE_WAIT. path: the VSIX to upload by hand,
-    None when the marketplace job published it."""
-    todo = f"Upload {path} if you haven't." if path else f"Check the extension at {PUBLISHER_URL}."
+def wait_listed(v: str, run_id: int, path: Path) -> None:
+    """Poll until the Marketplace lists v, or Stop after MARKETPLACE_WAIT. path: the VSIX to upload by hand."""
     began = now()
     deadline, remind = began + MARKETPLACE_WAIT, began + MARKETPLACE_REMIND
     while now() < deadline:
@@ -379,10 +368,9 @@ def wait_listed(v: str, run_id: int, path: Optional[Path]) -> None:
             remind += MARKETPLACE_REMIND
             asked = "it could not be asked" if listed is None else f"it lists {', '.join(listed[:3]) or 'nothing'}"
             say(f"… {mins(now() - began)}: the Marketplace doesn't list {v} yet ({asked}); waiting up to "
-                f"{MARKETPLACE_WAIT // 60} minutes. {todo}")
-    what = f"upload {path} at {PUBLISHER_URL}" if path else f"check the extension at {PUBLISHER_URL}"
-    raise Stop(f"the Marketplace doesn't list {v} after {MARKETPLACE_WAIT // 60} minutes; {what}, "
-               f"then run again with --run {run_id}")
+                f"{MARKETPLACE_WAIT // 60} minutes. Upload {path} if you haven't.")
+    raise Stop(f"the Marketplace doesn't list {v} after {MARKETPLACE_WAIT // 60} minutes; upload {path} at "
+               f"{PUBLISHER_URL}, then run again with --run {run_id}")
 
 
 def approve(acc: forge.Account, run_id: int, gate: dict, v: str, yes: bool) -> None:
@@ -399,24 +387,18 @@ def approve(acc: forge.Account, run_id: int, gate: dict, v: str, yes: bool) -> N
     say(f"✓ approved {env}")
 
 
-def settle(acc: forge.Account, run_id: int, v: str, yes: bool, approved: set) -> List[dict]:
-    """Read the pending gates and approve each one that is due now; return the mcp-registry ones, which wait
-    for the extension."""
+def settle(acc: forge.Account, run_id: int, v: str, yes: bool, approved: set) -> None:
+    """Read the pending gates and approve each one not approved yet in this run."""
     pending = gh_json(acc, ["api", f"repos/{REPO}/actions/runs/{run_id}/pending_deployments"],
                       "pending deployments")
-    later = []
     for gate in pending:
         env = gate["environment"]["name"]
         if env not in GATES:
             raise Stop(f"unknown gate {env}; nothing approved. See {run_url(run_id)}")
         if env in approved:
             continue
-        if env == "mcp-registry":
-            later.append(gate)
-            continue
         approve(acc, run_id, gate, v, yes)
         approved.add(env)
-    return later
 
 
 class Progress:
@@ -454,8 +436,8 @@ class Progress:
 
 
 def follow(acc: forge.Account, run_id: int, v: str, yes: bool) -> List[dict]:
-    """Step 3 (and step 4 when its turn comes): until the run succeeds, or Stop; returns its jobs."""
-    approved, vsix_done = set(), False
+    """Step 3: until the run succeeds, or Stop; returns its jobs."""
+    approved: set = set()
     progress = Progress()
     while True:
         run = gh_json(acc, ["run", "view", str(run_id), "-R", REPO, "--json", "status,conclusion,jobs"],
@@ -469,30 +451,23 @@ def follow(acc: forge.Account, run_id: int, v: str, yes: bool) -> List[dict]:
                            "Fix it, then run this script again: it offers to re-run the failed jobs.")
         if run.get("status") == "completed":
             if run.get("conclusion") == "success":
-                if not vsix_done:      # the run finished without this script (approved on the page)
-                    vsix(acc, v, run_id, jobs)
                 return jobs
             raise Stop(f"the run ended {run.get('conclusion')}: {run_url(run_id)}\n"
                        "Run this script again: it offers to re-run the failed jobs.")
-        later = settle(acc, run_id, v, yes, approved)
-        if vsix_due(jobs) and not vsix_done:
-            # vsix() blocks for minutes: approve what has become pending since the read above first
-            seen = {g["environment"]["name"]: g for g in later}
-            seen.update({g["environment"]["name"]: g for g in settle(acc, run_id, v, yes, approved)})
-            later = list(seen.values())
-            vsix(acc, v, run_id, jobs)
-            vsix_done = True
-            progress.last = now()
-        for gate in later:
-            if vsix_done:
-                approve(acc, run_id, gate, v, yes)
-                approved.add(gate["environment"]["name"])
+        settle(acc, run_id, v, yes, approved)
         sleep(POLL)
 
 
+def site_names(v: str) -> bool:
+    status, text = http(SITE_URL)
+    return status == 200 and f'"softwareVersion": "{v}"' in text
+
+
 def verify(acc: forge.Account, v: str, openvsx: bool) -> bool:
-    """Step 5: one line per place; True when every place has v. Open VSX is checked only when the run's
-    openvsx job published (`openvsx`); the job is skipped while the variable OPENVSX is unset."""
+    """Step 5: one line per place; True when every place has v. The Marketplace, Open VSX and gitpro.dev
+    show a version minutes after it is published, so they are looked at every LATE_POLL seconds, for up to
+    LATE_WAIT. Open VSX is checked only when the run's openvsx job published (`openvsx`); the job is
+    skipped while the variable OPENVSX is unset."""
     checks = []
     try:
         files = {u["packagetype"] for u in (on_pypi(v) or {}).get("urls", [])}
@@ -511,27 +486,33 @@ def verify(acc: forge.Account, v: str, openvsx: bool) -> bool:
     checks.append((f"the GitHub release v{v} has the wheel, the sdist, the VSIX and SHA256SUMS", want <= names))
     status, _ = http(f"{REGISTRY}/v0.1/servers/{urllib.parse.quote(MCP_NAME, safe='')}/versions/{v}")
     checks.append((f"the MCP Registry has {MCP_NAME} {v}", status == 200))
-    listed = marketplace_versions()
-    checks.append((f"the Marketplace lists {v}", listed is not None and v in listed))
+    late = [(f"the Marketplace lists {v}", lambda: v in (marketplace_versions() or []))]
     if openvsx:
-        checks.append((f"Open VSX lists {v}", http(f"{OPENVSX_API}/{v}")[0] == 200))
-    else:
-        checks.append(("Open VSX: the openvsx job didn't run; not checked", None))
-    deadline, site, told = now() + SITE_WAIT, False, False
+        late.append((f"Open VSX lists {v}", lambda: http(f"{OPENVSX_API}/{v}")[0] == 200))
+    late.append((f"gitpro.dev names {v}", lambda: site_names(v)))
+    ok: Dict[str, bool] = {}
+    deadline, told = now() + LATE_WAIT, False
     while True:
-        status, text = http(SITE_URL)
-        site = status == 200 and f'"softwareVersion": "{v}"' in text
-        if site or now() >= deadline:
+        for text, look in late:
+            if not ok.get(text):
+                ok[text] = look()
+        missing = [text for text, _ in late if not ok[text]]
+        if not missing or now() >= deadline:
             break
         if not told:
-            say(f"… gitpro.dev doesn't name {v} yet; looking every {SITE_POLL} s for up to "
-                f"{SITE_WAIT // 60} minutes (GitHub Pages caches for 10)")
+            say(f"… not yet: {'; '.join(missing)}. A new version shows there minutes after it is published "
+                f"(GitHub Pages caches for 10); looking every {LATE_POLL} s for up to {LATE_WAIT // 60} minutes")
             told = True
-        sleep(SITE_POLL)
-    checks.append((f"gitpro.dev names {v}", site))
-    for text, ok in checks:
-        say({True: "✓ ", False: "✗ ", None: "– "}[ok] + text)
-    return all(ok is not False for _, ok in checks)
+        sleep(LATE_POLL)
+    checks.append((late[0][0], ok[late[0][0]]))
+    if openvsx:
+        checks.append((late[1][0], ok[late[1][0]]))
+    else:
+        checks.append(("Open VSX: the openvsx job didn't run; not checked", None))
+    checks.append((late[-1][0], ok[late[-1][0]]))
+    for text, good in checks:
+        say({True: "✓ ", False: "✗ ", None: "– "}[good] + text)
+    return all(good is not False for _, good in checks)
 
 
 def main(argv: Optional[List[str]] = None) -> int:
@@ -586,6 +567,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         say(f"Release v{v}: {run_url(run_id)}")
         jobs = follow(acc, run_id, v, args.yes)
         say(f"✓ the run succeeded: {run_url(run_id)}")
+        vsix(acc, v, run_id, jobs)
         openvsx = any(j.get("name") == "openvsx" and j.get("conclusion") == "success" for j in jobs)
         return 0 if verify(acc, v, openvsx) else 1
     except Stop as e:
