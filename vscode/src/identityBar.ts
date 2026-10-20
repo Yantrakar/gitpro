@@ -217,10 +217,12 @@ function labelFor(p: ProblemJson, home: string | undefined): Action | undefined 
     return { label: "Set up…", kind: "command", command: "gitpro.setup", detail: p.message };
   }
   if (!a || !a.length) {
-    return undefined;
+    // 0.4.2+ CLIs: setup needs a terminal, so a fix that is setup has no argv
+    return p.fix === "gitpro setup"
+      ? { label: "Set up…", kind: "command", command: "gitpro.setup", detail: p.message } : undefined;
   }
   if (a[0] === "gitpro" && (a[1] === "apply" || a[1] === "plan" || a[1] === "doctor") && a.length === 2) {
-    // 0.3 CLIs propose these; they are deprecated, and Set Up does the same job
+    // 0.3 to 0.4.1 CLIs propose these; they are deprecated, and Set Up does the same job
     return { label: "Set up…", kind: "command", command: "gitpro.setup", detail: p.message };
   }
   if (a[0] === "gitpro" && a[1] === "pin" && a.includes("--remote")) {

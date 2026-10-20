@@ -580,7 +580,7 @@ def _rows(items: List[dict], verbose: bool, fmt) -> List[str]:
 
 
 def _rewrite_cmd(data: dict, args) -> str:
-    argv = [PROG, "audit", "--rewrite"]
+    argv = [PROG, "audit", "--fix"]
     if getattr(args, "config", None):
         argv += ["-c", str(args.config)]
     rw = data["rewrite"]
@@ -704,12 +704,13 @@ def _preview(data: dict, exp) -> List[str]:
 
 def cmd_audit(args) -> int:
     as_json = jsonout.wants_json(args)
+    flag = "--rewrite" if getattr(args, "rewrite_flag", False) else "--fix"   # errors name the flag given
     args.rewrite = args.rewrite or getattr(args, "rewrite_flag", False)
     if args.rewrite and getattr(args, "agents", False):
-        raise ConfigError("--rewrite needs the author audit; drop --agents")
+        raise ConfigError(f"{flag} needs the author audit; drop --agents")
     show_only = bool(args.rewrite and args.dry_run and preview_only(args))
     if args.rewrite and as_json and not args.yes and not show_only:
-        raise ConfigError("--json needs -y with --rewrite (there is no terminal to confirm on)")
+        raise ConfigError(f"--json needs -y with {flag} (there is no terminal to confirm on)")
     home = Path(args.home).expanduser().resolve()
     path, how = config.find(args.config, home)
     cfg = config.load_all(path, how)
@@ -775,11 +776,11 @@ def register(sub, common, confirm) -> None:
                     "not the repo's identity, commits made with an AI agent (Co-Authored-By trailers, bot "
                     "emails) and the [*.trailers] policy. Default: the unpushed commits (as of the last fetch) "
                     "plus the newest pushed ones.",
-        epilog="--rewrite fixes only the unpushed offending commits, keeps every date and never runs rebase; "
+        epilog="--fix fixes only the unpushed offending commits, keeps every date and never runs rebase; "
                "pushed commits are only reported. \"Pushed\" means reachable from a remote-tracking ref "
                "(refs/remotes/*) as of the last fetch: commits published only through a tag, `git push <url>` "
                "or Gerrit's refs/for/* count as unpushed, so fetch first. With commit.gpgsign set the new "
-               "commits are signed; notes are copied to them. With the guard installed (gitpro guard install) the commit-msg "
+               "commits are signed; notes are copied to them. With the guard installed (gitpro setup) the commit-msg "
                "hook applies the trailer policy at commit time; skip it once in your own shell with "
                "GITPRO_SKIP=1 git commit ...")
     sp.add_argument("dir", nargs="?", default=".", help="repo directory (default: .)")

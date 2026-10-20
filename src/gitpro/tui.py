@@ -46,7 +46,7 @@ class Suggestion(ModalScreen[None]):
 
     def compose(self) -> ComposeResult:
         with Vertical(classes="dialog"):
-            yield Static("To keep this identity, paste the block into your config and run 'gitpro apply'. "
+            yield Static("To keep this identity, paste the block into your config and run 'gitpro setup'. "
                          "The repos it matches then keep it after the fix.\n")
             yield Static(Syntax(self.toml, "toml", theme="ansi_dark", background_color="default"))
             yield Footer()

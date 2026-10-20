@@ -649,13 +649,13 @@ Checked in this order; all applicable ones are reported.
 | code | when | fix |
 |---|---|---|
 | `ambiguous` | no remote named (no `--remote`/`remote_url`), the repo has no pin choosing one, and its remotes match two or more different identities; each remote counts with the last identity in config order that matches it (spec 21 §3) | `gitpro pin -y --remote <push remote> <repo>`, the push remote found as `git push` finds it; text with no argv when there is none |
-| `no_identity` | expected email is None (nothing matched and `[default]` has no email) | `add an identity: gitpro scan --suggest --repo <repo>` |
-| `url_form` | no pattern matched, but one **would** match after a repair: the scheme `git+ssh://` or `ssh+git://` written as `ssh://`; userinfo removed; a missing user added; the port removed; letter case changed to the identity's (tried in that order, first repair that matches wins; see 18) | `git -C <repo> remote set-url <name> <fixed url>`, or fix text with no argv when that URL would be wrong: a non-default port (set `ssh_port`, or use ssh), or user `git` on AWS CodeCommit (set `ssh_user`) |
+| `no_identity` | expected email is None (nothing matched and `[default]` has no email) | text with no argv: `add an identity: gitpro setup --add <repo>` |
+| `url_form` | no pattern matched, but one **would** match after a repair: the scheme `git+ssh://` or `ssh+git://` written as `ssh://`; userinfo removed; a missing user added; the port removed; letter case changed to the identity's (tried in that order, first repair that matches wins; see 18) | `git -C <repo> remote set-url <name> <fixed url>`, or fix text with no argv when that URL would be wrong: a non-default port (set `ssh_port`, or use ssh), or user `git` on AWS CodeCommit (set `ssh_user`); that text ends `then run: gitpro setup` |
 | `override` | effective name/email scope is `repo` or `worktree` and the value differs from expected | `git -C <repo> config --unset user.<key>` + `(or: gitpro scan --fix --repo <repo>)` |
 | `pin_stale` | pinned and the pin file's name/email differ from expected | `gitpro pin <repo>` |
-| `global_override` | scope `global`/`system`/`other` sets name or email that beats expected (the generated file is missing from `~/.gitconfig` or not included last) | `gitpro apply` |
-| `not_applied` | expected file does not exist, or `~/.gitconfig` has no gitpro block | `gitpro apply` |
-| `key_mismatch` | expected `ssh_key` is set and `core.sshcommand`'s `-i <path>` (parsed with `shlex.split`, `~` expanded with `os.path.expanduser` before comparing, as ssh does) is a different path, or `core.sshcommand` is unset | `gitpro apply` (or the override command when the scope is `repo`) |
+| `global_override` | scope `global`/`system`/`other` sets name or email that beats expected (the generated file is missing from `~/.gitconfig` or not included last) | `gitpro setup`, no argv (spec 22 §10.5) |
+| `not_applied` | expected file does not exist, or `~/.gitconfig` has no gitpro block | `gitpro setup`, no argv |
+| `key_mismatch` | expected `ssh_key` is set and `core.sshcommand`'s `-i <path>` (parsed with `shlex.split`, `~` expanded with `os.path.expanduser` before comparing, as ssh does) is a different path, or `core.sshcommand` is unset | `gitpro setup`, no argv (or the override command when the scope is `repo`) |
 | `sign_mismatch` | `commit.gpgsign` (null = false) differs from expected `sign`, or expected sign is true and `user.signingkey` is not the expected `.pub` path | same |
 | `env_override` | an env var above differs from expected, or a setting's scope is `command` | `unset GIT_AUTHOR_EMAIL GIT_COMMITTER_EMAIL` (naming the ones set) |
 

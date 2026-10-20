@@ -348,7 +348,7 @@ def identity_push(ctx: Context) -> int:
     n = len(bad)
     lines = [f"{h} {e} {s}" for e, h, s in bad[:5]] + ([f"… and {n - 5} more"] if n > 5 else [])
     if _audit_available():
-        lines.append(f"fix:   {PROG} audit --rewrite {_tilde(str(ctx.repo))}")
+        lines.append(f"fix:   {PROG} audit --fix {_tilde(str(ctx.repo))}")
     else:
         lines.append("fix:   amend the listed commits with the right user.email (git rebase -i <base>, "
                      "then git commit --amend --no-edit on each)")
@@ -500,6 +500,17 @@ def _has_block(path: Path) -> bool:
         return False
 
 
+def _setup_hint(then: bool = False) -> str:
+    """How to install the global guard: setup does it unless the config says [guard] hooks = false."""
+    try:
+        off = _load_cfg(_home()).guard.hooks is False
+    except Exception:   # noqa: BLE001 - no config or a broken one: setup reports that itself
+        off = False
+    if off:
+        return f"{'then ' if then else ''}set [guard] hooks = true in your config and run {PROG} setup"
+    return f"{'then run ' if then else ''}{PROG} setup"
+
+
 def cmd_status(args) -> int:
     from . import jsonout
     from .render import GUARD_HOOKS, HOOK_NAMES, NOT_FORWARDED
@@ -528,9 +539,9 @@ def cmd_status(args) -> int:
                   "stubs call 'git lfs <hook>' unless the repo hook already does")
     elif st.get("effective_hooks_path"):
         other = st["effective_hooks_path"]
-        print(f"guard: core.hooksPath = {other} (not gitpro) → {chain_advice(other)}, then run {PROG} guard install")
+        print(f"guard: core.hooksPath = {other} (not gitpro) → {chain_advice(other)}, {_setup_hint(then=True)}")
     else:
-        print(f"guard: not installed → {PROG} guard install")
+        print(f"guard: not installed → {_setup_hint()}")
     if st.get("error"):
         print(f"⚠ guard status: {st['error']}", file=sys.stderr)
     if st["system_hooks_path"]:
@@ -662,7 +673,7 @@ def chain_missing(cfg, env) -> Optional[str]:
     if os.path.lexists(p):
         return None
     return (f"[guard] chain_to {cfg.guard.chain_to} does not exist; the hooks run without it → create it, "
-            f"or remove chain_to from the config and run {PROG} apply")
+            f"or remove chain_to from the config and run {PROG} setup")
 
 
 def check_chain_to(cfg, env, missing_ok: bool = False) -> Optional[Path]:
@@ -863,7 +874,7 @@ def cmd_uninstall(args) -> int:
     view.ok("guard removed; git runs each repo's own hooks again")
     print(f"↩ undo: sh {undo.tilde(script)}")
     if hooks_on:
-        view.warn(f"[guard] hooks = true in your config: the next '{PROG} apply' installs them again; set it to false")
+        view.warn(f"[guard] hooks = true in your config: the next '{PROG} setup' installs them again; set it to false")
     elif hooks_on is None:
         view.step(f"'{PROG} setup' installs them again; to keep them off, set [guard] hooks = false in your config")
     return 0
@@ -901,7 +912,7 @@ def _refuse_shared_hooks_dir(top: Path, hooks: Path) -> None:
     where = origin[5:] if origin.startswith("file:") else origin
     raise ConfigError(f"{tilde(hooks)} is core.hooksPath from {scope or 'unknown'} config"
                       f"{' (' + tilde(Path(where)) + ')' if where else ''}; other repos share it, so gitpro "
-                      f"does not edit it. Use {PROG} guard install with [guard] chain_to = \"{hooks}\", or add "
+                      f"does not edit it. Set [guard] chain_to = \"{hooks}\" in your config and run {PROG} setup, or add "
                       f"this block to {tilde(hooks / 'pre-commit')} yourself:\n{_block_help('pre-commit')}")
 
 

@@ -1099,7 +1099,7 @@ def identity_checks(cfg, person: _Person, pol: Policy, rules: Sequence[Rule], ke
         label = "required" if required else "formats " + ", ".join(fmts)
         if required and not person.sign:
             out.append(_check("signing", label, "error", f"{person.label} has sign = false",
-                              f"set sign = true, run {PROG} apply"))
+                              f"set sign = true, run {PROG} setup"))
         elif person.sign and fmts and "ssh" not in fmts:
             out.append(_check("signing", label, "error", f"{PROG} signs with ssh but the policy allows {', '.join(fmts)}",
                               "sign with an allowed format outside gitpro"))
@@ -1114,7 +1114,7 @@ def identity_checks(cfg, person: _Person, pol: Policy, rules: Sequence[Rule], ke
                 shown = _tilde(pub)
                 reg = (keys or {}).get(pub) if online else None
                 if not os.path.isfile(pub):
-                    out.append(_check("signing key", shown, "error", f"{shown} not found", f"{PROG} keys --generate"))
+                    out.append(_check("signing key", shown, "error", f"{shown} not found", f"{PROG} setup"))
                 elif reg is True:
                     out.append(_check("signing key", shown, "ok", "registered as a signing key"))
                 elif reg is False:
@@ -1264,7 +1264,7 @@ def check_report(report) -> List[resolve.Problem]:
                                    f"use an address in {', '.join(doms)}" if doms else None))
     if any(r.require_signing for r in rules) and not report.expected.sign:
         out.append(resolve.Problem("policy", f"policy {pol.name} requires signed commits but identity {ident.id} has "
-                                             f"sign = false", f"set sign = true, run {PROG} apply"))
+                                             f"sign = false", f"set sign = true, run {PROG} setup"))
     return out
 
 

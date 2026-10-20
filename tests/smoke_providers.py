@@ -36,7 +36,7 @@ IDENTITIES = [
     ("launchpad", "git.launchpad.net", ["~me"], None, "me"),
 ]
 
-SET_ID = 'set ssh_user = "<your SSH key ID>" on identity codecommit in the gitpro config, then run: gitpro apply'
+SET_ID = 'set ssh_user = "<your SSH key ID>" on identity codecommit in the gitpro config, then run: gitpro setup'
 
 # (url, identity git and gitpro pick, url_form fix for a URL that falls to the default: the set-url URL or the
 # fix text). None as the fix: no url_form expected.
@@ -48,7 +48,7 @@ CASES: List[Tuple[str, str, Optional[str]]] = [
     ("git@github.com:ACME/r.git", "default", "git@github.com:acme/r.git"),
     ("ssh://git@github.com:22/acme/r.git", "default", "ssh://git@github.com/acme/r.git"),
     ("ssh://git@github.com:2200/acme/r.git", "default",
-     "set ssh_port = 2200 on identity github in the gitpro config, then run: gitpro apply"),
+     "set ssh_port = 2200 on identity github in the gitpro config, then run: gitpro setup"),
     ("git@github.com:other/r.git", "default", None),
     ("git@github.corp.test:corp/r.git", "ghe", None),
     ("https://github.corp.test/corp/r.git", "ghe", None),

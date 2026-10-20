@@ -117,14 +117,14 @@ def classify(ktype: str, bits: int) -> Tuple[str, Optional[dict]]:
     if t == "RSA":
         if bits < 2048:
             return "rsa", _check("error", f"RSA {bits} is too weak; generate a new key",
-                                 "gitpro keys --generate after changing ssh_key", "weak")
+                                 "gitpro setup after changing ssh_key", "weak")
         if bits < 3072:
             return "rsa", _check("warning", f"RSA {bits} is below the recommended 3072 bits; ed25519 is better",
-                                 "gitpro keys --generate after changing ssh_key", "rsa-2048")
+                                 "gitpro setup after changing ssh_key", "rsa-2048")
         return "rsa", None
     if t == "DSA":
         return "dsa", _check("error", "DSA is too weak (current OpenSSH refuses it); generate a new key",
-                             "gitpro keys --generate after changing ssh_key", "weak")
+                             "gitpro setup after changing ssh_key", "weak")
     if t == "ECDSA":
         name = f"ecdsa-{bits}"
         return name, _check("warning", f"{name}: ed25519 is preferred", tag="ecdsa")
@@ -473,7 +473,7 @@ def _key_record(k, home: Path, uses: List[Use], agent: Optional[set], shared: Li
            "fixes": [], "checks": []}
     checks: List[dict] = rec["checks"]
     if not private.exists():
-        checks.append(_check("error", "missing", "gitpro keys --generate", "missing"))
+        checks.append(_check("error", "missing", "gitpro setup", "missing"))
     elif not pub.exists():
         ps = _tilde(pub, home)
         checks.append(_check("error", f"{ps} missing", f"ssh-keygen -y -f {_sh(shown)} > {_sh(ps)}", "missing"))
@@ -1000,7 +1000,7 @@ def upload(cfg, ids: Optional[List[str]] = None, *, title: Optional[str] = None,
         tpub, where = _tilde(pub, home), f"{t.acc.host} ({t.acc.login})"
         mat = material(pub)
         if mat is None:
-            warn(f"✗ {tpub} is missing or not a public key → gitpro keys --generate")
+            warn(f"✗ {tpub} is missing or not a public key → gitpro setup")
             failed += 1
             continue
         unsafe = pub_unsafe(pub)

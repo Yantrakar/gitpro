@@ -53,8 +53,7 @@ function noIdentity(): WhyJson {
   j.effective.email = unset;
   j.effective.sshcommand = unset;
   j.problems = [{ code: "no_identity", message: "no identity for git@gitlab.com:someone/foo.git",
-    fix: "add an identity: gitpro scan --suggest --repo /home/me/work/app",
-    fix_argv: ["gitpro", "scan", "--suggest", "--repo", "/home/me/work/app"] }];
+    fix: "add an identity: gitpro setup --add /home/me/work/app", fix_argv: null }];
   return j;
 }
 
@@ -121,7 +120,7 @@ test("tooltipFrom: guard and policy when present, other folders, container fix l
 
   const inside = tooltipFrom(noIdentity(), { inContainer: true });
   assert.ok(inside.includes(esc(containerFix("/home/me/work/app"))));
-  assert.match(tooltipFrom(noIdentity()), /→ add an identity: gitpro scan --suggest --repo/);
+  assert.match(tooltipFrom(noIdentity()), /→ add an identity: gitpro setup --add/);
 });
 
 test("actionsFor: one fix per problem using the CLI's argv, then the always-items", () => {
@@ -146,6 +145,20 @@ test("actionsFor: one fix per problem using the CLI's argv, then the always-item
 
   assert.equal(actionsFor(noIdentity(), caps())[0].label, "Set up…");
   assert.equal(actionsFor(noIdentity(), caps())[0].command, "gitpro.setup");
+  const oldNoId = noIdentity();   // a 0.3 to 0.4.1 CLI's argv
+  oldNoId.problems[0].fix_argv = ["gitpro", "scan", "--suggest", "--repo", "/home/me/work/app"];
+  assert.equal(actionsFor(oldNoId, caps())[0].command, "gitpro.setup");
+
+  // 0.4.2+: a fix that is gitpro setup has no argv (setup needs a terminal); the menu offers Set up… once
+  const now = match();
+  now.problems = [{ code: "not_applied", message: "not applied", fix: "gitpro setup", fix_argv: null },
+    { code: "global_override", message: "beats", fix: "gitpro setup", fix_argv: null },
+    { code: "key_mismatch", message: "key", fix: "gitpro setup", fix_argv: null },
+    { code: "url_form", message: "port", fix: "set ssh_port = 2200 on identity w in the gitpro config, then run: "
+      + "gitpro setup", fix_argv: null }];
+  const n = actionsFor(now, caps());
+  assert.deepEqual(n.map((a) => a.label), ["Set up…", ...always]);
+  assert.equal(n[0].command, "gitpro.setup");
 
   // remotes of different identities: the pin names the remote it settles on
   const two = match();

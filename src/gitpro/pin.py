@@ -43,7 +43,7 @@ def _resolved(repo: str, key: str, pin_path: Path, base: Path) -> str:
         origin, value, src = found_origin, found_value, found_src
     check(value, f"git resolves no {key} for this repo; nothing to pin")
     check(src is not None and src.is_file() and render.is_generated(src.read_text()),
-          f"{key} comes from {origin}, not from gitpro; run 'gitpro apply', "
+          f"{key} comes from {origin}, not from gitpro; run 'gitpro setup', "
           "and run pin on the host, not inside the container")
     return value
 

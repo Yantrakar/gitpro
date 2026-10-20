@@ -285,7 +285,8 @@ def test_no_identity(cfg, tmp_path, capsys):  # 17
     capsys.readouterr()
     assert run("why", str(repo)) == 1
     out = capsys.readouterr().out
-    assert "git will refuse to commit" in out and "→ add an identity: gitpro scan --suggest --repo" in out
+    assert "git will refuse to commit" in out and "→ add an identity: gitpro setup --add" in out
+    assert rep.problems[0].fix_argv is None    # setup needs a terminal (spec 22 §10.5)
     assert "effective (unset)" in out
 
 
@@ -309,7 +310,7 @@ def test_url_form_missing_user_and_port(cfg, tmp_path):
     r2 = repo_with_remote(tmp_path, "b", "ssh://git@github.com:2200/corp-org/app.git")
     p2 = [p for p in resolve.compare(r2, c).problems if p.code == "url_form"][0]
     assert p2.fix_argv is None
-    assert p2.fix == "set ssh_port = 2200 on identity work-github in the gitpro config, then run: gitpro apply"
+    assert p2.fix == "set ssh_port = 2200 on identity work-github in the gitpro config, then run: gitpro setup"
 
 
 def test_explicit_env(cfg, tmp_path, monkeypatch):  # V-004: hooks pass their own env
@@ -509,6 +510,26 @@ def test_global_override_and_not_applied(cfg, home, tmp_path):
     assert "not_applied" in [p.code for p in resolve.compare(repo, c).problems]
 
 
+def test_setup_fixes_have_no_argv(cfg, home, tmp_path, capsys):
+    """Spec 22 §10.5: what only the generated files settle names gitpro setup, which needs a terminal, so a
+    tool gets no argv to run; nothing names the deprecated gitpro apply."""
+    c = load(cfg())
+    repo = repo_with_remote(tmp_path, "app", "git@github.com:corp-org/app.git")
+    gc = home / ".gitconfig"
+    gc.write_text(gc.read_text() + '[user]\n\temail = "late@global.test"\n')
+    for want in ("global_override", "not_applied"):
+        [p] = [p for p in resolve.compare(repo, c).problems if p.code == want]
+        assert (p.fix, p.fix_argv) == ("gitpro setup", None)
+        capsys.readouterr()
+        run("why", "--json", str(repo))
+        [j] = [j for j in json.loads(capsys.readouterr().out)["problems"] if j["code"] == want]
+        assert (j["fix"], j["fix_argv"]) == ("gitpro setup", None)
+        run("why", str(repo))
+        out = capsys.readouterr().out
+        assert "→ gitpro setup\n" in out and "gitpro apply" not in out
+        gc.write_text("")
+
+
 def test_own_emails(cfg):
     c = load(cfg())
     assert resolve.own_emails(c) == {"me@default.test", "me@corp.test", "me@personal.test"}
@@ -560,7 +581,7 @@ def test_url_form_ssh_port_already_set(cfg, tmp_path):
     assert p.fix_argv is None
     assert p.message == ("origin is ssh://git@github.com:2200/corp-org/app.git; "
                          "it looks like work-github, whose patterns have no port 2200")
-    assert p.fix == ("set ssh_port = 2200 on identity work-github in the gitpro config, then run: gitpro apply"
+    assert p.fix == ("set ssh_port = 2200 on identity work-github in the gitpro config, then run: gitpro setup"
                      " (it is 2222 now; an identity has one ssh_port)")
 
 
@@ -645,7 +666,7 @@ def test_url_form_codecommit_user_git(cfg, tmp_path):
     assert p.fix_argv is None
     assert p.message == (f"origin is ssh://{CC_HOST}/v1/repos/r; "
                          "it looks like cc, but CodeCommit's SSH user is the SSH key ID, not git")
-    assert p.fix == 'set ssh_user = "<your SSH key ID>" on identity cc in the gitpro config, then run: gitpro apply'
+    assert p.fix == 'set ssh_user = "<your SSH key ID>" on identity cc in the gitpro config, then run: gitpro setup'
 
 
 def test_url_form_codecommit_key_id_keeps_argv(cfg, tmp_path):

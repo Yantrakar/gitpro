@@ -1,10 +1,11 @@
 name: Marketplace
 
 # Publishes the VSIX attached to a GitHub release, signing in with a
-# Microsoft Entra managed identity (Azure DevOps retired the global PATs
-# the Marketplace needed). Needs repository variables AZURE_CLIENT_ID and
-# AZURE_TENANT_ID; without them it does nothing. Run it by hand with
-# `whoami` once to print the identity's Marketplace profile ID.
+# Microsoft Entra managed identity through GitHub OIDC, so no secret is
+# stored (Azure DevOps retires global PATs on 2026-12-01). Needs repository
+# variables AZURE_CLIENT_ID and AZURE_TENANT_ID; without them it does
+# nothing. The identity is a Contributor of publisher yantrakar, added by
+# the profile ID that a run with `whoami` prints. Setup: spec 20 section 14.
 on:
   workflow_call:
     inputs:

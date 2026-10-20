@@ -402,7 +402,7 @@ def _problem_line(prob: resolve.Problem, p: ClonePlan, top: Path, home: Path) ->
     if prob.code == "no_identity":
         where = f"{p.host}/{p.owner}" if p.host and p.owner else resolve.redact_url(p.clone_url)
         return (f"no identity for {where}: git will refuse to commit here → "
-                f"gitpro scan --suggest --repo {_sh(_tilde(top, home))}")
+                f"gitpro setup --add {_sh(_tilde(top, home))}")
     fix = resolve._shown_fix(prob)
     return prob.message + (f" → {fix}" if fix else "")
 

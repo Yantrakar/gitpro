@@ -3,6 +3,7 @@
 Depends on 05 (`forge.Account`, `forge.run`). Facts below are as of main 114d173
 (release 0.4.0 and #22) and the repository settings read on 2026-10-17. Written
 2026-10-15 after 0.3.4; refreshed 2026-10-17. Open VSX added 2026-10-18 (section 13).
+Marketplace publishing from the run added 2026-10-20 (section 14).
 
 Files this package may create or edit:
 - new: `scripts/release.py`, `tests/test_release_script.py`;
@@ -10,7 +11,7 @@ Files this package may create or edit:
   `.github/workflows/mcp-registry.yml` (header comment only), `docs/guide.md` (the
   developing and releasing paragraphs named in section 9), and this spec.
 
-Nothing else. `marketplace.yml` stays as it is (section 7).
+Nothing else. `marketplace.yml` changes only as section 14 says.
 
 ## 0. Rules for this package
 
@@ -69,8 +70,10 @@ Repository settings on 2026-10-17:
   waits for its own approval on the run page.
 - `scripts/release.py` drives the same run from the terminal, one yes at a time.
   With `--yes` it approves every gate unattended.
-- The VSIX upload stays manual (the user's decision, 2026-10-15; the Microsoft account
-  that owns the publisher has no Azure tenant). The script makes it one step.
+- The `marketplace` job publishes the VSIX (the user's decision, 2026-10-20: "we need to
+  find a way to push to vsix too"; section 14). Until then the upload was manual (the
+  user's decision, 2026-10-15, when the account that owned the publisher had no Azure
+  tenant). The manual step stays for a run where the job is skipped.
 
 Not goals:
 - Homebrew or any other new channel. (Open VSX was one until 2026-10-18; section 13.)
@@ -148,9 +151,10 @@ Still to do:
 2. Done: the tag rule `v*` is removed from `pypi`, `mcp-registry` and `github-pages`.
    A run started by hand on main runs on `refs/heads/main`, so the `main` rule covers
    it, and a tag no longer starts anything.
-3. If the Azure variables are ever set, create `marketplace` first, with the same
-   reviewer and branch rule. A job that names an environment that doesn't exist creates
-   it with no gate.
+3. Done 2026-10-20: `marketplace` has required reviewer `sandeepshelke`, "Prevent
+   self-review" off and deployment branch `main`, and was created before the Azure
+   variables were set. (A job that names an environment that doesn't exist creates it
+   with no gate.)
 
 Without setting 1 the `github` job would have created the `release` environment with
 no gate, so the workflow change (step 3 of section 11) had to wait for it. It is in place
@@ -224,8 +228,17 @@ Steps:
      - on no, exit 0 and print the run URL. The run keeps waiting; finish it on the page,
        or later with `--run ID`.
    - An environment already approved in this run isn't asked about again.
-4. **VSIX (manual)**, once `github` has succeeded and before the `mcp-registry` gate is
-   approved:
+4. **VSIX**, once `github` has succeeded and the job `marketplace / publish` has
+   completed, and before the `mcp-registry` gate is approved. While that job isn't in
+   the run's job list yet, or is queued, waiting or running, the script keeps following
+   (and asks for the `marketplace` gate). A failed one stops it, like any failed job.
+   - If the Marketplace already lists X.Y.Z (a resumed run, or the job published it and
+     the listing is up), the step is skipped.
+   - If the job succeeded, print "The marketplace job published X.Y.Z", then wait for
+     the listing as below, without downloading or opening anything. If it isn't listed in
+     time, exit 1 with the publisher URL to check and the `--run ID` to resume.
+   - If the job was skipped (the Azure variables unset), or the run completed without
+     one, the upload is manual:
    - download `gitpro-X.Y.Z.vsix` from the release into `~/Downloads/gitpro-X.Y.Z/`;
    - check it against the release's `SHA256SUMS`;
    - open the publisher page (`xdg-open`, `open` on macOS, or print the URL);
@@ -235,8 +248,6 @@ Steps:
      waited and which versions the Marketplace lists. If it isn't listed by then, exit 1 with
      what is missing and the `--run ID` to resume. `--yes` doesn't skip this wait: no one
      else can do the upload.
-   - If the Marketplace already lists X.Y.Z (a resumed run, or `marketplace.yml`
-     published it), the step is skipped.
    - The `pypi` gate doesn't wait for this step; only `mcp-registry` does. A run picked up
      with `--run ID` at the `mcp-registry` gate does this step first.
 5. **Verify** after the run succeeds, and print one line for each:
@@ -272,9 +283,10 @@ approving it. `github-pages` has no reviewer, so it never waits for a gate.
 
 ## 7. Marketplace
 
-`marketplace.yml` and its job stay. They skip while `AZURE_CLIENT_ID` is unset. If the
-variables are ever set, the `marketplace` gate shows up and the script approves it like
-the others. Step 4 of section 6 then finds the version already listed and goes on.
+`marketplace.yml` and its job stay. They skip while `AZURE_CLIENT_ID` is unset. Since
+2026-10-20 the variables are set (section 14): the `marketplace` gate shows up and the
+script approves it like the others, and step 4 of section 6 waits for the job and then
+for the listing.
 
 ## 8. Failures and recovery
 
@@ -300,7 +312,8 @@ the others. Step 4 of section 6 then finds the version already listed and goes o
   requests and in Release.
 - `docs/guide.md`, the release paragraph (starting "To release, bump the version"):
   put the new version and its comment on a new first line of `src/gitpro/VERSION` (the old first line becomes line 2; the first word of line 1 is the version; the only place; the workflows stamp the rest), merge, then start Release with `python scripts/release.py --as LOGIN` or with
-  "Run workflow" on the Actions page. List the four gates and the manual VSIX step.
+  "Run workflow" on the Actions page. List the gates; the VSIX upload is manual only
+  when the `marketplace` job is skipped.
 - The header comments of `release.yml` and `mcp-registry.yml`.
 
 ## 10. Tests (`tests/test_release_script.py`)
@@ -327,6 +340,10 @@ replace. No test touches the network.
   jobs after `y` (none after `n`) and follows the new attempt; with no run on HEAD it
   stops before any question.
 - A succeeded run whose VSIX the Marketplace doesn't list gets step 4 before step 5.
+- When `marketplace / publish` succeeded, step 4 waits for the listing without
+  downloading, opening the publisher page or asking for an upload, and its timeout names
+  no upload. Step 4 doesn't start while that job isn't listed yet. A failed one stops the
+  script before `mcp-registry`.
 - The `openvsx` gate is approved and named. Verify skips Open VSX when the `openvsx`
   job was skipped, and when the job succeeded passes if Open VSX lists the version and
   fails if it doesn't.
@@ -355,7 +372,7 @@ None. The decisions are the user's, from 2026-10-15:
   be careful and avoid wasteful steps");
 - each stage is clicked one by one on the run page, or run by the local script one yes
   at a time, and unattended once trusted;
-- the VSIX upload stays manual.
+- the VSIX upload stays manual (replaced on 2026-10-20, section 14).
 
 And from 2026-10-17: the site goes live only from a release, after PyPI has it (#22).
 
@@ -387,3 +404,42 @@ Before the job can run (the Open VSX wiki, "Trusted Publishing" and "Namespace A
 5. The `openvsx` environment: required reviewer `sandeepshelke`, deployment branch
    `main`, like `pypi`.
 6. The repository variable `OPENVSX` set to `true`.
+
+## 14. Marketplace from the run (added 2026-10-20)
+
+`marketplace.yml`'s job `publish` signs in to Microsoft Entra with `azure/login@v2`
+(`client-id`, `tenant-id`, `allow-no-subscriptions: true`) through the GitHub OIDC token,
+so no secret is stored. Azure DevOps retires global personal access tokens on
+2026-12-01, which is why the Marketplace isn't given one. It then runs, in `vscode/`
+after `npm ci`:
+
+    npx vsce verify-pat yantrakar --azure-credential
+    npx vsce publish --packagePath ../dist/*.vsix --skip-duplicate --azure-credential
+
+on the VSIX it downloads from the GitHub release. `--skip-duplicate` makes a re-run pass
+when the version is already published. Run by hand with `whoami`, it prints the
+identity's Marketplace profile ID and publishes nothing.
+
+The setup, done 2026-10-20:
+1. A user-assigned managed identity in the Azure tenant that also holds the publisher's
+   owner account, in resource group `gitpro`. MFA enforcement doesn't apply to managed
+   identities.
+2. A federated credential on it for GitHub Actions. The repo uses immutable OIDC
+   subjects, so the subject is
+   `repo:Yantrakar@320916961/gitpro@1398751450:environment:marketplace`; it is
+   case-sensitive (`yantrakar` didn't match).
+3. The repository variables `AZURE_CLIENT_ID` and `AZURE_TENANT_ID` (the identity's
+   client ID and tenant; neither is a secret).
+4. The identity's profile ID from `whoami`. The first call fails with "VSS011031: There
+   is no profile for the authenticated user in the system." and creates the profile; running the job
+   again prints the ID (run 39501674294).
+5. The identity added as a member of publisher `yantrakar`, role Contributor, by that
+   ID. The Members page refuses an email of a domain it doesn't know ("Invalid domain");
+   a person is added by the ID from `profiles/me` in a browser signed in as them.
+   Without the membership `verify-pat` fails with "Access Denied: <ID> needs the
+   following permission(s) on the resource /yantrakar to perform this action: View user
+   permissions on a resource" (run 39503916911, first attempt).
+6. The `marketplace` environment (section 5, setting 3).
+
+The test, run 39503916911's second attempt on tag v0.4.1: `verify-pat` passed and
+`publish` printed "Version 0.4.1 is already published. Skipping publish."

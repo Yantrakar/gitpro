@@ -57,4 +57,4 @@ def report(keys: list[Key], expand: Expand) -> None:
         role = "auth + signing" if k.sign else "auth"
         print(f"  {k.path}  ({role})  ->  {'; '.join(k.uses)}")
         pub = pub_path(expand(k.path))
-        print(f"    {pub.read_text().strip()}" if pub.exists() else "    (missing -- run: gitpro keys --generate)")
+        print(f"    {pub.read_text().strip()}" if pub.exists() else "    (missing -- run: gitpro setup)")

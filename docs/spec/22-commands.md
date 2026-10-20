@@ -349,6 +349,44 @@ New tools: `setup`, `env` (same as `env_for`), `report` (same as
 - Capabilities stay announced in 0.4.x; `deprecations.v1` is new so a client
   can tell.
 
+### 10.5 Hints name what 0.5.0 keeps (0.4.2)
+
+A hint, fix, error or help text printed by a command that stays names only
+commands and flags that stay in 0.5.0, so following it never leads to a
+deprecation warning.
+
+- The replacement is the one in §10.1, with one exception: where §10.1 says
+  `gitpro setup -y` for `apply`, a hint says plain `gitpro setup`. setup
+  previews and asks once; `-y` would also set up the guard and agents without
+  showing them.
+- Lines that only a deprecated command prints are unchanged (§10.3).
+- Text built by code that kept and deprecated commands share takes the new
+  wording for every caller. A hint cannot tell which command asked for it
+  (for example the problems of `why`, which `doctor` also shows). So `doctor`
+  and `agent status` print the new hints too; this is the one change to
+  deprecated output in 0.4.x, and the tests of those lines follow it (§12).
+- A fix that is `gitpro setup` has `fix_argv: null`: setup needs a terminal
+  (§5.7), so a tool has nothing it could run. The VS Code extension shows
+  **Set up…** for `fix == "gitpro setup"`, and still for the 0.4.1 argv
+  `["gitpro", "apply"]`. An extension of 0.4.1 or older shows no button for
+  these problems, only the text.
+
+| before 0.4.2 | from 0.4.2 |
+|---|---|
+| `gitpro apply` (fix, hint, `fix_argv ["gitpro","apply"]`) | `gitpro setup`, `fix_argv` null |
+| `gitpro discover PATH` / `gitpro scan --suggest` | `gitpro setup --add PATH` |
+| `gitpro keys --generate` | `gitpro setup` |
+| `gitpro guard install` (global) | `gitpro setup`; with `[guard] hooks = false`, set it to true first |
+| `gitpro agent install claude` | `gitpro setup --agent claude` |
+| `gitpro mcp install NAME` | `gitpro setup --agent NAME` |
+| `gitpro agent status` | `gitpro setup -n` |
+| `gitpro audit --rewrite` | `gitpro audit --fix`; an error names the flag that was given |
+
+Left for 0.5.0, because they are records rather than advice: the reflog
+message and undo label `gitpro audit --rewrite`, and the comment in the
+generated guard include (`render.GUARD_INCLUDE_COMMENT`), which is part of a
+file's bytes.
+
 ### 10.4 0.5.0
 
 Deprecated commands, flags and tools are removed with their code and tests.
@@ -383,6 +421,8 @@ Then (proposed, owner to decide):
 
 - Every 0.3 test of a deprecated command keeps passing with
   `GITPRO_NO_DEPRECATION=1` (set for all tests by `conftest.py`).
+  The exception is a hint from shared code (§10.5): such a test expects the
+  0.4.2 wording.
 - Per deprecated command and flag: the stderr line, the `deprecated` JSON
   field, and that `GITPRO_NO_DEPRECATION=1` silences both.
 - `--help` lists §4's commands in order and none of §10's.

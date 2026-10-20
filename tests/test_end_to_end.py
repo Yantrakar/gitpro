@@ -539,7 +539,7 @@ def test_scan_suggestion_keeps_identity_through_fix(home, tmp_path, capsys):
     subprocess.run(["rm", "-rf", str(twin)], check=True)
 
     assert run("scan", str(root)) == 0
-    assert "to keep some of these identities instead: gitpro scan --suggest" in capsys.readouterr().out
+    assert "to keep some of these identities instead: gitpro setup --add" in capsys.readouterr().out
     assert run("scan", "--suggest", str(root)) == 0
     out = capsys.readouterr().out
     block = out[out.index("[[identity]]"):].split("\n\n")[0]

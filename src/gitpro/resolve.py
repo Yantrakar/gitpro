@@ -703,6 +703,15 @@ def _p(code: str, message: str, argv: Optional[Sequence[str]], fix: Optional[str
                    tuple(argv) if argv else None)
 
 
+# The fix when only gitpro's generated files settle it. setup needs a terminal (spec 22 §5.7), so it has no
+# argv a tool could run (spec 22 §10.5).
+SETUP = "gitpro setup"
+
+
+def _p_or_setup(code: str, message: str, argv: Optional[Sequence[str]]) -> Problem:
+    return _p(code, message, argv, None if argv else SETUP)
+
+
 _DEFAULT_PORT = {"ssh": 22, "https": 443, "http": 80}
 _CODECOMMIT = re.compile(r"^git-codecommit\.[a-z0-9-]+\.amazonaws\.com$", re.I)
 _Fix = Tuple[Optional[str], str, Identity, str, Optional[Tuple[str, str]]]
@@ -751,7 +760,7 @@ def _url_fixes(url: str, cfg: Config, label: str = "the remote") -> List[_Fix]:
         if port and port[1] != _DEFAULT_PORT[port[0]]:
             if port[0] == "ssh":
                 tail = f"it looks like {i.id}, whose patterns have no port {port[1]}"
-                fix = f"set ssh_port = {port[1]} on identity {i.id} in the gitpro config, then run: gitpro apply"
+                fix = f"set ssh_port = {port[1]} on identity {i.id} in the gitpro config, then run: gitpro setup"
                 if i.ssh_port:
                     fix += f" (it is {i.ssh_port} now; an identity has one ssh_port)"
             else:
@@ -761,7 +770,7 @@ def _url_fixes(url: str, cfg: Config, label: str = "the remote") -> List[_Fix]:
         if reason.endswith("user git@ in the URL") and is_codecommit(i.host):
             return [(None, reason, i, pat, (
                 f"it looks like {i.id}, but CodeCommit's SSH user is the SSH key ID, not git",
-                f'set ssh_user = "<your SSH key ID>" on identity {i.id} in the gitpro config, then run: gitpro apply'))]
+                f'set ssh_user = "<your SSH key ID>" on identity {i.id} in the gitpro config, then run: gitpro setup'))]
         return [(fixed, reason, i, pat, None)]
     from .render import url_patterns
     for i in cfg.identities:
@@ -835,8 +844,7 @@ def compare(repo: Path, cfg: Config, *, remote: Optional[str] = None,
 
     if exp.email is None:
         out.append(_p("no_identity", f"no identity for {redact_url(first_url) or top}",
-                      ["gitpro", "scan", "--suggest", "--repo", str(top)],
-                      f"add an identity: gitpro scan --suggest --repo {shlex.quote(str(top))}"))
+                      None, f"add an identity: gitpro setup --add {_word(str(top))}"))
 
     if exp.match.identity is None:
         for name, url in candidates:
@@ -872,23 +880,23 @@ def compare(repo: Path, cfg: Config, *, remote: Optional[str] = None,
     if beats:
         k, s = beats[0]
         out.append(_p("global_override", f"user.{k} comes from {_shown_origin(s, top)} ({s.scope}) and beats "
-                                         f"{who}; the generated include must come last", ["gitpro", "apply"]))
+                                         f"{who}; the generated include must come last", None, SETUP))
 
     home = Path.home() if home is None else Path(home)
     old = [k for k, s, want in (("name", eff.name, exp.name), ("email", eff.email, exp.email))
            if s.scope == "generated" and want is not None and s.value != want]
     if exp.file and not os.path.exists(exp.file):
-        out.append(_p("not_applied", f"{_tilde(exp.file)} does not exist; the config has not been applied",
-                      ["gitpro", "apply"]))
+        out.append(_p("not_applied", f"{_tilde(exp.file)} does not exist; the config has not been applied", None,
+                      SETUP))
     elif not _home_has_block(home):
-        out.append(_p("not_applied", "~/.gitconfig has no gitpro block; the config has not been applied",
-                      ["gitpro", "apply"]))
+        out.append(_p("not_applied", "~/.gitconfig has no gitpro block; the config has not been applied", None,
+                      SETUP))
     elif old:
         out.append(_p("not_applied", f"the generated files give user.{old[0]} "
                                      f"{getattr(eff, old[0]).value}; they are older than the config",
-                      ["gitpro", "apply"]))
+                      None, SETUP))
 
-    def fix_for(s: Setting, key: str) -> List[str]:
+    def fix_for(s: Setting, key: str) -> Optional[List[str]]:
         if s.scope in ("repo", "worktree"):
             return ["git", "-C", str(top), "config"] + (["--worktree"] if s.scope == "worktree" else []) \
                 + ["--unset", key]
@@ -896,7 +904,7 @@ def compare(repo: Path, cfg: Config, *, remote: Optional[str] = None,
             return ["git", "config", "--file", s.origin[5:], "--unset", key]
         if repin and s.scope in ("generated", "pin", None):
             return repin                    # the other identity's include decides it; a pin by remote overrides it
-        return ["gitpro", "apply"]
+        return None                         # setup rewrites the generated files (fix text SETUP)
 
     def own(s: Setting) -> str:
         # a value from the user's own config, outside gitpro's generated files
@@ -911,18 +919,19 @@ def compare(repo: Path, cfg: Config, *, remote: Optional[str] = None,
         if not _same_path(got, exp.ssh_key):
             msg = (f"core.sshcommand uses {_tilde(got)}{own(eff.sshcommand)}; {who} uses {_tilde(exp.ssh_key)}"
                    if got else f"core.sshcommand is not set; {who} uses {_tilde(exp.ssh_key)}")
-            out.append(_p("key_mismatch", msg, fix_for(eff.sshcommand, "core.sshCommand")))
+            out.append(_p_or_setup("key_mismatch", msg, fix_for(eff.sshcommand, "core.sshCommand")))
 
     sign_now = _bool(eff.gpgsign.value)
     if sign_now != exp.sign:
-        out.append(_p("sign_mismatch", f"commit.gpgsign is {'true' if sign_now else 'false'}{own(eff.gpgsign)}; {who} "
-                                       f"{'signs' if exp.sign else 'does not sign'} commits",
-                      fix_for(eff.gpgsign, "commit.gpgsign")))
+        out.append(_p_or_setup("sign_mismatch", f"commit.gpgsign is {'true' if sign_now else 'false'}"
+                                                f"{own(eff.gpgsign)}; {who} "
+                                                f"{'signs' if exp.sign else 'does not sign'} commits",
+                               fix_for(eff.gpgsign, "commit.gpgsign")))
     elif exp.sign and exp.signingkey and not _same_path(eff.signingkey.value, exp.signingkey):
-        out.append(_p("sign_mismatch", f"user.signingkey is {_tilde(eff.signingkey.value) or '(unset)'}"
-                                       f"{own(eff.signingkey)}; {who} "
-                                       f"signs with {_tilde(exp.signingkey)}",
-                      fix_for(eff.signingkey, "user.signingkey")))
+        out.append(_p_or_setup("sign_mismatch", f"user.signingkey is {_tilde(eff.signingkey.value) or '(unset)'}"
+                                                f"{own(eff.signingkey)}; {who} "
+                                                f"signs with {_tilde(exp.signingkey)}",
+                               fix_for(eff.signingkey, "user.signingkey")))
 
     envp = _env_problem(exp, eff, env)
     if envp:
@@ -970,19 +979,21 @@ def _shown_origin(s: Setting, top: Path) -> str:
     return _tilde(path)
 
 
+def _word(a: str) -> str:
+    """a shell-quoted, with the home folder shown as ~."""
+    home = str(Path.home())
+    if a.startswith(home + "/"):
+        return "~/" + shlex.quote(a[len(home) + 1:])
+    return shlex.quote(a)
+
+
 def _shown_fix(p: Problem) -> str:
     if not p.fix_argv:
         return p.fix or ""
-    home = str(Path.home())
-
-    def word(a: str) -> str:
-        if a.startswith(home + "/"):
-            return "~/" + shlex.quote(a[len(home) + 1:])
-        return shlex.quote(a)
     # keep a leading explanation ("add an identity: ") that the argv itself does not carry
     cut = (p.fix or "").find(p.fix_argv[0])
     prefix = p.fix[:cut] if cut > 0 else ""
-    return prefix + " ".join(word(a) for a in p.fix_argv)
+    return prefix + " ".join(_word(a) for a in p.fix_argv)
 
 
 def render_text(rep: Report, cfg: Config) -> str:

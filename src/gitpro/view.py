@@ -131,7 +131,7 @@ def scan(rep: dict, show: Callable[[str], str], *, verbose: bool, suggest: bool,
             out.print(f"\n# {show(path)} ({r['owner']}): no identity can match it; after fixing it uses {who(r['after'])}",
                       markup=False, soft_wrap=True)
     elif rep["suggestions"] and not fix:
-        out.print(Text(f"\nto keep some of these identities instead: {prog} scan --suggest", style="dim"), soft_wrap=True)
+        out.print(Text(f"\nto keep some of these identities instead: {prog} setup --add", style="dim"), soft_wrap=True)
 
     if not fix:
         settings = sum(len(r["fixable"]) for r in over)

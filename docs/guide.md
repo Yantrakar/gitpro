@@ -725,7 +725,7 @@ repos  identity                      from
 Jane Doe <jane.doe@employer.com>  (1 repo)
 └── from Jane Doe <jane@personal.dev>:  ~/work/app
 
-to keep some of these identities instead: gitpro scan --suggest
+to keep some of these identities instead: gitpro setup --add
 
 dry run, nothing changed. Remove 1 setting from 1 repo: gitpro scan --fix
 ```
@@ -740,9 +740,9 @@ override whose removal would leave the repo with no identity.
 
 To keep a repo's current identity instead, add a gitpro identity for it before
 fixing: `gitpro setup --add PATH` learns it from the repos under `PATH` and
-shows it before saving. (The sample above is 0.3.4 output, where `scan
---suggest` printed `[[identity]]` blocks; `scan --suggest` is deprecated.) An
-identity applies to every repo of its owners.
+shows it before saving. (Before 0.4.2 that hint named `scan --suggest`, which
+printed `[[identity]]` blocks; `scan --suggest` is deprecated.) An identity
+applies to every repo of its owners.
 
 `scan` also reports a repo whose remotes match two identities (`ambiguous`;
 commits there are blocked until you choose with `gitpro pin --remote R`) and a
@@ -1064,7 +1064,7 @@ $ gitpro audit
 wrong author (2 unpushed, 0 pushed)
   c2991c7  2026-09-30  jane@personal.dev        Add retry to API client          unpushed
   9bc2d19  2026-09-30  jane@personal.dev        Fix login redirect               unpushed
-→ rewrite the 2 unpushed: gitpro audit --rewrite ~/work/github.com/employer-org/app
+→ rewrite the 2 unpushed: gitpro audit --fix ~/work/github.com/employer-org/app
 
 agent commits (1)
   Co-Authored-By: Claude <noreply@anthropic.com>           1 commit
@@ -1072,11 +1072,11 @@ agent commits (1)
 ```
 
 `gitpro audit --fix` (the deprecated name is `--rewrite`) shows the plan, asks
-(unless you pass `-y`), and leaves an undo script. The samples on this page
-are 0.3.4 output, where the option was `--rewrite`. In another repo:
+(unless you pass `-y`), and leaves an undo script. The reflog message it writes
+still says `gitpro audit --rewrite` until 0.5.0. In another repo:
 
 ```text
-$ gitpro audit --rewrite -y
+$ gitpro audit --fix -y
 …
 → rewrite 3 unpushed commits on main (base the root):
   48dd877  Initial commit                   author, committer jane@personal.dev → jane.doe@employer.com
@@ -1188,7 +1188,7 @@ policy, from any directory:
 $ gitpro check --repo .
 policy Employer engineering (~/work/gitpro-policy.toml) for work-github
   email domain   jane.doe@employer.com ✓ employer.com
-  signing        required           ✗ identity work-github has sign = false → set sign = true, run gitpro apply
+  signing        required           ✗ identity work-github has sign = false → set sign = true, run gitpro setup
   signing key    ~/.ssh/id_ed25519_work.pub ⚠ not checked (run gitpro team --online to verify it is registered)
   trailers       forbid             ⚠ policy forbids Co-Authored-By but the identity allows it → set [identity.trailers] co_authored_by = "forbid"
 1 problem
@@ -1201,7 +1201,7 @@ change`, because `apply` has nothing to do. `gitpro why` shows the policy proble
 $ gitpro why
 …
 ✗ policy Employer engineering requires signed commits but identity work-github has sign = false
-→ set sign = true, run gitpro apply
+→ set sign = true, run gitpro setup
 ```
 
 With the guard installed, a commit that breaks the policy is blocked. The
@@ -1755,10 +1755,10 @@ registered for `release.yml` and the `openvsx` environment; skipped unless
 the variable `OPENVSX` is `true`); `mcp-registry` publishes `server.json` to the MCP Registry once PyPI
 has the release, signed in with the workflow's GitHub OIDC token. A registry
 version cannot be changed after it is published, so a version already there is
-skipped. Until the Marketplace variables are set, the VSIX is uploaded by hand:
-the script downloads it from the release, checks it against `SHA256SUMS`,
-opens the publisher page and waits for the Marketplace to list the version
-before it approves `mcp-registry`. `marketplace.yml` and `mcp-registry.yml`
+skipped. The script waits for the `marketplace` job and for the Marketplace to
+list the version before it approves `mcp-registry`. When that job is skipped,
+the VSIX is uploaded by hand: the script downloads it from the release, checks
+it against `SHA256SUMS`, opens the publisher page and waits for the listing. `marketplace.yml` and `mcp-registry.yml`
 can also be run by hand for an existing tag. The site is published only once
 PyPI has the release (`pages.yml`), so it never names a version that cannot be
 installed; a merge to main does not publish it, and a site-only fix is

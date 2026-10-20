@@ -307,7 +307,7 @@ def test_machine_mode_sign_false(capsys, cfg, work_policy):
     assert run("check", "--policy", str(work_policy)) == 1
     out = capsys.readouterr().out
     assert f"policy {NAME} (~/work/gitpro-policy.toml) for work-github" in out
-    assert "✗ identity work-github has sign = false → set sign = true, run gitpro apply" in out
+    assert "✗ identity work-github has sign = false → set sign = true, run gitpro setup" in out
     assert "⚠ not checked (run gitpro team --online" in out
     assert "1 problem" in out
     assert run("check", "--policy", str(work_policy), "--json") == 1

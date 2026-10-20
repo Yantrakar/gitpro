@@ -334,7 +334,7 @@ def test_warns_when_no_identity(cfg, tmp_path, bare_remote, capsys):  # 13
     assert rc == 0
     assert "✓ cloned into" in o
     assert "⚠ no identity for" in e and "git will refuse to commit here" in e
-    assert f"gitpro scan --suggest --repo {dest}" in e
+    assert f"gitpro setup --add {dest}" in e
 
 
 def test_json_reports_git_failure(cfg, tmp_path, capsys):

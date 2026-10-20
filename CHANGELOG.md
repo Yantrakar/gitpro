@@ -4,6 +4,40 @@ All notable changes to gitpro. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Release notes for
 earlier versions are on [GitHub releases](https://github.com/Yantrakar/gitpro/releases).
 
+## 0.4.2 (2026-10-20)
+
+### Added
+
+- The README opens with a short demo: the commit guard refuses a commit in a
+  work repo that would use the personal email, `gitpro scan --fix` removes the
+  repo's own email setting, the commit then goes through with the work email,
+  and a personal repo keeps the personal one. `design/demo.py` records it from
+  real gitpro and git output in a throwaway home and writes `site/demo.gif`,
+  which gitpro.dev serves.
+- The VS Code extension is on Open VSX (`yantrakar.gitpro`), and the release
+  run publishes it there with trusted publishing, so no token is stored.
+
+### Changed
+
+- Hints, fixes, errors and help name only commands that stay in 0.5.0:
+  `gitpro setup` instead of `apply`, `keys --generate`, global `guard install`,
+  `agent install` and `mcp install`; `gitpro setup --add PATH` instead of
+  `scan --suggest` and `discover`; `gitpro audit --fix` instead of
+  `--rewrite`. Fixes that are `gitpro setup` now have `fix_argv: null`, since
+  setup needs a terminal; the extension shows **Set up…** for them. An
+  extension of 0.4.1 or older shows only the text for those problems.
+  `doctor` and `agent status` share these hints and print the new wording too.
+- VS Code: the Marketplace listing has search keywords, and its description
+  starts with the problem gitpro solves.
+- Release: `scripts/release.py` prints each job as it changes state. Run
+  again after it stops (Ctrl-C, a failed job, a gate answered no), it follows
+  the run still going on that commit or offers to re-run the failed jobs. It
+  checks Open VSX at the end when the `openvsx` job published.
+- Release: the run publishes the VSIX to the VS Code Marketplace too, signed
+  in with a Microsoft Entra managed identity, so no token is stored.
+  `scripts/release.py` waits for that job instead of asking for an upload;
+  the upload by hand is left for a run where the job is skipped.
+
 ## 0.4.1 (2026-10-18)
 
 ### Fixed

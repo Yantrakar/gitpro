@@ -33,6 +33,10 @@ def waiting(name):
     return {"name": name, "status": "waiting", "conclusion": ""}
 
 
+# The marketplace job with the Azure variables unset: the VSIX is uploaded by hand.
+UNSET = {"name": "marketplace / publish", "status": "completed", "conclusion": "skipped"}
+
+
 def gate(env, can=True):
     return {"environment": {"id": GATE_IDS[env], "name": env}, "current_user_can_approve": can}
 
@@ -201,9 +205,9 @@ def full_run(w):
     w.market_after = 1
     w.steps = [
         ({"status": "in_progress", "conclusion": "", "jobs": [done("check"), waiting("github")]}, [gate("release")]),
-        ({"status": "in_progress", "conclusion": "", "jobs": [done("github"), waiting("pypi")]}, [gate("pypi")]),
-        ({"status": "in_progress", "conclusion": "", "jobs": [done("github"), done("pypi")]}, [gate("mcp-registry")]),
-        ({"status": "completed", "conclusion": "success", "jobs": [done("github"), done("pypi")]}, []),
+        ({"status": "in_progress", "conclusion": "", "jobs": [done("github"), UNSET, waiting("pypi")]}, [gate("pypi")]),
+        ({"status": "in_progress", "conclusion": "", "jobs": [done("github"), UNSET, done("pypi")]}, [gate("mcp-registry")]),
+        ({"status": "completed", "conclusion": "success", "jobs": [done("github"), UNSET, done("pypi")]}, []),
     ]
 
 
@@ -327,8 +331,8 @@ def test_a_resumed_run_at_the_mcp_registry_gate_waits_for_the_marketplace(world)
     world.on_pypi = True
     world.market_after = 3
     world.steps = [
-        ({"status": "in_progress", "conclusion": "", "jobs": [done("github"), done("pypi")]}, [gate("mcp-registry")]),
-        ({"status": "completed", "conclusion": "success", "jobs": [done("github"), done("pypi")]}, []),
+        ({"status": "in_progress", "conclusion": "", "jobs": [done("github"), UNSET, done("pypi")]}, [gate("mcp-registry")]),
+        ({"status": "completed", "conclusion": "success", "jobs": [done("github"), UNSET, done("pypi")]}, []),
     ]
     assert release("--run", "42", "--yes") == 0
     mcp = world.events.index(("post", {"environment_ids": [14], "state": "approved",
@@ -460,11 +464,11 @@ def test_pypi_gate_that_shows_up_while_waiting_is_approved_before_the_vsix_wait(
     gate that appears next is approved first."""
     world.on_pypi = True
     world.steps = [
-        ({"status": "in_progress", "conclusion": "", "jobs": [done("github"), waiting("pypi")]}, []),
-        ({"status": "in_progress", "conclusion": "", "jobs": [done("github"), waiting("pypi")]}, [gate("pypi")]),
-        ({"status": "completed", "conclusion": "success", "jobs": [done("github"), done("pypi")]}, []),
+        ({"status": "in_progress", "conclusion": "", "jobs": [done("github"), UNSET, waiting("pypi")]}, []),
+        ({"status": "in_progress", "conclusion": "", "jobs": [done("github"), UNSET, waiting("pypi")]}, [gate("pypi")]),
+        ({"status": "completed", "conclusion": "success", "jobs": [done("github"), UNSET, done("pypi")]}, []),
     ]
-    monkeypatch.setattr(rel, "vsix", lambda acc, v, run_id: world.events.append(("vsix", v)))
+    monkeypatch.setattr(rel, "vsix", lambda acc, v, run_id, jobs: world.events.append(("vsix", v)))
     assert release("--run", "42", "--yes") == 0
     kinds = [e[0] for e in world.events]
     assert world.approved() == ["pypi"]
@@ -493,6 +497,72 @@ def test_a_marketplace_gate_is_approved_and_named(world, capsys):
     assert release("--run", "42", "--yes") == 0
     assert world.approved() == ["marketplace"]
     assert "publishes the VSIX to the VS Code Marketplace" in capsys.readouterr().out
+
+
+def published_run(w):
+    """A run whose marketplace job publishes: its gate, then the job runs, then mcp-registry."""
+    w.on_pypi = True
+    w.market_after = 2
+    w.steps = [
+        ({"status": "in_progress", "conclusion": "", "jobs": [done("github"), waiting("marketplace / publish")]},
+         [gate("marketplace")]),
+        ({"status": "in_progress", "conclusion": "", "jobs": [done("github"), job("marketplace / publish",
+                                                                                "in_progress", "Publish")]}, []),
+        ({"status": "in_progress", "conclusion": "", "jobs": [done("github"), done("marketplace / publish")]},
+         [gate("mcp-registry")]),
+        ({"status": "completed", "conclusion": "success", "jobs": [done("github"), done("marketplace / publish")]}, []),
+    ]
+
+
+def test_a_published_vsix_is_waited_for_without_an_upload(world, capsys):
+    published_run(world)
+    assert release("--run", "42", "--yes") == 0
+    out = capsys.readouterr().out
+    assert world.approved() == ["marketplace", "mcp-registry"]
+    assert "The marketplace job published" in out and "Upload" not in out
+    assert not any(e[0] == "open" for e in world.events)
+    assert not any(c[0] == "gh" and c[1][:2] == ["release", "download"] for c in world.calls)
+
+
+def test_mcp_registry_waits_for_the_marketplace_job_and_the_listing(world):
+    published_run(world)
+    assert release("--run", "42", "--yes") == 0
+    mcp = world.events.index(("post", {"environment_ids": [14], "state": "approved",
+                                       "comment": "scripts/release.py"}))
+    looks = [e for e in world.events[:mcp] if e[0] == "market"]
+    assert looks and looks[-1] == ("market", [V])
+
+
+def test_the_vsix_step_waits_while_the_marketplace_job_is_not_listed_yet(world, monkeypatch):
+    """github is done but the reusable workflow's job hasn't shown up: no upload prompt yet."""
+    world.on_pypi = True
+    world.steps = [
+        ({"status": "in_progress", "conclusion": "", "jobs": [done("github")]}, []),
+        ({"status": "in_progress", "conclusion": "", "jobs": [done("github"), waiting("marketplace / publish")]}, []),
+        ({"status": "completed", "conclusion": "success", "jobs": [done("github"), done("marketplace / publish")]}, []),
+    ]
+    seen = []
+    monkeypatch.setattr(rel, "vsix", lambda acc, v, run_id, jobs: seen.append(rel.marketplace_job(jobs)))
+    assert release("--run", "42", "--yes") == 0
+    assert seen == [done("marketplace / publish")]
+
+
+def test_a_published_vsix_not_listed_in_time_stops_without_an_upload(world, capsys):
+    published_run(world)
+    world.market_after = 10 ** 6
+    assert release("--run", "42", "--yes") == 1
+    err = capsys.readouterr().err
+    assert world.approved() == ["marketplace"]
+    assert "check the extension at" in err and "upload" not in err and "--run 42" in err
+
+
+def test_a_failed_marketplace_job_stops_before_mcp_registry(world, capsys):
+    world.on_pypi = True
+    world.steps = [({"status": "in_progress", "conclusion": "",
+                     "jobs": [done("github"), job("marketplace / publish", "completed", conclusion="failure")]},
+                    [gate("mcp-registry")])]
+    assert release("--run", "42", "--yes") == 1
+    assert world.posts() == [] and "marketplace / publish failure" in capsys.readouterr().err
 
 
 def test_ctrl_c_exits_130_and_names_the_run(world, monkeypatch, capsys):
@@ -649,9 +719,9 @@ def test_a_failed_run_after_the_tag_reruns_its_failed_jobs(world, capsys):
     world.steps = [({"status": "completed", "conclusion": "failure",
                      "jobs": [done("github"), job("pypi", "completed", conclusion="failure")]}, [])]
     world.rerun_steps = [
-        ({"status": "in_progress", "conclusion": "", "jobs": [done("github"), waiting("pypi")]}, [gate("pypi")]),
-        ({"status": "in_progress", "conclusion": "", "jobs": [done("github"), done("pypi")]}, [gate("mcp-registry")]),
-        ({"status": "completed", "conclusion": "success", "jobs": [done("github"), done("pypi")]}, []),
+        ({"status": "in_progress", "conclusion": "", "jobs": [done("github"), UNSET, waiting("pypi")]}, [gate("pypi")]),
+        ({"status": "in_progress", "conclusion": "", "jobs": [done("github"), UNSET, done("pypi")]}, [gate("mcp-registry")]),
+        ({"status": "completed", "conclusion": "success", "jobs": [done("github"), UNSET, done("pypi")]}, []),
     ]
     world.market_after = 1
     world.answers = [True, True, True]

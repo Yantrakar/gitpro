@@ -47,7 +47,7 @@ def warnings(d: Default, ids: list[Identity], env: Env) -> list[str]:
     for k in keys.inventory(d, ids):
         p = env.expand(k.path)
         if not p.exists():
-            out.append(f"{k.path} missing -- run: gitpro keys --generate")
+            out.append(f"{k.path} missing -- run: gitpro setup")
         elif p.stat().st_mode & 0o077:
             out.append(f"{k.path} is accessible by others -- chmod 600 {p}")
     return out

@@ -1756,7 +1756,7 @@ def _edit(args: argparse.Namespace, removing: bool) -> int:
     shown = undo.tilde(t.path)
     if say and agent == "claude" and not removing:
         from . import view
-        view.step("plugin users already have this hook (gitpro agent status shows it)")
+        view.step("plugin users already have this hook (gitpro setup -n shows it)")
     if after == before and (obj is not None or removing):
         if args.json:
             jsonout.emit(command, {"file": str(t.path), "changed": False, "backup": None, "undo": None})
@@ -1883,7 +1883,7 @@ def status_data(home: Path, explicit_config: Optional[Path] = None) -> dict:
     plain, login = _command_v(False), _command_v(True)
     if not plain and login:
         warnings.append(f"gitpro is not on PATH for sh (found by login shell at {login}); the hook exits "
-                        f"silently without it → gitpro agent install --agent claude rewrites the entry with "
+                        f"silently without it → gitpro setup --agent claude rewrites the entry with "
                         f"the absolute path")
     return {"mode": mode, "agents": agents_, "guard_installed": guard_installed(),
             "gitpro_path": {"sh": plain, "login": login}, "warnings": warnings}

@@ -15,6 +15,7 @@ import pytest
 
 from conftest import TIMEOUT, git, repo_with_remote, run, write_config
 from gitpro import __version__, mcp
+from gitpro.config import ConfigError
 
 ROOT = Path(__file__).resolve().parent.parent
 WORK_URL = "git@github.com:corp-org/app.git"
@@ -555,6 +556,17 @@ def test_uninstall_claude(home, fake_bin, capsys):
     (home / ".claude.json").write_text(json.dumps({"mcpServers": {"gitpro": {"command": "other"}}}))
     assert run("mcp", "uninstall", "-y") == 1
     assert claude_json(home)["mcpServers"]["gitpro"] == {"command": "other"}
+
+
+def test_setup_leaves_a_foreign_entry_and_names_setup(home):
+    """setup never replaces a 'gitpro' entry it did not write; its note names what stays in 0.5.0."""
+    (home / ".claude.json").write_text(json.dumps({"mcpServers": {"gitpro": {"command": "other"}}}))
+    with pytest.raises(ConfigError) as e:
+        mcp.install_change("claude", home)
+    assert "left alone (remove that entry, then run gitpro setup --agent claude)" in str(e.value)
+    assert "mcp install" not in str(e.value)
+    (home / ".claude.json").write_text(json.dumps({"mcpServers": {}}))
+    assert mcp.install_change("claude", home) == "update ~/.claude.json"   # removed: setup adds it again
 
 
 def test_uninstall_claude_via_cli(home, fake_bin, capsys):

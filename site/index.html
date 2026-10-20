@@ -526,7 +526,7 @@
 <path class="ln" d="M280 332 L300 332 L300 526 L280 526" marker-end="url(#f04n-m)"/>
 </svg>
 <!-- /fig:f04 -->
-<figcaption>Setup saves a config and applies nothing. Plan previews, apply writes plain files, and git reads them from then on.</figcaption>
+<figcaption>Setup saves a config, previews every change and, after one yes, writes plain files. Git and ssh read them from then on.</figcaption>
 </div>
 </figure>
 </div>
@@ -676,7 +676,7 @@
 </details>
 <details>
 <summary>How do I undo it?</summary>
-<p><code>gitpro uninstall</code> removes everything <code>apply</code> wrote and the global guard hooks. Your config and SSH keys stay.</p>
+<p><code>gitpro uninstall</code> removes the files <code>gitpro setup</code> generated and the global guard hooks. Your config and SSH keys stay.</p>
 </details>
 <details>
 <summary>Does it send anything anywhere?</summary>

@@ -936,8 +936,8 @@ def install_change(agent: str, home: Path) -> Optional[str]:
     if _ours(current, entry):
         return None
     if current is not None:
-        raise ConfigError(f"{_foreign(path, current)}; left alone (gitpro mcp install --agent {agent} --force "
-                          "replaces it)")
+        raise ConfigError(f"{_foreign(path, current)}; left alone (remove that entry, then run "
+                          f"gitpro setup --agent {agent})")
     if agent == "claude" and shutil.which("claude"):
         return f"run {shlex.join(CLAUDE_ADD)}"
     return f"{'update' if obj is not None else 'create'} {_tilde_path(path)}"
@@ -993,7 +993,7 @@ def doctor_section(ctx) -> dict:
 def register(sub, common, confirm) -> None:
     from .args import capability
     p = sub.add_parser("mcp", parents=[common],
-                       help="run the read-only MCP server for AI assistants (stdio); install registers it")
+                       help="run the read-only MCP server for AI assistants (stdio); gitpro setup --agent NAME registers it")
     p.add_argument("--log", type=Path, metavar="FILE", help="append every request and response to FILE (0600)")
     p.add_argument("--allow-execution", action="store_true",
                    help="expose operation and approved-change execution; the host must authorize each write")

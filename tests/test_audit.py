@@ -95,8 +95,17 @@ def test_unpushed_wrong_committer(repo, capsys):
     rc, out, _ = audit_text(capsys, str(repo))
     assert rc == 1
     assert "wrong author (2 unpushed, 0 pushed)" in out
-    assert "→ rewrite the 2 unpushed: gitpro audit --rewrite " in out
+    assert "→ rewrite the 2 unpushed: gitpro audit --fix " in out
     assert "me@personal.test" in out and "unpushed" in out
+
+
+def test_errors_name_the_flag_given(repo, capsys):
+    """--fix is the name that stays in 0.5.0; the deprecated --rewrite keeps its 0.3.4 errors."""
+    for flag in ("--fix", "--rewrite"):
+        rc, _, err = audit_text(capsys, str(repo), flag, "--agents")
+        assert rc == 2 and f"{flag} needs the author audit; drop --agents" in err
+        rc, out, _ = audit_text(capsys, str(repo), flag, "--json")   # with --json the error is JSON on stdout
+        assert rc == 2 and f"--json needs -y with {flag} (there is no terminal to confirm on)" in out
 
 
 def test_colleague_author_is_never_flagged(repo, capsys):

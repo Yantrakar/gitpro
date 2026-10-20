@@ -592,7 +592,7 @@ def test_pre_push_blocks_own_wrong_commits(work, tmp_path):
     assert r.returncode != 0
     assert "✗ gitpro: 2 commits to origin" in r.stderr and "committed as me@personal.test" in r.stderr
     assert "work-github <me@corp.test>" in r.stderr and " one" in r.stderr and " two" in r.stderr
-    assert "git rebase -i" in r.stderr or "audit --rewrite" in r.stderr
+    assert "git rebase -i" in r.stderr or "audit --fix" in r.stderr
     assert "--reset-author" not in r.stderr
     r = gitc(work, "rebase", "-q", "origin/main", "--exec", "git commit -q --amend --no-edit --allow-empty --reset-author")
     assert r.returncode == 0, r.stderr
@@ -790,9 +790,13 @@ def test_status_text(installed, capsys):
     assert "system core.hooksPath: (none)" in out
 
 
-def test_status_not_installed(g, capsys):
+def test_status_not_installed(g, cfg, capsys):
     assert run("guard", "status") == 0
-    assert "guard: not installed → gitpro guard install" in capsys.readouterr().out
+    assert "guard: not installed → gitpro setup\n" in capsys.readouterr().out
+    cfg(DEFAULT_CONFIG + "\n[guard]\nhooks = false\n", apply=False)   # setup leaves the guard off then
+    assert run("guard", "status") == 0
+    assert "guard: not installed → set [guard] hooks = true in your config and run gitpro setup\n" \
+        in capsys.readouterr().out
 
 
 # ---------------------------------------------------------------- 16, 17: repo mode

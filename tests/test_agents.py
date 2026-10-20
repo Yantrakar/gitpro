@@ -520,7 +520,7 @@ sys.exit(1)
     assert run("agent", "status") == 0
     err = capsys.readouterr().err
     assert f"⚠ gitpro is not on PATH for sh (found by login shell at {fake_gitpro})" in err
-    assert "gitpro agent install --agent claude rewrites the entry with the absolute path" in err
+    assert "gitpro setup --agent claude rewrites the entry with the absolute path" in err
     assert run("agent", "install", "-y") == 0
     [hook] = gitpro_hooks(json.loads(settings(home).read_text()))
     assert str(fake_gitpro) in hook["command"] and "gitpro agent-check --agent claude" in hook["command"]
