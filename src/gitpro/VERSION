@@ -1,3 +1,4 @@
+0.4.3  2026-10-21  release: gitpro.dev last, MCP Registry after PyPI only
 0.4.2  2026-10-20  README demo GIF, Marketplace keywords, Open VSX in the release run
 0.4.1  2026-10-18  secret masking, atomic writes, re-runnable release, version in one file
 0.4.0  2026-10-16  setup replaces init and apply; guard refuses mixed-identity repos
