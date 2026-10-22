@@ -4,6 +4,14 @@ All notable changes to gitpro. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Release notes for
 earlier versions are on [GitHub releases](https://github.com/Yantrakar/gitpro/releases).
 
+## 0.4.5 (2026-10-22)
+
+### Fixed
+
+- Release: the short announcement is plain text. The release runs releasepro
+  0.2.2, which drops a Markdown link's URL from the short post, and the
+  workflow names the releasepro version in one place.
+
 ## 0.4.4 (2026-10-22)
 
 ### Changed

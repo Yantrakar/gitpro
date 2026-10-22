@@ -17,6 +17,9 @@ on:
 permissions:
   contents: read
 
+env:
+  RELEASEPRO: releasepro==0.2.2   # the one pin; check and build install it
+
 concurrency:
   group: release
   cancel-in-progress: false
@@ -37,7 +40,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
-      - run: pip install releasepro==0.2.0
+      - run: pip install "$RELEASEPRO"
       - name: The version is X.Y.Z and the changelog has its section
         id: version
         run: |
@@ -90,7 +93,7 @@ jobs:
         env:
           VERSION: ${{ needs.check.outputs.version }}
         run: |
-          pip install releasepro==0.2.0
+          pip install "$RELEASEPRO"
           releasepro notes "$VERSION" --write notes
           cat notes/ANNOUNCEMENT.md
       - uses: actions/upload-artifact@v4

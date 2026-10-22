@@ -529,7 +529,9 @@ What changes:
   gets `ANNOUNCEMENT.md`, a draft post for the person to post, as one more asset.
 - The `check` job also runs `releasepro notes --check`, so a version with no section in
   `CHANGELOG.md` stops before CI. The `check` and `build` jobs install releasepro at a
-  pinned version from PyPI.
+  pinned version from PyPI, written once, as the workflow's `RELEASEPRO` variable
+  (added 2026-10-22, after 0.4.4: a second pin left on a branch meant 0.4.4 ran with
+  releasepro 0.2.0).
 - `scripts/release.py` and `tests/test_release_script.py` are removed. Three of its tests
   don't use the script: `versions.py`, the workflows being safe to run again, and the
   order of `site` and `mcp-registry`. They move to `tests/test_release_workflow.py`, with
@@ -545,6 +547,13 @@ Checked before the switch, on 2026-10-22: with this `releasepro.toml`, releasepr
 Done when the next release through releasepro publishes the same files to the same six
 channels, in the same order, plus `ANNOUNCEMENT.md` on the GitHub release, and
 `releasepro verify X.Y.Z` passes.
+
+Done on 2026-10-22 with 0.4.4 (run 39827223945): `releasepro verify 0.4.4` passed all
+six checks. The openvsx job failed on its first attempt with "No trusted publisher matches
+the presented token": Open VSX matches the repository's id, and the repository had been
+created again that day. The owner registered the trusted publisher again, and the
+re-run published. The short announcement still showed a Markdown link's URL, because
+the run used releasepro 0.2.0; 0.4.5 pins releasepro 0.2.2.
 
 Sections 6, 6.1 and 10 describe the script as it was until 0.4.3. They stay as the record
 of what releasepro ported.
