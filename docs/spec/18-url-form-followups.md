@@ -30,9 +30,9 @@ key table only). Nothing else. No change to `render.py`, `config.py`,
    does not match it. That pins that matching is unchanged.
 5. Full suite after every item:
    `env -u FORCE_COLOR .venv/bin/python -m pytest -q -p no:cacheprovider`.
-   Baseline on main at 38ca167: 1627 passed, 2 skipped.
+   Baseline on main at 6fb0442: 1627 passed, 2 skipped.
 
-## 1. Current code (as of main 38ca167)
+## 1. Current code (as of main 6fb0442)
 
 `resolve._url_fixes(url, cfg) -> List[Tuple[str, str, Identity, str]]`
 builds candidate URLs, in order, and returns the first one that

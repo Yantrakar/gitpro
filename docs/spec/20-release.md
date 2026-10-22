@@ -1,6 +1,6 @@
 # 20 — One-run release, gated stage by stage
 
-Depends on 05 (`forge.Account`, `forge.run`). Facts below are as of main 114d173
+Depends on 05 (`forge.Account`, `forge.run`). Facts below are as of main 0a767db
 (release 0.4.0 and #22) and the repository settings read on 2026-10-17. Written
 2026-10-15 after 0.3.4; refreshed 2026-10-17. Open VSX added 2026-10-18 (section 13).
 Marketplace publishing from the run added 2026-10-20 (section 14). The site goes last and
@@ -27,7 +27,7 @@ Nothing else. `marketplace.yml` changes only as section 14 says.
 4. Tests first: section 10's tests are written and fail before the script exists.
 5. One commit per numbered step in section 11. The full suite runs once, in the last step:
    `env -u FORCE_COLOR .venv/bin/python -m pytest -q -p no:cacheprovider -n auto`.
-   Record the baseline on main before step 1. On main 114d173 it was 1868 passed,
+   Record the baseline on main before step 1. On main 0a767db it was 1868 passed,
    3 skipped.
 
 ## 1. What happens today
@@ -439,13 +439,15 @@ The setup, done 2026-10-20:
    identities.
 2. A federated credential on it for GitHub Actions. The repo uses immutable OIDC
    subjects, so the subject is
-   `repo:Yantrakar@320916961/gitpro@1398751450:environment:marketplace`; it is
-   case-sensitive (`yantrakar` didn't match).
+   `repo:Yantrakar@320916961/gitpro@1429947375:environment:marketplace`; it is
+   case-sensitive (`yantrakar` didn't match). The number after `gitpro@` is the repo ID:
+   when the repo was deleted and recreated on 2026-10-22 it changed, and the subject had
+   to be updated (`az identity federated-credential update`).
 3. The repository variables `AZURE_CLIENT_ID` and `AZURE_TENANT_ID` (the identity's
    client ID and tenant; neither is a secret).
 4. The identity's profile ID from `whoami`. The first call fails with "VSS011031: There
    is no profile for the authenticated user in the system." and creates the profile; running the job
-   again prints the ID (run 39501674294).
+   again prints the ID.
 5. The identity added as a member of publisher `yantrakar`, role Contributor, by that
    ID. The Members page refuses an email of a domain it doesn't know ("Invalid domain");
    a person is added by the ID from `profiles/me` in a browser signed in as them.

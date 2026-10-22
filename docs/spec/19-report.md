@@ -2,7 +2,7 @@
 
 Depends on 01 (`resolve.Report.to_json`, `jsonout`, `args`), 05 (`forge.Session`,
 `forge.run`), 06 (guard), 10 (agent hooks), 11 (MCP), 15 (VS Code), 16
-(`doctor.check_versions`). Facts below are as of main c3b3ef7.
+(`doctor.check_versions`). Facts below are as of main 9a4d9ab.
 
 Files this package may create or edit:
 - new: `src/gitpro/report.py`, `src/gitpro/incident.py`, `tests/test_report.py`,
@@ -32,7 +32,7 @@ Nothing else.
    - The full suite runs once, in the last step:
      `env -u FORCE_COLOR .venv/bin/python -m pytest -q -p no:cacheprovider -n auto`.
      pytest-xdist is installed in `.venv` only; it is not a project dependency.
-   - Baseline on main c3b3ef7: 1661 passed, 2 skipped in about 30 s with `-n auto`
+   - Baseline on main 9a4d9ab: 1661 passed, 2 skipped in about 30 s with `-n auto`
      (about 4 min without it).
 5. gitpro itself never contacts the network without `--online`.
    - The default path opens the user's own browser on a prefilled form. The user still
