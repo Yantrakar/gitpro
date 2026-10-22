@@ -4,7 +4,7 @@ Status: **released in 0.4.0 (2026-10-16)**, 2026-10-16: PR #19 (pins
 name a remote, scan's `ambiguous` and hook checks) and PR #20 (one-step
 setup, spec 22's surface). §7 is replaced by spec 22. User-facing behavior is
 in the README, `docs/guide.md` and `CHANGELOG.md`; decisions are in
-`DECISIONS.md`. Written 2026-10-15 against `main` at 021adb6 (0.3.4).
+`DECISIONS.md`. Written 2026-10-15 against `main` at 25ea49f (0.3.4).
 
 The owner asked for this rethink after a review of the blind spots:
 

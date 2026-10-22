@@ -12,6 +12,11 @@ Status: revised after the independent review (`REVIEW.md`); the product
 decisions in `DECISIONS.md` are final and applied throughout.
 `REVIEW-RESPONSE.md` says what was done per finding.
 
+The repository was deleted and recreated on 2026-10-22 with rewritten history.
+Pull-request numbers (`#22`) and workflow run numbers written before then refer
+to the old repository and no longer resolve on GitHub; commit IDs in these files
+were updated to the rewritten history.
+
 ## 1. Product overview
 
 gitpro gives every git repo the right **name, email, SSH key and commit
