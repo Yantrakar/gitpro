@@ -4,7 +4,8 @@ Depends on 05 (`forge.Account`, `forge.run`). Facts below are as of main 0a767db
 (release 0.4.0 and #22) and the repository settings read on 2026-10-17. Written
 2026-10-15 after 0.3.4; refreshed 2026-10-17. Open VSX added 2026-10-18 (section 13).
 Marketplace publishing from the run added 2026-10-20 (section 14). The site goes last and
-the MCP Registry waits for PyPI alone since 2026-10-21 (section 15).
+the MCP Registry waits for PyPI alone since 2026-10-21 (section 15). releasepro runs the
+release since 2026-10-22 (section 16).
 
 Files this package may create or edit:
 - new: `scripts/release.py`, `tests/test_release_script.py`;
@@ -14,6 +15,8 @@ Files this package may create or edit:
   developing and releasing paragraphs named in section 9), and this spec.
 
 Nothing else. `marketplace.yml` changes only as section 14 says.
+Section 16 adds `releasepro.toml` and `tests/test_release_workflow.py`, and removes
+`scripts/release.py` and `tests/test_release_script.py`.
 
 ## 0. Rules for this package
 
@@ -501,3 +504,47 @@ the old order were changed with it, because the user changed the order: the
 `mcp-registry` gate no longer waits for the Marketplace, the upload by hand comes after
 the run, and the Marketplace's listing is checked in step 5. Each changed test checks
 the new order instead of the old one; section 10 lists them.
+
+## 16. releasepro runs the release (added 2026-10-22)
+
+The user, 2026-10-22, chose to switch gitpro to releasepro next. This is step 5 of
+releasepro's plan (releasepro `docs/spec/00-product.md`, section 9).
+
+releasepro ([Yantrakar/releasepro](https://github.com/Yantrakar/releasepro), PyPI
+`releasepro`) is `scripts/release.py` made generic. Its 0.1.0 is this script as it was
+at 0.4.3, driven by a `releasepro.toml` instead of constants. Its tests
+(`tests/test_run.py`) are the script's tests from section 10, made generic.
+
+What changes:
+- `releasepro.toml` at the root names the repo, the version file, the six channels, the
+  GitHub release's assets, the VSIX to upload by hand and the changelog. It replaces the
+  constants at the top of `scripts/release.py` (`REPO`, `WORKFLOW`, `EXTENSION`,
+  `MCP_NAME`, `SITE_URL`, the asset names, the `gitpro why` preflight).
+- `releasepro run --as LOGIN [--yes] [--run ID]` replaces
+  `python scripts/release.py --as LOGIN [--yes] [--run ID]`, with the same steps and exit
+  codes. `releasepro verify X.Y.Z` checks every channel and changes nothing. Each
+  approval's comment is `releasepro`, not `scripts/release.py`.
+- The GitHub release's body is the release notes that `releasepro notes` makes from the
+  version's section of `CHANGELOG.md`, not GitHub's generated notes. The release also
+  gets `ANNOUNCEMENT.md`, a draft post for the person to post, as one more asset.
+- The `check` job also runs `releasepro notes --check`, so a version with no section in
+  `CHANGELOG.md` stops before CI. The `check` and `build` jobs install releasepro at a
+  pinned version from PyPI.
+- `scripts/release.py` and `tests/test_release_script.py` are removed. Three of its tests
+  don't use the script: `versions.py`, the workflows being safe to run again, and the
+  order of `site` and `mcp-registry`. They move to `tests/test_release_workflow.py`, with
+  checks added for the notes and `ANNOUNCEMENT.md`.
+
+What stays: the jobs, their order, the gates and environments, the trusted publishers,
+`scripts/versions.py` and `--stamp`, and `marketplace.yml`, `mcp-registry.yml` and
+`pages.yml`.
+
+Checked before the switch, on 2026-10-22: with this `releasepro.toml`, releasepro 0.2.0's
+`verify 0.4.3` passed all six checks, and `notes 0.4.3 --check` passed.
+
+Done when the next release through releasepro publishes the same files to the same six
+channels, in the same order, plus `ANNOUNCEMENT.md` on the GitHub release, and
+`releasepro verify X.Y.Z` passes.
+
+Sections 6, 6.1 and 10 describe the script as it was until 0.4.3. They stay as the record
+of what releasepro ported.

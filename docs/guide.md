@@ -1739,14 +1739,15 @@ covers must get `gitpro why`'s `url_form` fix. CI runs it after the tests.
 
 To release, put the new version and a short comment on a new first line of `src/gitpro/VERSION`
 (the old first line becomes line 2; line 1's first word is the version)
-(the one place the version is written; the workflows stamp it into the VSIX, `server.json` and the site), merge, then start the release workflow
-on main: `python scripts/release.py --as LOGIN`, or "Run workflow" on its
-Actions page. If the script stops (Ctrl-C, a failed job, a gate answered no), run the
+(the one place the version is written; the workflows stamp it into the VSIX, `server.json` and the site),
+add the version's section to `CHANGELOG.md` (the release notes and the announcement draft are made from it), merge, then start the release workflow
+on main with [releasepro](https://github.com/Yantrakar/releasepro): `releasepro run --as LOGIN`, or "Run workflow" on its
+Actions page. `releasepro.toml` names the channels. If releasepro stops (Ctrl-C, a failed job, a gate answered no), run the
 same command again: it follows the run still going on that commit, or offers to re-run
-the failed jobs of one that failed. Pushing a tag starts nothing. The workflow checks that `src/gitpro/VERSION` is X.Y.Z and that tag `vX.Y.Z` is new, runs the whole CI matrix, builds
+the failed jobs of one that failed. Pushing a tag starts nothing. The workflow checks that `src/gitpro/VERSION` is X.Y.Z, that `CHANGELOG.md` has its section and that tag `vX.Y.Z` is new, runs the whole CI matrix, builds
 once, and publishes the same files. Each publishing job waits for its
 environment's reviewer:
-`release` creates the tag and the GitHub release (with `SHA256SUMS`); `pypi`
+`release` creates the tag and the GitHub release (the release notes as its body, with `SHA256SUMS` and the draft `ANNOUNCEMENT.md`); `pypi`
 publishes to PyPI (trusted publishing); `marketplace` publishes the VSIX
 (`marketplace.yml`: a Microsoft Entra managed identity, variables
 `AZURE_CLIENT_ID` and `AZURE_TENANT_ID`; skipped while the variables are
@@ -1755,16 +1756,16 @@ registered for `release.yml` and the `openvsx` environment; skipped unless
 the variable `OPENVSX` is `true`); `mcp-registry` publishes `server.json` to the MCP Registry once PyPI
 has the release, signed in with the workflow's GitHub OIDC token. A registry
 version cannot be changed after it is published, so a version already there is
-skipped. The script approves each gate as it appears. When the `marketplace`
-job is skipped, the VSIX is uploaded by hand after the run: the script
+skipped. releasepro approves each gate as it appears. When the `marketplace`
+job is skipped, the VSIX is uploaded by hand after the run: releasepro
 downloads it from the release, checks it against `SHA256SUMS`, opens the
 publisher page and waits for the listing. `marketplace.yml` and `mcp-registry.yml`
 can also be run by hand for an existing tag. The site (`pages.yml`) is
 published last, once PyPI, the Marketplace, Open VSX and the MCP Registry have
 the release (a channel that is off doesn't hold it back, a failed one does), so
 it never names a version that cannot be installed; a merge to main does not publish it, and a site-only fix is
-published by running `pages.yml` by hand on main. `scripts/release.py`
-preflights the checkout (main, clean, up to date, versions, tag, PyPI,
+published by running `pages.yml` by hand on main. `releasepro run`
+preflights the checkout (main, clean, up to date, versions, changelog, tag, PyPI,
 `gitpro why`), asks before each gate (`--yes` answers for you), resumes a run
 with `--run ID`, and verifies every destination at the end (Open VSX when its
 job ran).
