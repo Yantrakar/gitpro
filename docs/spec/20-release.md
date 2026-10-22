@@ -557,3 +557,25 @@ the run used releasepro 0.2.0; 0.4.5 pins releasepro 0.2.2.
 
 Sections 6, 6.1 and 10 describe the script as it was until 0.4.3. They stay as the record
 of what releasepro ported.
+
+## 17. gitpro.dev's Shipped list (added 2026-10-22)
+
+A read-only check of gitpro.dev on 2026-10-22 found the "Shipped" list ending at 0.4.1
+while the page named v0.4.5: no release since 0.4.1 had added its line. It also found
+the JSON-LD organisation `@id` `https://yantrakar.com/#organization` (five places), where yantrakar.com
+uses `https://yantrakar.com/#org`, so search engines saw two organisations.
+
+What changes:
+- The list gets 0.4.2 to 0.4.5. Each line is `X.Y.Z · YYYY-MM-DD`, the date of the
+  version's section in `CHANGELOG.md`. The line `0.3` becomes `0.3.0`, the tag of
+  2026-10-09; 0.3.0 was never on PyPI, whose first gitpro is 0.3.1.
+- The organisation `@id` is `https://yantrakar.com/#org`.
+- `tests/test_docs.py` checks that the newest Shipped line is the newest version in
+  `CHANGELOG.md`, and that every dated line has the date of that version's section. A
+  release PR then adds the site's line with its changelog section.
+
+What stays: the sitemap `<lastmod>` is the date of the last commit that changed the page
+(`design/site_meta.py`). A deploy that only stamps a new version does not change it.
+
+The site goes live from the next release, or before it from `pages.yml` run by hand on
+main (section 1).

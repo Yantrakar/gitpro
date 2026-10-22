@@ -43,11 +43,11 @@
       "url": "https://gitpro.dev/",
       "name": "gitpro",
       "inLanguage": "en",
-      "publisher": {"@id": "https://yantrakar.com/#organization"}
+      "publisher": {"@id": "https://yantrakar.com/#org"}
     },
     {
       "@type": "Organization",
-      "@id": "https://yantrakar.com/#organization",
+      "@id": "https://yantrakar.com/#org",
       "name": "Yantrakar AS",
       "url": "https://yantrakar.com"
     },
@@ -72,8 +72,8 @@
         "https://pypi.org/project/gitpro/",
         "https://marketplace.visualstudio.com/items?itemName=yantrakar.gitpro"
       ],
-      "author": {"@id": "https://yantrakar.com/#organization"},
-      "publisher": {"@id": "https://yantrakar.com/#organization"}
+      "author": {"@id": "https://yantrakar.com/#org"},
+      "publisher": {"@id": "https://yantrakar.com/#org"}
     },
     {
       "@type": "SoftwareSourceCode",
@@ -83,7 +83,7 @@
       "programmingLanguage": "Python",
       "license": "https://opensource.org/licenses/MIT",
       "targetProduct": {"@id": "https://gitpro.dev/#software"},
-      "author": {"@id": "https://yantrakar.com/#organization"}
+      "author": {"@id": "https://yantrakar.com/#org"}
     }
   ]
 }
@@ -599,12 +599,16 @@
 <div>
 <p class="label-h">Shipped</p>
 <ol class="log">
+<li><span class="tag">0.4.5 · 2026-10-22</span><p>The short release announcement is plain text, and the release workflow names the releasepro version in one place.</p></li>
+<li><span class="tag">0.4.4 · 2026-10-22</span><p>Releases are run by <a href="https://github.com/Yantrakar/releasepro" rel="noopener">releasepro</a>, with a person's yes at each channel's gate. Each GitHub release carries its changelog section and a draft announcement.</p></li>
+<li><span class="tag">0.4.3 · 2026-10-21</span><p>gitpro.dev is published last, once PyPI, the Marketplace, Open VSX and the MCP Registry have the version.</p></li>
+<li><span class="tag">0.4.2 · 2026-10-20</span><p>A short demo in the README and on gitpro.dev. The VS Code extension on Open VSX. Hints, fixes and errors name only commands that stay in 0.5.0, such as <code>gitpro setup</code> and <code>audit --fix</code>.</p></li>
 <li><span class="tag">0.4.1 · 2026-10-18</span><p><code>gitpro why</code>, the MCP server, <code>gitpro keys</code> and <code>gitpro scan --lost</code> mask tokens in remote URLs and in gh and glab errors. Writes are fsynced, and <code>gitpro why</code> reads commit trailers as the commit-msg hook does.</p></li>
 <li><span class="tag">0.4.0 · 2026-10-16</span><p><code>gitpro setup</code> finds your identities in the repositories you already have and sets up everything in one step. One short list of commands, the same in the terminal, VS Code and MCP: <code>why</code> also checks a commit, <code>scan --lost</code> finds unpushed work, <code>pin --remove</code> and <code>audit --fix</code>. The commands they replace still work and are removed in 0.5.0.</p></li>
 <li><span class="tag">0.3.4 · 2026-10-15</span><p><code>gitpro report</code>: a redacted bug, crash or blocked-commit report, opened as a GitHub issue only when you say yes, and <code>--security</code> for the private form. The <code>draft_report</code> MCP tool, a Report an Issue command in VS Code, and a listing in the official MCP Registry.</p></li>
 <li><span class="tag">0.3.3 · 2026-10-15</span><p>The gitpro icon and gitpro.dev links on PyPI and the Marketplace, and metadata for the official MCP registry. SourceHut <code>~user</code> owners, and fixes from <code>gitpro why</code> for more remote URL forms.</p></li>
 <li><span class="tag">0.3.2 · 2026-10-11</span><p>VS Code Marketplace extension, with the identity in Source Control.</p></li>
-<li><span class="tag">0.3 · 2026-10-09</span><p>Guided setup. Agent operations: preflight, approved changes and recoverable apply.</p></li>
+<li><span class="tag">0.3.0 · 2026-10-09</span><p>Guided setup. Agent operations: preflight, approved changes and recoverable apply.</p></li>
 <li><span class="tag">0.2</span><p>Guard hooks, audit, the MCP server, the Claude Code hook, team policy in CI, dev containers, the VS Code identity bar and <code>lost</code>.</p></li>
 <li><span class="tag">0.1</span><p>Identities by remote URL, generated git and SSH config, plan and apply.</p></li>
 </ol>

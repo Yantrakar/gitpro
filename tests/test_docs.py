@@ -603,6 +603,25 @@ def test_site_structured_data_is_the_release():
     assert "FAQPage" not in {n["@type"] for n in data["@graph"]}
 
 
+def test_site_shipped_list_follows_the_changelog():
+    # spec 20, section 17: a release adds its line, dated as its changelog section
+    shipped = SITE[SITE.index('<p class="label-h">Shipped</p>'):]
+    shipped = shipped[:shipped.index("</ol>")]
+    lines = re.findall(r'<span class="tag">([\d.]+)(?: · (\d{4}-\d{2}-\d{2}))?</span>', shipped)
+    changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    dated = dict(re.findall(r"^## (\d+\.\d+\.\d+) \((\d{4}-\d{2}-\d{2})\)$", changelog, re.M))
+    newest = re.search(r"^## (\d+\.\d+\.\d+)", changelog, re.M)[1]
+    assert lines and lines[0][0] == newest, (lines[:1], newest)
+    assert [(v, d) for v, d in lines if d and v in dated and dated[v] != d] == []
+    assert all(re.fullmatch(r"\d+\.\d+(\.\d+)?", v) for v, _ in lines)
+
+
+def test_site_organisation_is_yantrakar_coms():
+    data = json.loads(re.search(r'<script type="application/ld\+json">(.+?)</script>', SITE, re.S)[1])
+    org = next(n for n in data["@graph"] if n["@type"] == "Organization")
+    assert org["@id"] == "https://yantrakar.com/#org"      # the id yantrakar.com gives itself
+    assert set(re.findall(r'"@id": "(https://yantrakar\.com/[^"]*)"', SITE)) == {org["@id"]}
+
 def test_llms_txt_lists_the_default_mcp_tools_and_real_docs():
     from gitpro import mcp
     assert LLMS.startswith("# gitpro\n\n> ")
