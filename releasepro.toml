@@ -1,0 +1,33 @@
+# How gitpro releases, run by releasepro (https://github.com/Yantrakar/releasepro).
+# Spec: docs/spec/20-release.md, section 16.
+
+[release]
+repo = "Yantrakar/gitpro"
+version_file = "src/gitpro/VERSION"   # the first word of line 1 is X.Y.Z
+branch = "main"
+workflow = "release.yml"
+preflight = ["gitpro why"]            # must exit 0 before a run starts
+
+[channel.github]
+assets = ["gitpro-{v}-py3-none-any.whl", "gitpro-{v}.tar.gz", "gitpro-{v}.vsix", "SHA256SUMS", "ANNOUNCEMENT.md"]
+
+[channel.pypi]
+project = "gitpro"
+
+[channel.vscode-marketplace]
+extension = "yantrakar.gitpro"
+vsix = "gitpro-{v}.vsix"              # uploaded by hand when the marketplace job is skipped
+
+[channel.openvsx]
+extension = "yantrakar/gitpro"
+
+[channel.mcp-registry]
+name = "io.github.Yantrakar/gitpro"
+
+[channel.site]
+url = "https://gitpro.dev/"
+names_version = '"softwareVersion": "{v}"'
+
+[notes]
+changelog = "CHANGELOG.md"
+summary = "gitpro gives every repository the right Git identity, SSH key and signature."

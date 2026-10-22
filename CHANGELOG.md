@@ -4,6 +4,17 @@ All notable changes to gitpro. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Release notes for
 earlier versions are on [GitHub releases](https://github.com/Yantrakar/gitpro/releases).
 
+## Unreleased
+
+### Changed
+
+- Release: [releasepro](https://github.com/Yantrakar/releasepro) runs it.
+  `releasepro run --as LOGIN` replaces `scripts/release.py`, with the same
+  steps, and `releasepro.toml` names the six channels. The GitHub release's
+  body is now the version's section of this changelog, with where to get it,
+  and the release gets a draft announcement, `ANNOUNCEMENT.md`. The release
+  stops before CI when this changelog has no section for the version.
+
 ## 0.4.3 (2026-10-21)
 
 ### Changed

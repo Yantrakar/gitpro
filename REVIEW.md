@@ -56,7 +56,7 @@ A gitpro bug is serious when it does one of these. Look for them first.
 
 ## Needs the maintainer, whatever the size
 
-- .github/workflows/, scripts/release.py, action.yml and server.json:
+- .github/workflows/, releasepro.toml, action.yml and server.json:
   they publish or run on other people's repositories.
 - The git hooks (src/gitpro/guard.py), the agent hook (src/gitpro/agents.py,
   hooks/hooks.json) and the MCP server (src/gitpro/mcp.py): they run inside
