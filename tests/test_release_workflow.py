@@ -62,7 +62,9 @@ def test_the_release_notes_come_from_the_changelog():
     assert "--generate-notes" not in jobs
     assert block["github"].count("--notes-file notes/RELEASE_NOTES.md") == 2
     assert block["github"].count("notes/ANNOUNCEMENT.md") == 2
-    pins = set(re.findall(r"pip install (releasepro\S*)", jobs))
-    assert len(pins) == 1 and re.fullmatch(r"releasepro==\d+\.\d+\.\d+", pins.pop())
+    head = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8").split("\njobs:\n", 1)[0]
+    assert re.search(r"^env:\n  RELEASEPRO: releasepro==\d+\.\d+\.\d+ ", head, re.M)
+    assert re.findall(r"pip install \S*releasepro\S*", jobs) == []
+    assert jobs.count('pip install "$RELEASEPRO"') == 2
     toml = (ROOT / "releasepro.toml").read_text(encoding="utf-8")
     assert '"ANNOUNCEMENT.md"' in toml and 'changelog = "CHANGELOG.md"' in toml
