@@ -42,8 +42,11 @@ pattern = '\A(?P<version>\d+\.\d+\.\d+)'
 [tool.hatch.build.targets.wheel]
 packages = ["src/gitpro"]
 
+[tool.hatch.build.targets.wheel.force-include]
+"skills/gitpro/SKILL.md" = "gitpro/skill/SKILL.md"   # the one source of the skill; setup -n compares copies to it
+
 [tool.hatch.build.targets.sdist]
-include = ["/src/gitpro", "/README.md", "/LICENSE"]
+include = ["/src/gitpro", "/skills/gitpro/SKILL.md", "/README.md", "/LICENSE"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
