@@ -576,7 +576,8 @@ def _apply_files(cfg: config.Config, env, guard: bool) -> None:
 
 def _apply_skills(w: Work) -> int:
     """Update the stale skill copies: each is written through its link (never replacing it), after a backup
-    beside it. Returns the number that failed."""
+    in the state folder: a file beside SKILL.md would sit in the skills folder, which may be a synced
+    or committed store. Returns the number that failed."""
     from . import files, undo, view
     failed = 0
     lines: List[str] = []
@@ -585,7 +586,9 @@ def _apply_skills(w: Work) -> int:
             current = c.path.read_bytes()
             if c.old is None or current.decode("utf-8") != c.old:
                 raise OSError("it changed since it was checked")
-            bak = files._backup(c.path, current)
+            into = undo.state_dir() / "skill-backups"
+            into.mkdir(mode=0o700, exist_ok=True)
+            bak = files._backup(c.path, current, into=into)
             lines.append(f"cp -p {shlex.quote(str(bak))} {shlex.quote(str(c.path))}")
             files.atomic_write(c.path, w.skill_text or b"", c.mode)
         except (OSError, UnicodeDecodeError) as e:

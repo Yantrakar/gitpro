@@ -130,8 +130,8 @@ no file is not a copy.
 - `setup -n --json`: `skills` is `[{"path": <physical file>, "state": …}]`. A `differs` copy is
   a pending row (group `gitpro skill`), so `-n` exits 1 and `ok` is false.
 - `setup -y` (after the usual confirmation): for each differing copy, read it again (refuse if
-  it changed since the check), write a backup `SKILL.md.bak.<stamp>` next to the file
-  (`files._backup`), replace the content atomically with the same mode through the link
+  it changed since the check), write a backup `SKILL.md.bak.<stamp>` in `<state>/skill-backups/`
+  (`files._backup`; not beside the file, whose folder may be a synced or committed skill store), replace the content atomically with the same mode through the link
   (`files.atomic_write`; the link stays), and add `cp -p <backup> <file>` to the setup undo
   script. A failure is reported and makes `setup` exit 1.
 - It never creates a copy. `uninstall` does not touch skill copies.

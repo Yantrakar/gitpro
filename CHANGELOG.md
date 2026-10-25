@@ -18,8 +18,9 @@ earlier versions are on [GitHub releases](https://github.com/Yantrakar/gitpro/re
   registration for GitHub Copilot CLI.
 - `setup -n` reports an installed gitpro skill (`~/.claude/skills/gitpro`,
   `~/.copilot/skills/gitpro`, `~/.agents/skills/gitpro`) that differs from the
-  one in this gitpro, and `setup -y` updates only those copies, with a backup and
-  an undo line. It never creates a copy.
+  one in this gitpro, and `setup -y` updates only those copies, with a backup in
+  gitpro's state folder (`skill-backups/`), not in the skills folder, and an undo
+  line. It never creates a copy.
 - The skill (`skills/gitpro/SKILL.md`) is inside the wheel and the sdist.
 - Spec 23, `docs/spec/23-agent-setup.md`.
 

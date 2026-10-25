@@ -457,8 +457,8 @@ not write it. Without `--agent`, an agent that cannot be covered is only a note.
 **The gitpro skill.** `setup -n` also looks for an installed copy of the skill at
 `~/.claude/skills/gitpro`, `~/.copilot/skills/gitpro` and `~/.agents/skills/gitpro`. A link to
 one file counts once. `skills` lists each copy as `current` or `differs`, and a copy that
-differs is a pending change (`gitpro skill`). `setup -y` shows it first, keeps a backup next to
-the file, replaces the content atomically through the link (the link stays), and adds a line
+differs is a pending change (`gitpro skill`). `setup -y` shows it first, keeps a backup in
+gitpro's state folder (`skill-backups/`), replaces the content atomically through the link (the link stays), and adds a line
 to the undo script. It never creates a copy where there is none. The skill comes from
 `skills/gitpro/SKILL.md`, which is also inside the wheel and the sdist.
 

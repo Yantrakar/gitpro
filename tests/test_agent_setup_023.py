@@ -234,7 +234,8 @@ def test_setup_y_updates_through_the_link_with_a_backup(cfg, home, capsys):
     assert real.read_bytes() == SKILL.read_bytes()
     assert link_dir.is_symlink() and (link_dir / "gitpro" / "SKILL.md").read_bytes() == SKILL.read_bytes()
     assert stat.S_IMODE(real.stat().st_mode) == 0o640
-    backups = list(real.parent.glob("SKILL.md.bak.*"))
+    assert not list(real.parent.glob("SKILL.md.bak.*"))   # nothing new in the skills folder
+    backups = list((home / ".local" / "state" / "gitpro" / "skill-backups").glob("SKILL.md.bak.*"))
     assert len(backups) == 1 and backups[0].read_text() == "old skill\n"
     undo = list((home / ".local" / "state" / "gitpro").glob("setup-undo-*.sh"))
     assert any("SKILL.md" in u.read_text() for u in undo)

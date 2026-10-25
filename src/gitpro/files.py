@@ -72,12 +72,14 @@ def show(changes: list[Change], diffs: bool) -> None:
                 (c.old or "").splitlines(True), (c.new or "").splitlines(True), f"a{c.path}", f"b{c.path}"))
 
 
-def _backup(path: Path, data: bytes | None = None) -> Path:
+def _backup(path: Path, data: bytes | None = None, into: Path | None = None) -> Path:
+    """A copy of path (O_EXCL, 0600) named <name>.bak.<stamp>, beside it or in the folder into."""
     stamp = time.strftime("%Y%m%d-%H%M%S")
     if data is None:
         data = path.read_bytes()
     for n in range(100):
-        bak = path.with_name(f"{path.name}.bak.{stamp}" + (f".{n}" if n else ""))
+        name = f"{path.name}.bak.{stamp}" + (f".{n}" if n else "")
+        bak = into / name if into is not None else path.with_name(name)
         try:
             fd = os.open(bak, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         except FileExistsError:
