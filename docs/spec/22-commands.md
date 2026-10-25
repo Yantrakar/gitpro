@@ -59,8 +59,8 @@ change and asks once; `-y` skips the question; `-n` only shows. In 0.4.0 this
 holds for `setup`: without a terminal and without `-y` or `-n` it exits 2
 naming both. `pin`, `scan --fix` and `audit --fix` keep their 0.3 behavior
 (a preview without `-y`) in 0.4.x and also accept `-n`, which shows that
-same preview with the same exit code (`-n -y` is refused; `scan --fix --json` still writes without `-y`, see
-00-existing known issue 2); they move to R4 in
+same preview with the same exit code (`-n -y` is refused; `scan --fix --json` without `-y` also previews, from
+the release after 0.4.5: spec 23 section 3.1); they move to R4 in
 0.5.0 **(Claude's choice: no behavior change for kept commands in a minor
 release)**.
 
