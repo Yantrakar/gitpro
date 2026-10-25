@@ -46,7 +46,12 @@ PARSE_ERROR, INVALID_REQUEST, NO_METHOD, INVALID_PARAMS, INTERNAL_ERROR = -32700
 
 
 class ToolError(Exception):
-    """A gitpro error a tool reports as a result with isError (the server carries on)."""
+    """A gitpro error a tool reports as a result with isError (the server carries on). data, when given, is
+    the same error object the command's --json prints; the result carries it instead of the message."""
+
+    def __init__(self, message: str = "", data: Optional[dict] = None):
+        super().__init__(message)
+        self.data = data
 
 
 class RpcError(Exception):
@@ -152,7 +157,13 @@ def tool_why(args: dict, ctx: Ctx) -> dict:
     from . import resolve
     resolve.require_git()
     repo = _repo(args["path"])
-    cfg = ctx.config()
+    try:
+        cfg = ctx.config()
+    except ConfigError as e:
+        if ctx.cfg_path:      # an explicit config is an error, as `why -c PATH --json`
+            raise
+        # the object `why --json` prints when there is no usable config (shared construction)
+        raise ToolError(str(e), _envelope("why", {"ok": False, **resolve.why_error(e, repo)})) from None
     rep = resolve.compare(repo, cfg, remote=args.get("remote"), home=ctx.home)
     data = rep.to_json()
     data.pop("ok")
@@ -666,7 +677,7 @@ class Server:
             return self.failed(f"internal error: the tool stopped ({type(e).__name__}"
                                + (f" {code}" if code not in (None, 0) else "") + ")")
         except (ToolError, ConfigError, OSError, UnicodeError) as e:
-            return self.failed(str(e))
+            return self.failed_with(str(e), getattr(e, "data", None))
         except subprocess.CalledProcessError as e:
             cmd = e.cmd if isinstance(e.cmd, str) else shlex.join(str(c) for c in e.cmd)
             return self.failed(f"{cmd} failed ({e.returncode})")
@@ -695,6 +706,17 @@ class Server:
     @staticmethod
     def failed(message: str) -> dict:
         return {"content": [{"type": "text", "text": f"✗ {redact(message)}"}], "isError": True}
+
+    def failed_with(self, message: str, data: Optional[dict]) -> dict:
+        """An error result. With data, the command's own error object, as `--json` prints it."""
+        if data is None:
+            return self.failed(message)
+        obj = redact(data)
+        out = {"content": [{"type": "text", "text": json.dumps(obj, ensure_ascii=False, allow_nan=False)}],
+               "isError": True}
+        if self.version >= STRUCTURED_SINCE:
+            out["structuredContent"] = obj
+        return out
 
 
 def _error(mid: object, code: int, message: str) -> dict:
