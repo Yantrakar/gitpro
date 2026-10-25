@@ -493,7 +493,7 @@ def test_scan_json(home, tmp_path, capsys):
         "fixable": ["user.email"]}]
     assert rep["suggestions"][0]["owners"] == ["someone"]
 
-    assert run("scan", "--fix", "--json", "--repo", str(stale)) == 0  # --json needs no terminal and no -y
+    assert run("scan", "--fix", "--json", "-y", "--repo", str(stale)) == 0  # --json needs -y to write
     done = json.loads(capsys.readouterr().out)
     assert done["removed"] == [{"path": str(stale), "key": "user.email", "value": "old@personal.test"}]
     assert Path(done["undo"]).is_file()

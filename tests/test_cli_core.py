@@ -379,12 +379,12 @@ def test_scan_json_envelope(cfg, tmp_path, capsys):  # 36
     assert run("scan", "--json", str(root)) == 0
     rep = json.loads(capsys.readouterr().out)
     assert rep["ok"] is True and rep["command"] == "scan" and rep["repos"] == 1
-    assert run("scan", "--fix", "--json", "--repo", str(stale)) == 0
+    assert run("scan", "--fix", "--json", "-y", "--repo", str(stale)) == 0
     done = json.loads(capsys.readouterr().out)
     assert done["ok"] is True and done["command"] == "scan"
     assert done["removed"] == [{"path": str(stale), "key": "user.email", "value": "old@personal.test"}]
     text = Path(done["undo"]).read_text()
     assert text.startswith("#!/bin/sh\n") and f"git -C {stale} config user.email old@personal.test" in text
     assert "set -e" not in text
-    assert run("scan", "--fix", "--json", "--repo", str(stale)) == 0
+    assert run("scan", "--fix", "--json", "-y", "--repo", str(stale)) == 0
     assert json.loads(capsys.readouterr().out) == {"ok": True, "command": "scan", "removed": [], "undo": None}

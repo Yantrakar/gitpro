@@ -494,8 +494,8 @@ def cmd_scan(args) -> int:
     if args.lost and args.fix:
         raise config.ConfigError("--lost lists work only you can sort out, so it does not go with --fix; "
                                  "run gitpro scan --lost without --fix")
-    # -n shows the fix and changes nothing; --json without -y still writes (00-existing, known issue 2)
-    preview = bool(args.fix and args.dry_run and preview_only(args))
+    # -n shows the fix and changes nothing; so does --json without -y (spec 23 section 3.1)
+    preview = bool(args.fix and ((args.dry_run and preview_only(args)) or (args.json and not args.yes)))
     if preview:
         args.fix = False
     ask = args.fix and not args.yes and not args.json
