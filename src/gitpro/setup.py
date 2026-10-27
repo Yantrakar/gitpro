@@ -22,9 +22,14 @@ from .config import ConfigError, check
 
 Snapshot = Optional[Tuple[bytes, os.stat_result]]
 # agents.INSTALL_CHOICES + mcp.AGENTS (a test keeps them in step), and none
-AGENTS = ("claude", "claude-desktop", "codex", "cursor", "gemini", "opencode", "none")
-TITLE = {"claude": "Claude Code", "claude-desktop": "Claude Desktop", "codex": "Codex", "cursor": "Cursor",
-         "gemini": "Gemini CLI", "opencode": "opencode"}
+# plus copilot, which is accepted so that asking for it says plainly that gitpro cannot cover it
+AGENTS = ("claude", "claude-desktop", "codex", "copilot", "cursor", "gemini", "opencode", "none")
+TITLE = {"claude": "Claude Code", "claude-desktop": "Claude Desktop", "codex": "Codex",
+         "copilot": "GitHub Copilot CLI", "cursor": "Cursor", "gemini": "Gemini CLI", "opencode": "opencode"}
+# Agents that gitpro has no hook or MCP registration for, and why (shown when one is asked for by name).
+NO_COVERAGE = {"codex": "gitpro has no hook or MCP registration for Codex",
+               "copilot": "gitpro has no hook or MCP registration for GitHub Copilot CLI (its MCP servers are in "
+                          "~/.copilot/mcp-config.json, but its own help does not show that file's format)"}
 QUESTION = "Apply these changes?"
 LEARN = "Look through your repos to find your identities?"
 LEARN_BUDGET = 20.0    # seconds for inspecting the repos found
@@ -362,9 +367,14 @@ class Work:
     mcps: List[Tuple[str, str]] = field(default_factory=list)
     done: List[str] = field(default_factory=list)   # already in place
     notes: List[str] = field(default_factory=list)  # left alone, and why
+    coverage: List[dict] = field(default_factory=list)   # per agent: hook and MCP status (see inspect)
+    uncovered: List[str] = field(default_factory=list)  # agents asked for by name that gitpro cannot cover
+    skills: List[dict] = field(default_factory=list)    # installed gitpro skill copies: {"path","state"}
+    skill_stale: list = field(default_factory=list)     # skillcopy.Copy that differ from the bundled skill
+    skill_text: Optional[bytes] = None                  # the bundled skill
 
     def pending(self) -> bool:
-        return bool(self.config or self.keys or self.changes or self.hooks or self.mcps)
+        return bool(self.config or self.keys or self.changes or self.hooks or self.mcps or self.skill_stale)
 
 
 def _empty(cfg: config.Config) -> bool:
@@ -405,8 +415,35 @@ def _agents(args, home: Path) -> List[str]:
     return ["claude"] if (home / ".claude").is_dir() or shutil.which("claude") else []
 
 
-def inspect(cfg: config.Config, env, names: List[str]) -> Work:
-    """What the files, the guard and the agents still need; reads only."""
+def _skills(w: Work, home: Path) -> None:
+    """Which installed gitpro skill copies differ from the one bundled with this gitpro (spec 23 section 5).
+    Reads only. A copy that is not there is not reported: setup never creates one."""
+    from . import skillcopy
+    w.skill_text = skillcopy.bundled()
+    if w.skill_text is None:
+        w.notes.append("the gitpro skill is not bundled with this install; installed copies not checked")
+        return
+    for c in skillcopy.copies(home, w.skill_text):
+        w.skills.append({"path": str(c.path), "state": c.state})
+        if c.state == "differs":
+            w.skill_stale.append(c)
+        elif c.state == "unreadable":
+            w.notes.append(f"{c.path}: the gitpro skill is there but cannot be read; left alone")
+        else:
+            w.done.append(f"gitpro skill {undo_tilde(c.path)}")
+
+
+def undo_tilde(path: Path) -> str:
+    from . import undo
+    return undo.tilde(path)
+
+
+def inspect(cfg: config.Config, env, names: List[str], explicit: bool = False) -> Work:
+    """What the files, the guard and the agents still need; reads only. For each agent in names, w.coverage
+    has {"agent", "hook", "mcp"[, "reason"]}, each status one of "installed" (gitpro's entry is in the
+    agent's config file), "plugin" (a plugin that ships it is enabled), "missing" (setup would add it) or
+    "unavailable". None of these says the agent loaded it. With explicit (the user named the agents), an
+    agent with neither a hook nor an MCP server available goes to w.uncovered."""
     from . import agents, keys, mcp, plan
     w = Work()
     for k in keys.inventory(cfg.default, list(cfg.identities)):
@@ -418,6 +455,7 @@ def inspect(cfg: config.Config, env, names: List[str]) -> Work:
                            "setup does not create a key over it")
         else:
             w.keys.append(k)
+    _skills(w, env.home)
     w.guard, why = _guard(cfg, env)
     if why:
         w.notes.append(why)
@@ -430,22 +468,41 @@ def inspect(cfg: config.Config, env, names: List[str]) -> Work:
         title = TITLE[a]
         if a == "claude" and agents.plugin_enabled(env.home):
             w.done.append("Claude Code: the gitpro plugin provides the hook and the MCP server")
+            w.coverage.append({"agent": a, "hook": "plugin", "mcp": "plugin"})
             continue
-        parts = [("hook", agents.hook_change, w.hooks)] if a in agents.HOOK_AGENTS else []
-        parts += [("MCP server", mcp.install_change, w.mcps)] if a in mcp.AGENTS else []
-        if not parts:
-            w.notes.append(f"{title}: gitpro has no hook or MCP entry for it; the commit guard still checks "
-                           "its commits")
-        for what, change, todo in parts:
+        row = {"agent": a}
+        reasons: List[str] = []
+        for what, key, change, todo, known in (("hook", "hook", agents.hook_change, w.hooks, agents.HOOK_AGENTS),
+                                               ("MCP server", "mcp", mcp.install_change, w.mcps, mcp.AGENTS)):
+            if a not in known:
+                row[key] = "unavailable"
+                continue
             try:
                 line = change(a, env.home)
             except ConfigError as e:
+                row[key] = "unavailable"
+                reasons.append(f"{what} not set up: {e}")
                 w.notes.append(f"{title} {what} not set up: {e}")
                 continue
             if line:
+                row[key] = "missing"
                 todo.append((a, line))
             else:
+                row[key] = "installed"
                 w.done.append(f"{title} {what}")
+        if row["hook"] == "unavailable" and row["mcp"] == "unavailable":
+            why = NO_COVERAGE.get(a) or "; ".join(reasons) or f"gitpro has no hook or MCP entry for {title}"
+            reasons = [why]
+            if explicit:
+                w.uncovered.append(f"{title}: {why}; the commit guard still checks its commits")
+            else:
+                w.notes.append(f"{title}: {why}; the commit guard still checks its commits")
+        elif a not in agents.HOOK_AGENTS or a not in mcp.AGENTS:
+            reasons.append("gitpro has no " + ("hook" if a not in agents.HOOK_AGENTS else "MCP registration")
+                           + f" for {title}")
+        if reasons:
+            row["reason"] = "; ".join(reasons)
+        w.coverage.append(row)
     return w
 
 
@@ -474,6 +531,8 @@ def rows(w: Work, env, passphrase: bool) -> List[Tuple[str, str]]:
                               "for the right identity)"))
     rows += [(f"{TITLE[a]} hook", f"{line} (checks the git commands it runs)") for a, line in w.hooks]
     rows += [(f"{TITLE[a]} MCP", f"{line} (read-only identity tools)") for a, line in w.mcps]
+    rows += [("gitpro skill", f"update {undo.tilde(c.path)} to this gitpro's version (a backup is kept)")
+             for c in w.skill_stale]
     order = ["config", "SSH key", "Git, SSH", "guard"]
     rows.sort(key=lambda r: order.index(r[0]) if r[0] in order else len(order))   # stable: agents keep theirs
     return rows
@@ -497,6 +556,8 @@ def show(out, w: Work, env, passphrase: bool) -> None:
         out.print(Text("Already in place: " + "; ".join(w.done), style="dim"), soft_wrap=True)
     for n in w.notes:
         out.print(Text("⚠ " + n, style="yellow"), soft_wrap=True)
+    for n in w.uncovered:
+        out.print(Text("✗ " + n, style="red"), soft_wrap=True)
 
 
 def _apply_files(cfg: config.Config, env, guard: bool) -> None:
@@ -511,6 +572,34 @@ def _apply_files(cfg: config.Config, env, guard: bool) -> None:
     files.apply(changes)
     view.ok(f"wrote {view.plural(len(changes), 'file')} for Git, SSH" + (" and the commit guard" if guard else ""))
     print(f"↩ undo: sh {undo.tilde(script)}")
+
+
+def _apply_skills(w: Work) -> int:
+    """Update the stale skill copies: each is written through its link (never replacing it), after a backup
+    in the state folder: a file beside SKILL.md would sit in the skills folder, which may be a synced
+    or committed store. Returns the number that failed."""
+    from . import files, undo, view
+    failed = 0
+    lines: List[str] = []
+    for c in w.skill_stale:
+        try:
+            current = c.path.read_bytes()
+            if c.old is None or current.decode("utf-8") != c.old:
+                raise OSError("it changed since it was checked")
+            into = undo.state_dir() / "skill-backups"
+            into.mkdir(mode=0o700, exist_ok=True)
+            bak = files._backup(c.path, current, into=into)
+            lines.append(f"cp -p {shlex.quote(str(bak))} {shlex.quote(str(c.path))}")
+            files.atomic_write(c.path, w.skill_text or b"", c.mode)
+        except (OSError, UnicodeDecodeError) as e:
+            failed += 1
+            view.error(f"{c.path}: skill not updated: {e}")
+            continue
+        view.ok(f"updated {undo.tilde(c.path)} (backup: {undo.tilde(bak)})")
+    if lines:
+        script = undo.write("setup", lines, what="gitpro skill copies")
+        print(f"↩ undo: sh {undo.tilde(script)}")
+    return failed
 
 
 def _identity_json(i, d) -> dict:
@@ -529,12 +618,12 @@ def state(args, home: Path, path: Path, cfg: Optional[config.Config], names: Lis
         todo = [{"group": "config", "what": f"no identities in {undo.tilde(path)} yet: run gitpro setup in a terminal"}]
         if args.json:
             jsonout.emit("setup", {"dry_run": True, "config": str(path), "identities": [], "default": None,
-                                   "pending": todo, "done": [], "notes": []}, ok=False)
+                                   "pending": todo, "done": [], "notes": [], "agents": [], "uncovered": [], "skills": []}, ok=False)
         else:
             print(f"Config: {path}")
             view.warn(todo[0]["what"])
         return 1
-    w = inspect(cfg, env, names)
+    w = inspect(cfg, env, names, explicit=bool(args.agent))
     pending = [{"group": g, "what": what} for g, what in rows(w, env, passphrase=not args.no_passphrase)]
     warnings = list(lint.warnings(cfg.default, list(cfg.identities), env))
     if args.json:
@@ -544,8 +633,9 @@ def state(args, home: Path, path: Path, cfg: Optional[config.Config], names: Lis
             "identities": [_identity_json(i, d) for i in cfg.identities],
             "default": {"name": d.name, "email": d.email, "gh_account": d.gh_account, "glab_account": d.glab_account,
                         "clone_dir": d.clone_dir, "sign": d.sign},
-            "pending": pending, "done": w.done, "notes": w.notes + warnings}, ok=not pending)
-        return 1 if pending else 0
+            "pending": pending, "done": w.done, "notes": w.notes + warnings, "agents": w.coverage,
+            "uncovered": w.uncovered, "skills": w.skills}, ok=not (pending or w.uncovered))
+        return 1 if pending or w.uncovered else 0
     out = view.console()
     out.print(Text(f"Config: {cfg.path}"))
     for identity in cfg.identities:
@@ -560,6 +650,8 @@ def state(args, home: Path, path: Path, cfg: Optional[config.Config], names: Lis
         keys.report(inv, env.expand)
     if pending:
         view.step("to do it: gitpro setup")
+        return 1
+    if w.uncovered:
         return 1
     view.ok("this machine is set up; nothing to change")
     return 0
@@ -619,14 +711,14 @@ def cmd_setup(args) -> int:
             out.print(Syntax(text[len(original):] if added else text, "toml", word_wrap=True))
 
     env = plan.Env(home)
-    w = inspect(cfg, env, names)
+    w = inspect(cfg, env, names, explicit=bool(args.agent))
     if text != original:
         w.config = (f"create {undo.tilde(path)}" if before is None else
                     f"update {undo.tilde(path)} (a backup is kept)")
     show(out, w, env, passphrase=not args.no_passphrase)
     failed = 0
     if not w.pending():
-        view.ok("this machine is set up; nothing to change")
+        view.ok("nothing to change" if w.uncovered else "this machine is set up; nothing to change")
     else:
         out.print(Text("Repos are not changed: 'gitpro scan' lists the ones that need a fix.", style="dim"))
         check(not w.keys or args.no_passphrase or tty,
@@ -656,8 +748,9 @@ def cmd_setup(args) -> int:
         for a, _ in w.mcps:
             failed += mcp.cmd_install(argparse.Namespace(
                 agent=a, scope="user", home=home, json=False, yes=True, write=True, force=False)) != 0
+        failed += _apply_skills(w)
         if failed:
-            view.error("an agent step failed (above); run gitpro setup again after fixing it")
+            view.error("a step failed (above); run gitpro setup again after fixing it")
     for msg in lint.warnings(cfg.default, list(cfg.identities), env):
         view.warn(msg)
     inv = keys.inventory(cfg.default, list(cfg.identities))
@@ -665,4 +758,4 @@ def cmd_setup(args) -> int:
         out.print()
         keys.report(inv, env.expand)
     view.step("check your repos: gitpro scan (it changes nothing; it shows each fix)")
-    return 1 if failed else 0
+    return 1 if failed or w.uncovered else 0

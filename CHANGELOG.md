@@ -4,6 +4,48 @@ All notable changes to gitpro. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Release notes for
 earlier versions are on [GitHub releases](https://github.com/Yantrakar/gitpro/releases).
 
+## Unreleased
+
+### Added
+
+- `why --json` and the MCP tool `why`: `commit.guard_would_block`, the Git guard's
+  verdict (its own identity check under `[guard] on_mismatch`, plus a trailer
+  problem). `commit.would_block` stays the agent hook's verdict and is now
+  documented as that.
+- `setup -n --json`: `agents` (per agent, `hook` and `mcp` as `installed`,
+  `plugin`, `missing` or `unavailable`), `uncovered` and `skills`. `setup
+  --agent copilot` is accepted so that it can say gitpro has no hook or MCP
+  registration for GitHub Copilot CLI.
+- `setup -n` reports an installed gitpro skill (`~/.claude/skills/gitpro`,
+  `~/.copilot/skills/gitpro`, `~/.agents/skills/gitpro`) that differs from the
+  one in this gitpro, and `setup -y` updates only those copies, with a backup in
+  gitpro's state folder (`skill-backups/`), not in the skills folder, and an undo
+  line. It never creates a copy.
+- The skill (`skills/gitpro/SKILL.md`) is inside the wheel and the sdist.
+- Spec 23, `docs/spec/23-agent-setup.md`.
+
+### Changed
+
+- `scan --fix --json` without `-y` only previews, like `-n`, and prints
+  `"dry_run": true`. 0.3 to 0.4.5 wrote without `-y`. Use `-y`; the VS Code
+  extension already does.
+- `setup --agent NAME` for an agent gitpro cannot cover (Codex, Copilot CLI)
+  prints a `✗` line and exits 1, in `-n` and in `-y`. `setup -n` also exits 1
+  when an installed skill copy differs.
+- The skill: a rule set for committing, pushing and opening a pull request
+  (check that gitpro is there, read `commit.problems` and not the exit code, a
+  blocked commit is not done, push and PR fail closed), the missing deprecation
+  rows (`setup --write`, `scan --suggest`), and corrected statements about
+  `setup`, pins, `uninstall`, ambiguity and "read-only".
+
+### Fixed
+
+- A repo with no remote and no `[default]` name and email: the fix no longer
+  offers `gitpro setup --add PATH` (there is no remote to learn from), and the
+  text no longer says git will refuse to commit when git has its own email.
+- The MCP tool `why` returns the same error object as `why --json` (`error`,
+  `config: null`, and the repo fields), with `isError`.
+
 ## 0.4.5 (2026-10-22)
 
 ### Fixed

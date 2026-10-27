@@ -262,8 +262,8 @@ printed raw (`file:/abs/path`, `command line:`, etc.), not tilde'd.
   setting, `✓ removed N settings from M repos`, `↩ undo: sh <script>`. Only
   fixable settings are removed. `--fix` with nothing fixable: `✓ nothing to
   fix`.
-- `--fix --json`: no question is asked even without `-y` (see known issues);
-  prints `{"removed": [{"path","key","value"}], "undo": "<abs path>"|null}`.
+- `--fix --json`: without `-y` it previews (spec 23 section 3.1; 0.3 to 0.4.5 wrote);
+  with `-y` it prints `{"removed": [{"path","key","value"}], "undo": "<abs path>"|null}`.
 - `$XDG_STATE_HOME` overrides `~/.local/state`.
 
 ### 4.8 `pin [DIR]` / `unpin [DIR]`
@@ -412,9 +412,10 @@ documented so nobody "fixes" them by accident.
 1. `which` on a directory that is not a repo (or does not exist) prints
    `remotes: (none)` and `(unset)` for every key and exits 0. → fixed by 01
    (`✗ <dir>: not a git repository`, exit 2).
-2. `scan --fix --json` writes without `-y` and without a terminal (the
-   extension relies on `--yes --json`, so adding the requirement is
-   compatible). Kept as is for 0.x; new commands must not copy it.
+2. `scan --fix --json` wrote without `-y` and without a terminal (the
+   extension relies on `--yes --json`, so adding the requirement was
+   compatible). Fixed after 0.4.5 by spec 23 section 3.1: without `-y` it
+   previews, as `-n`.
 3. `scan` ignores `-c`/`--home`: it uses the real `Path.home()` and the
    generated files' real locations. Tests work because `HOME` is set. → 02
    adds `-c` to `scan` (for `[scan]` roots) but keeps `Path.home()` for

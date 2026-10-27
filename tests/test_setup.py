@@ -509,5 +509,6 @@ def test_setup_agent_none_and_named(home):
 
 
 def test_setup_agent_choices_follow_the_modules():
-    assert set(setup.AGENTS) - {"none"} == set(agents.INSTALL_CHOICES) | set(mcp.AGENTS)
+    # copilot is accepted only to say that gitpro cannot cover it (spec 23 section 4)
+    assert set(setup.AGENTS) - {"none"} == set(agents.INSTALL_CHOICES) | set(mcp.AGENTS) | {"copilot"}
     assert set(setup.TITLE) == set(setup.AGENTS) - {"none"}

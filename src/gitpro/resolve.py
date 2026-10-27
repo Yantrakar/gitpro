@@ -843,8 +843,11 @@ def compare(repo: Path, cfg: Config, *, remote: Optional[str] = None,
     who = _who(exp)
 
     if exp.email is None:
-        out.append(_p("no_identity", f"no identity for {redact_url(first_url) or top}",
-                      None, f"add an identity: gitpro setup --add {_word(str(top))}"))
+        if candidates:
+            fix = f"add an identity: gitpro setup --add {_word(str(top))}"
+        else:   # no remote url: no identity pattern can ever match, so only [default] applies
+            fix = f"add a name and email under [default] in {_tilde(str(cfg.path)) if cfg.path else 'the config'}"
+        out.append(_p("no_identity", f"no identity for {redact_url(first_url) or top}", None, fix))
 
     if exp.match.identity is None:
         for name, url in candidates:
@@ -1008,7 +1011,9 @@ def render_text(rep: Report, cfg: Config) -> str:
     if e.email:
         lines.append(f"  expected  {label}  {e.name or '(no name)'} <{e.email}>")
     else:
-        lines.append(f"  expected  {label}  no name/email in [default]; git will refuse to commit")
+        lines.append(f"  expected  {label}  gitpro has no identity for this repo (no name/email in [default]); "
+                     + (f"git will use {f.email.value} from {_shown_origin(f.email, top)}" if f.email.value
+                        else "git will refuse to commit"))
     lines.append(f"            {e.match.rule}")
     if f.email.value or f.name.value:
         src = f.email if f.email.value else f.name
@@ -1053,6 +1058,17 @@ def register(sub, common, confirm) -> None:
     capability("why", "why.config", "why.commit")
 
 
+def why_error(e: Exception, directory: Path) -> dict:
+    """The object `why --json` (and the MCP `why`) returns when there is no usable config: still an error,
+    but say what git does here (the extension's status bar needs it)."""
+    from . import cli
+    try:
+        data = cli.which_data(Path(directory))
+    except config.ConfigError:
+        data = {}                         # not a repo: the config error is the one to report
+    return {"error": str(e), "config": None, **data}
+
+
 def cmd_why(args) -> int:
     require_git()
     from . import cli, commitcheck
@@ -1064,12 +1080,7 @@ def cmd_why(args) -> int:
     except config.ConfigError as e:
         if not as_json or args.config:
             raise
-        # No usable config: still an error, but say what git does here (the extension's status bar needs it).
-        try:
-            data = cli.which_data(Path(args.dir))
-        except config.ConfigError:
-            data = {}                         # not a repo: the config error is the one to report
-        jsonout.emit("why", {"error": str(e), "config": None, **data}, ok=False)
+        jsonout.emit("why", why_error(e, Path(args.dir)), ok=False)
         return 2
     rep = compare(Path(args.dir), cfg, remote=args.remote, home=home)
     if as_json:

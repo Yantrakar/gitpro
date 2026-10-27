@@ -309,6 +309,23 @@ def identity_commit(ctx: Context) -> int:
     return 0
 
 
+def commit_verdict(rep, cfg, committer_email: Optional[str], author_email: Optional[str]) -> Dict[str, object]:
+    """What the pre-commit identity check (identity_commit above) decides for a commit in rep.repo, without
+    printing, recording a denial or running any process. {"refuses": the check returns BLOCK,
+    "would_block": it does and [guard] on_mismatch is "block", "mode": on_mismatch}. Team-policy entries
+    and the commit-msg trailer check are not run here. GITPRO_SKIP is not read."""
+    global _RECORD
+    ctx = Context("pre-commit", rep.repo, (), "", cfg, rep, committer_email or None, author_email or None,
+                  lambda line: None)
+    before, _RECORD = _RECORD, False
+    try:
+        refuses = identity_commit(ctx) == BLOCK
+    finally:
+        _RECORD = before
+    mode = cfg.guard.on_mismatch
+    return {"refuses": refuses, "would_block": refuses and mode == "block", "mode": mode}
+
+
 def _outgoing(repo: Path, stdin: str) -> List[Tuple[str, str, str, str]]:
     """(committer email, author email, short sha, subject) of every commit this push sends that no
     remote-tracking ref has, oldest last as git log prints them."""

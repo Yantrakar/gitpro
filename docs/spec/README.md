@@ -294,9 +294,9 @@ Shared by the CLI, the VS Code extension, the MCP server and the skill.
   never `"true"`.
 - A command that asks a question has no question with `--json`: it either
   requires `-y` (writing commands) or reports (reading commands). Existing
-  exception, kept for compatibility: `scan --fix --json` writes without `-y`
-  (see `00-existing.md`, known issues). New writing commands do **not** copy
-  this: `--json` without `-y` and without a terminal is an error.
+  exception, kept for compatibility: `scan --fix --json` without `-y` previews
+  (spec 23 section 3.1; it wrote until 0.4.5). New writing commands: `--json`
+  without `-y` and without a terminal is an error.
 - The `warnings` key, when present, is a list of strings identical to the `⚠`
   lines.
 - **Version and capabilities**: `gitpro --version --json` returns

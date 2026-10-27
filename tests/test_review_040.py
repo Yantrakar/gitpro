@@ -100,7 +100,11 @@ def test_scan_fix_n_shows_only(cfg, tmp_path, capsys):
     assert git(repo, "config", "--local", "user.email") == "old@personal.test"
     assert run("scan", "--fix", "-n", "-y", "--repo", str(repo)) == 2
     assert "choose one: -n shows the change, -y makes it" in capsys.readouterr().err
-    assert run("scan", "--fix", "--json", "--repo", str(repo)) == 0   # --json alone still writes (00, known 2)
+    assert run("scan", "--fix", "--json", "--repo", str(repo)) == 0   # --json alone previews (spec 23 section 3.1)
+    rep = out_json(capsys)
+    assert rep["dry_run"] is True and "removed" not in rep
+    assert git(repo, "config", "--local", "user.email") == "old@personal.test"
+    assert run("scan", "--fix", "--json", "-y", "--repo", str(repo)) == 0
     assert out_json(capsys)["removed"][0]["key"] == "user.email"
 
 

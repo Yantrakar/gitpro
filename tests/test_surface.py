@@ -145,6 +145,27 @@ def test_setup_n_reports_what_is_pending(home, cfg, capsys):
     assert out_json(capsys)["pending"] == []
 
 
+def test_setup_n_json_has_the_spec_23_fields(home, cfg, capsys):
+    cfg()
+    capsys.readouterr()
+    run("setup", "-n", "--json", "--agent", "none")
+    data = out_json(capsys)
+    assert data["agents"] == [] and data["uncovered"] == [] and data["skills"] == []
+    assert run("setup", "-n", "--json", "--agent", "codex") == 1
+    data = out_json(capsys)
+    assert data["ok"] is False and data["agents"][0]["agent"] == "codex" and data["uncovered"]
+
+
+def test_why_json_commit_has_guard_would_block(home, cfg, tmp_path, capsys):
+    cfg()
+    repo = repo_with_remote(tmp_path, "app", WORK)
+    capsys.readouterr()
+    assert run("why", "--json", str(repo)) == 0
+    assert out_json(capsys)["commit"]["guard_would_block"] is False
+    assert run("why", "--json", "--committer", "me@personal.test", str(repo)) == 0   # a problem is not an exit code
+    assert out_json(capsys)["commit"]["guard_would_block"] is True
+
+
 def test_setup_flag_errors(home, capsys):
     assert run("setup", "-n", "-y") == 2
     assert run("setup", "--json") == 2

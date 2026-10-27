@@ -246,7 +246,7 @@ def test_check_commit_colleague_author_passes(work_repo):
     got = payload(call("check_commit", {"path": str(work_repo), "author_email": "pat@other.test",
                                         "committer_email": "me@corp.test"}))
     assert got == {"ok": True, "command": "check_commit", "would_block": False, "mode": "block", "problems": [],
-                   "reason": None, "fix": None}
+                   "reason": None, "fix": None, "guard_would_block": False}
 
 
 def test_check_commit_own_author_blocks(work_repo):

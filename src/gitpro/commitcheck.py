@@ -100,9 +100,23 @@ def call_spec(fn: Callable, values: List[Tuple[str, object]]):
     return fn(*rest[:len(positional)], **kwargs)
 
 
+def guard_would_block(rep, cfg, committer_email: Optional[str], author_email: Optional[str],
+                      probs: List[dict]) -> bool:
+    """Would the Git guard refuse this commit? The identity check is guard.py's own (guard.commit_verdict).
+    A trailer problem counts because the commit-msg hook refuses it. Both follow [guard] on_mismatch, not
+    [agents].hook. Team-policy hooks are not evaluated."""
+    from . import guard
+    committer = committer_email or rep.effective.email.value or None
+    verdict = guard.commit_verdict(rep, cfg, committer, author_email or committer)
+    trailer = any(p["code"] == "trailer" for p in probs) and cfg.guard.on_mismatch == "block"
+    return bool(verdict["would_block"]) or trailer
+
+
 def judge(rep, cfg, *, committer_email: Optional[str] = None, author_email: Optional[str] = None,
           message: Optional[str] = None) -> dict:
-    """{would_block, mode, problems, reason, fix[, warnings]} for a commit in rep.repo."""
+    """{would_block, mode, problems, reason, fix, guard_would_block[, warnings]} for a commit in rep.repo.
+    would_block is the agent hook's verdict ([agents].hook); guard_would_block is the Git guard's
+    ([guard] on_mismatch)."""
     from . import resolve
     probs = identity_problems(rep, cfg, committer_email, author_email)
     probs += [_problem(p.code, p.message, resolve._shown_fix(p) or None) for p in rep.problems
@@ -112,7 +126,8 @@ def judge(rep, cfg, *, committer_email: Optional[str] = None, author_email: Opti
         probs += trailer_problems(rep.repo, rep, cfg, message, warnings)
     mode = cfg.agents.hook
     out = {"would_block": bool(probs) and mode == "block", "mode": mode, "problems": probs,
-           "reason": probs[0]["message"] if probs else None, "fix": probs[0]["fix"] if probs else None}
+           "reason": probs[0]["message"] if probs else None, "fix": probs[0]["fix"] if probs else None,
+           "guard_would_block": guard_would_block(rep, cfg, committer_email, author_email, probs)}
     if warnings:
         out["warnings"] = warnings
     return out

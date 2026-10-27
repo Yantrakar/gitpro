@@ -293,8 +293,9 @@ once. In 0.4.0 this is how `setup` works. `pin`, `scan --fix` and
 `audit --fix` keep their 0.3 behavior in 0.4.x: without `-y` they show a
 preview. `-n` (`--dry-run`) asks for that preview by name: it shows the same
 thing, changes nothing and exits as the command would without `-y`.
-`-n -y` is refused. `scan --fix --json` writes without `-y`, as in 0.3;
-`scan --fix --json -n` gives the preview as JSON, with `"dry_run": true`.
+`-n -y` is refused. After 0.4.5, `scan --fix --json` without `-y` only previews, as
+`-n` does, and prints the preview as JSON with `"dry_run": true` and no `removed`;
+`scan --fix --json -y` writes. (0.3 to 0.4.5 wrote without `-y`.)
 
 The terminal, the VS Code extension and the MCP server use the same commands,
 options and JSON fields. The extension runs the command and asks its yes in a
@@ -422,7 +423,8 @@ Otherwise `$GITPRO_CONFIG`, then `~/.config/gitpro.toml`, sets the path.
 never writes and needs no terminal. It prints the identities, the keys and
 where to register them, and the same "Setup will:" table of what is still to
 do. If nothing is to do it prints `✓ this machine is set up; nothing to change`.
-It exits 0 when nothing is to do, 1 when something is, and 2 on an error.
+It exits 0 when nothing is to do, 1 when something is (or when an agent you
+named with `--agent` is one gitpro cannot cover, see below), and 2 on an error.
 With `--json`:
 
 ```json
@@ -433,11 +435,32 @@ With `--json`:
  "default": {"name": "…", "email": "…", "gh_account": null, "glab_account": null,
              "clone_dir": null, "sign": false},
  "pending": [{"group": "SSH key", "what": "create ~/.ssh/id_work (ed25519)"}],
- "done": ["Git and SSH files, commit guard"], "notes": []}
+ "done": ["Git and SSH files, commit guard"], "notes": [],
+ "agents": [{"agent": "claude", "hook": "installed", "mcp": "missing"}],
+ "uncovered": [], "skills": [{"path": "~/.agents/skills/gitpro/SKILL.md", "state": "current"}]}
 ```
 
-`ok` is false when `pending` is not empty. With no config, `setup -n` exits 1
+`ok` is false when `pending` or `uncovered` is not empty. With no config, `setup -n` exits 1
 and `pending` holds `{"group": "config", "what": "no identities in ~/.config/gitpro.toml yet: run gitpro setup in a terminal"}`.
+
+**Agents.** For each agent setup looks at (Claude Code when it is installed, or each
+`--agent NAME`), `agents` has `hook` and `mcp`, each one of `installed` (gitpro's entry is in
+the agent's config file; this does not say the agent loaded it), `plugin` (the gitpro plugin
+is enabled in Claude Code), `missing` (setup would add it) or `unavailable`. gitpro has a hook
+for Claude Code, Cursor and Gemini CLI, and an MCP server entry for those and for Claude
+Desktop and opencode. It has neither for Codex or GitHub Copilot CLI. `gitpro setup --agent
+codex` (or `copilot`) says so on a `✗` line and exits 1, in `-n` and in `-y`; the Git guard
+still checks those agents' commits. Copilot CLI stores MCP servers in
+`~/.copilot/mcp-config.json`, but its own help does not show the file's format, so gitpro does
+not write it. Without `--agent`, an agent that cannot be covered is only a note.
+
+**The gitpro skill.** `setup -n` also looks for an installed copy of the skill at
+`~/.claude/skills/gitpro`, `~/.copilot/skills/gitpro` and `~/.agents/skills/gitpro`. A link to
+one file counts once. `skills` lists each copy as `current` or `differs`, and a copy that
+differs is a pending change (`gitpro skill`). `setup -y` shows it first, keeps a backup in
+gitpro's state folder (`skill-backups/`), replaces the content atomically through the link (the link stays), and adds a line
+to the undo script. It never creates a copy where there is none. The skill comes from
+`skills/gitpro/SKILL.md`, which is also inside the wheel and the sdist.
 
 **Without a terminal.**
 
@@ -521,7 +544,25 @@ To ask whether the guard would block a commit, give the emails and the message
 the commit would have. `--committer` defaults to the email git would use, and
 `--author` to the committer. `--message` is checked against the `Co-Authored-By`
 rules. `why --json` then has a `commit` object:
-`{"would_block": bool, "mode": "block"|"warn"|"off", "problems": [{code, message, fix}], "reason": str|null, "fix": str|null}`.
+`{"would_block": bool, "mode": "block"|"warn"|"off", "problems": [{code, message, fix}], "reason": str|null, "fix": str|null, "guard_would_block": bool}`.
+`would_block` and `mode` are the agent hook's verdict (`[agents] hook`). `guard_would_block`
+is the Git guard's: the guard's own identity check (the same code the pre-commit hook runs)
+under `[guard] on_mismatch`, plus a `trailer` problem when it is `block`. It does not run
+team-policy hooks or read `GITPRO_SKIP`. The two can differ, for example when `[agents] hook`
+is `warn` and `[guard] on_mismatch` is `block`, and the guard allows a commit when gitpro has
+no identity email for the repo while the agent hook reports `no_identity`.
+
+`why` exits 0 for a wrong committer: read `commit.problems`, not the exit code. It exits 1
+when the repo itself has a problem and 2 on an error. `why` checks the identity of a
+commit, not where a push goes, which account it signs in as, or which commits it sends; for
+those, push and pull-request steps fail closed. With `--json` an error prints
+`{"ok": false, "error": …, "config": null, …}` plus the repo's fields when the path is a repo,
+and the MCP tool `why` returns the same object with `isError`.
+
+A repo with no remote has no identity from a remote, so it uses `[default]`. If `[default]`
+has no name and email, `why` says "gitpro has no identity for this repo" and whether git will
+use another email or refuse, and its fix says to add a name and email under `[default]`.
+
 The MCP tool `why` takes `path`, `remote`, `author_email`, `committer_email`
 and `message` and returns the same JSON.
 
@@ -972,20 +1013,20 @@ does nothing.
 
 ### MCP server
 
-`gitpro mcp` is a stdio MCP server with read-only tools by default. Its tools
+`gitpro mcp` is a stdio MCP server with read-only tools by default (every default tool is read-only). Its tools
 have the names of the commands and return the same JSON as the matching
 `--json` command. A `fix` field is a command to show you, not to run.
 
 | tool | what it returns |
 |---|---|
-| `why` | `why --json`. Takes `path`, `remote`, `author_email`, `committer_email` and `message`. The `settings` field holds the identity settings git uses; the `commit` field says whether the guard would block the commit. |
+| `why` | `why --json`. Takes `path`, `remote`, `author_email`, `committer_email` and `message`. The `settings` field holds the identity settings git uses; the `commit` field has `would_block` (the agent hook's verdict) and `guard_would_block` (the Git guard's). An error is the object `why --json` prints, with `isError`. |
 | `setup` | the state of the machine, as `setup -n --json`: identities, what is still to do |
 | `scan` | `scan --json`. With `lost: true` it adds the lost-work checks. |
 | `audit` | the same JSON as `audit --json` |
 | `env` | the shell lines for the repo's identity: the commands that fetch a token, never a token |
 | `report` | a redacted bug report draft |
 
-Register it with `gitpro setup --agent claude|cursor|gemini|opencode`, or by
+Register it with `gitpro setup --agent claude|claude-desktop|cursor|gemini|opencode`, or by
 installing the gitpro plugin. `gitpro mcp uninstall` (hidden) removes the
 registration. Project-level `.mcp.json` is a team file: gitpro prints what to
 add and does not edit it unasked.
@@ -1694,7 +1735,8 @@ and exits 2; set `GITPRO_DEBUG=1` to also see the traceback.
   See [`vscode/README.md`](../vscode/README.md).
 - **Claude Code**: a [skill](../skills/gitpro/SKILL.md) teaches Claude to
   edit the config from plain requests, show `setup -n`, and run `setup -y` only after you
-  confirm. Install it as a plugin:
+  confirm. It also tells the agent what to do before it commits, pushes or opens a
+  pull request, including when gitpro is missing. Install it as a plugin:
 
   ```
   /plugin marketplace add Yantrakar/gitpro
@@ -1706,7 +1748,9 @@ and exits 2; set `GITPRO_DEBUG=1` to also see the traceback.
   `sh`.
 
   Other agents that read `SKILL.md` files can use
-  [`skills/gitpro/`](../skills/gitpro/) as is.
+  [`skills/gitpro/`](../skills/gitpro/) as is. The same file is inside the gitpro
+  package; `gitpro setup -n` reports an installed copy that differs and
+  `gitpro setup -y` updates it (see "The gitpro skill" under `setup -n` above).
 
 ## Development
 
