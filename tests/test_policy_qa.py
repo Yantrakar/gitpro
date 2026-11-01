@@ -202,14 +202,14 @@ def _principal_case(tmp_path, keys, principals: str, committer: str) -> Tuple[in
     return rc, {}
 
 
-def test_principal_list_second_entry_is_accepted(capsys, tmp_path, keys):
+def test_principal_list_second_entry_is_accepted(capsys, tmp_path, keys, home):
     """allowed_signers 'alice@example.corp,me@example.corp <key>': a commit by me@example.corp is fine."""
     rc, _ = _principal_case(tmp_path, keys, "alice@example.corp,me@example.corp", "me@example.corp")
     data = out_json(capsys)
     assert rc == 0, data["violations"]
 
 
-def test_principal_negation_is_honoured(capsys, tmp_path, keys):
+def test_principal_negation_is_honoured(capsys, tmp_path, keys, home):
     rc, _ = _principal_case(tmp_path, keys, "*@example.corp,!me@example.corp", "me@example.corp")
     data = out_json(capsys)
     assert rc == 1 and data["violations"][0]["rule"] == "allowed_signers", data
