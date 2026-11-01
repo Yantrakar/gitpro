@@ -27,7 +27,7 @@ instead of guessing."
 
 ```
 gitpro mcp [-c PATH] [--log FILE]
-gitpro mcp install [--agent claude|claude-desktop|cursor|gemini|opencode] [--scope user|project] [--write] [-y] [--json]
+gitpro mcp install [--agent claude|claude-desktop|copilot|cursor|gemini|opencode] [--scope user|project] [--write] [-y] [--json]
 gitpro mcp uninstall [--agent …] [--scope …] [--write] [-y] [--json]
 ```
 
@@ -91,6 +91,7 @@ Writes the server registration for the chosen agent:
 |---|---|---|
 | `claude` (Code) | preferred: run `claude mcp add --scope user --transport stdio gitpro -- gitpro mcp` when `claude` is on PATH (the CLI owns `~/.claude.json`); else edit `~/.claude.json` `mcpServers` with `edit_json` | `.mcp.json` in the repo — a **tracked team file**: refused without `--write` (DECISIONS Q5): `✗ .mcp.json is shared with your team; re-run with --write to edit it (backup + undo), or use --scope user` |
 | `claude-desktop` | `~/.config/Claude/claude_desktop_config.json` (macOS `~/Library/Application Support/Claude/…`) | — |
+| `copilot` | `~/.copilot/mcp-config.json` `mcpServers` → `{"gitpro": {"type": "local", "command": "gitpro", "args": ["mcp"], "tools": ["*"]}}` | `.github/mcp.json` (needs `--write`) |
 | `cursor` | `~/.cursor/mcp.json` | `.cursor/mcp.json` (needs `--write`) |
 | `gemini` | `~/.gemini/settings.json` `mcpServers` | — |
 | `opencode` | `~/.config/opencode/opencode.json` `mcp` → `{"gitpro": {"type": "local", "command": ["gitpro", "mcp"]}}` | — |
@@ -219,6 +220,6 @@ new root `.mcp.json`. `.claude-plugin/plugin.json` is not touched.
 > `gitpro mcp` is a stdio MCP server with read-only tools:
 > `which_identity`, `why`, `check_commit`, `scan`, `identities`, plus
 > `lost`, `audit`, `env_for` when installed. Register it with `gitpro mcp
-> install --agent claude|cursor|gemini|opencode` or by installing the
+> install --agent claude|copilot|cursor|gemini|opencode` or by installing the
 > gitpro plugin. It never writes; it tells the agent the command that
 > would. Project-level `.mcp.json` is a team file: `--write` is required.

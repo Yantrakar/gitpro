@@ -96,8 +96,8 @@ error, as the CLI does. `Server.failed(message)` is unchanged.
 
 ### 3.5 `setup`: coverage per agent
 
-- `--agent` accepts `copilot` (GitHub Copilot CLI), only so that asking for it gets a clear
-  answer. `setup.NO_COVERAGE` holds the reason for Codex and Copilot.
+- `--agent` accepts `copilot` (GitHub Copilot CLI). `setup.NO_COVERAGE` holds the reason for
+  Codex.
 - `setup -n --json` has `agents`: one row per agent setup looks at,
   `{"agent", "hook", "mcp"[, "reason"]}`, each status `installed`, `plugin`, `missing` or
   `unavailable`. `plugin` is Claude Code with the gitpro plugin enabled (a key in
@@ -107,11 +107,13 @@ error, as the CLI does. `Server.failed(message)` is unchanged.
   `pending` or `uncovered` is not empty, in `-n` and in `-y` (after the work that can be done).
   Without `--agent` such an agent is a note only.
 - Hooks: Claude Code, Cursor, Gemini CLI (`agents.HOOK_AGENTS`). MCP server entries: Claude
-  Code, Claude Desktop, Cursor, Gemini CLI, opencode (`mcp.AGENTS`). Codex has neither.
-- Copilot CLI: `copilot mcp --help` (1.0.103) shows the user file
-  `~/.copilot/mcp-config.json`, `COPILOT_HOME`, and `copilot mcp add NAME -- COMMAND`, but not
-  the file's JSON format, and the file can hold tokens, so it was not read. Copilot is listed
-  `unavailable`. Not checked: whether Copilot CLI has a hook point.
+  Code, Claude Desktop, Copilot CLI, Cursor, Gemini CLI, opencode (`mcp.AGENTS`). Codex has
+  neither.
+- Copilot CLI: `copilot mcp --help` shows the user file `~/.copilot/mcp-config.json` and the
+  workspace files `.mcp.json` and `.github/mcp.json`. `copilot mcp add` documents `--tools`
+  (default `*`), `--env` and `--header`, but the help does not show the `type` value of a
+  stdio server; gitpro writes `"type": "local"` as in GitHub's published Copilot CLI examples.
+  The hook is `unavailable`. Not checked: whether Copilot CLI has a hook point.
 
 ## 4. Changes: the skill ships with the package
 
@@ -165,7 +167,7 @@ README (spec) JSON rule.
 `tests/test_agent_setup_023.py` (22 tests) covers: the scan preview with and without `-y`;
 `guard_would_block` against both modes, a good commit, and no denial record; the no-remote
 messages; MCP and CLI `why` error parity; per-agent coverage (missing, installed, plugin,
-Codex and Copilot exit 1 in `-n` and `-y`); the skill (reported once through links, current
+Codex exits 1 in `-n` and `-y`; Copilot gets the MCP entry and exits 0); the skill (reported once through links, current
 is clean, `-y` updates through the link with backup, mode and undo line, never creates one,
 a symlinked file stays a link); the build config; and the bundled skill equal to the source.
 All use a temporary HOME. `tests/test_surface.py` adds the JSON fields.
@@ -173,7 +175,7 @@ All use a temporary HOME. `tests/test_surface.py` adds the JSON fields.
 ## 9. Not changed, and not checked
 
 - `why` does not check the push target, the account or the outgoing commits.
-- The Copilot CLI MCP and hook formats are not implemented (section 3.5).
+- The Copilot CLI hook is not implemented (section 3.5).
 - No environment variable lets an agent skip the guard.
 - `site/` (llms.txt, index.html) may still describe `scan --fix --json` as writing and the
   skill as plugin-only; it is off limits for this change.

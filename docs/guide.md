@@ -448,11 +448,11 @@ and `pending` holds `{"group": "config", "what": "no identities in ~/.config/git
 the agent's config file; this does not say the agent loaded it), `plugin` (the gitpro plugin
 is enabled in Claude Code), `missing` (setup would add it) or `unavailable`. gitpro has a hook
 for Claude Code, Cursor and Gemini CLI, and an MCP server entry for those and for Claude
-Desktop and opencode. It has neither for Codex or GitHub Copilot CLI. `gitpro setup --agent
-codex` (or `copilot`) says so on a `✗` line and exits 1, in `-n` and in `-y`; the Git guard
-still checks those agents' commits. Copilot CLI stores MCP servers in
-`~/.copilot/mcp-config.json`, but its own help does not show the file's format, so gitpro does
-not write it. Without `--agent`, an agent that cannot be covered is only a note.
+Desktop, GitHub Copilot CLI and opencode (Copilot CLI's is in `~/.copilot/mcp-config.json`).
+It has neither for Codex. `gitpro setup --agent codex` says so on a `✗` line and exits 1, in
+`-n` and in `-y`; the Git guard still checks Codex's commits. For an agent with an MCP entry
+but no hook, such as `copilot`, the hook is `unavailable` with a `reason`, and the exit code
+follows the MCP entry alone. Without `--agent`, an agent that cannot be covered is only a note.
 
 **The gitpro skill.** `setup -n` also looks for an installed copy of the skill at
 `~/.claude/skills/gitpro`, `~/.copilot/skills/gitpro` and `~/.agents/skills/gitpro`. A link to
@@ -1026,7 +1026,7 @@ have the names of the commands and return the same JSON as the matching
 | `env` | the shell lines for the repo's identity: the commands that fetch a token, never a token |
 | `report` | a redacted bug report draft |
 
-Register it with `gitpro setup --agent claude|claude-desktop|cursor|gemini|opencode`, or by
+Register it with `gitpro setup --agent claude|claude-desktop|copilot|cursor|gemini|opencode`, or by
 installing the gitpro plugin. `gitpro mcp uninstall` (hidden) removes the
 registration. Project-level `.mcp.json` is a team file: gitpro prints what to
 add and does not edit it unasked.

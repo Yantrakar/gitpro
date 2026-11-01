@@ -171,9 +171,9 @@ ssh_alias = "github-work"          # ssh Host that offers only ssh_key
 - **"Make the agent safe"**: `gitpro setup -n` shows which hooks and MCP
   servers are in place, per agent (`agents` in `--json`). gitpro adds a hook
   for Claude Code, Cursor and Gemini CLI, and an MCP server for those plus
-  Claude Desktop and opencode. For Codex and GitHub Copilot CLI it
-  has neither: `setup --agent codex` or `--agent copilot` says so and
-  `setup -n` exits 1. The Git guard still checks their commits. "Installed"
+  Claude Desktop, GitHub Copilot CLI and opencode. For Codex it has
+  neither: `setup --agent codex` says so and `setup -n` exits 1. The Git
+  guard still checks its commits. Copilot CLI gets the MCP server only. "Installed"
   means gitpro's entry is in the agent's config file, not that the agent
   loaded it. Recommend the gitpro plugin (it brings the hook and the MCP
   server) or `gitpro setup --agent claude`. The hook never grants anything; it

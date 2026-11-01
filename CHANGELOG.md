@@ -4,6 +4,21 @@ All notable changes to gitpro. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Release notes for
 earlier versions are on [GitHub releases](https://github.com/Yantrakar/gitpro/releases).
 
+## Unreleased
+
+### Added
+
+- `mcp install --agent copilot` and `setup --agent copilot` register the gitpro MCP
+  server for GitHub Copilot CLI in `~/.copilot/mcp-config.json` (with
+  `--scope project`, in the repo's `.github/mcp.json`). Copilot CLI still has no
+  gitpro hook, so `setup` reports its hook as `unavailable` and exits 0 once the MCP
+  entry is in place, as it does for Claude Desktop and opencode.
+
+### Changed
+
+- `setup --agent copilot` no longer exits 1: it registers the MCP server, and the
+  hook shows as unavailable.
+
 ## 0.4.6 (2026-11-06)
 
 ### Added
