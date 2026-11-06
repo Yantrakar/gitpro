@@ -162,18 +162,35 @@ def test_setup_n_reports_the_plugin(cfg, home, capsys):
     assert out_json(capsys)["agents"] == [{"agent": "claude", "hook": "plugin", "mcp": "plugin"}]
 
 
-@pytest.mark.parametrize("name", ["codex", "copilot"])
-def test_setup_names_an_agent_it_cannot_cover_and_exits_1(cfg, capsys, name):
+def test_setup_names_an_agent_it_cannot_cover_and_exits_1(cfg, capsys):
     cfg()
     capsys.readouterr()
-    assert run("setup", "-n", "--agent", name) == 1
+    assert run("setup", "-n", "--agent", "codex") == 1
     out = capsys.readouterr().out
     assert "✗" in out and "no hook or MCP registration" in out
-    assert run("setup", "-n", "--json", "--agent", name) == 1
+    assert run("setup", "-n", "--json", "--agent", "codex") == 1
     data = out_json(capsys)
     assert data["ok"] is False and data["uncovered"] and data["agents"][0]["hook"] == "unavailable"
     assert data["agents"][0]["mcp"] == "unavailable" and data["agents"][0]["reason"]
-    assert run("setup", "-y", "--no-passphrase", "--agent", name) == 1
+    assert run("setup", "-y", "--no-passphrase", "--agent", "codex") == 1
+
+
+def test_setup_registers_the_mcp_server_for_copilot_without_a_hook(cfg, home, capsys):
+    cfg()
+    capsys.readouterr()
+    assert run("setup", "-n", "--json", "--agent", "copilot") == 1          # the MCP entry is still to do
+    data = out_json(capsys)
+    row = data["agents"][0]
+    assert row["hook"] == "unavailable" and row["mcp"] == "missing"
+    assert row["reason"] == "gitpro has no hook for GitHub Copilot CLI" and data["uncovered"] == []
+    assert run("setup", "-y", "--no-passphrase", "--agent", "copilot") == 0
+    capsys.readouterr()
+    entry = json.loads((home / ".copilot/mcp-config.json").read_text())["mcpServers"]["gitpro"]
+    assert entry == {"type": "local", "command": "gitpro", "args": ["mcp"], "tools": ["*"]}
+    assert run("setup", "-n", "--json", "--agent", "copilot") == 0
+    data = out_json(capsys)
+    assert data["agents"][0]["mcp"] == "installed" and data["agents"][0]["hook"] == "unavailable"
+    assert data["ok"] is True
 
 
 def test_setup_without_agent_option_only_notes_an_uncovered_agent(cfg, capsys):

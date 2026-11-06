@@ -777,11 +777,12 @@ def cmd_mcp(args: argparse.Namespace) -> int:
 
 # ---------------------------------------------------------------- install / uninstall
 
-AGENTS = ("claude", "claude-desktop", "cursor", "gemini", "opencode")
+AGENTS = ("claude", "claude-desktop", "copilot", "cursor", "gemini", "opencode")
 ENTRY = {"type": "stdio", "command": "gitpro", "args": ["mcp"]}
 PLAIN_ENTRY = {"command": "gitpro", "args": ["mcp"]}               # formats that document no "type"
 OPENCODE_ENTRY = {"type": "local", "command": ["gitpro", "mcp"]}
-PROJECT_FILES = {"claude": ".mcp.json", "cursor": ".cursor/mcp.json"}
+COPILOT_ENTRY = {"type": "local", "command": "gitpro", "args": ["mcp"], "tools": ["*"]}   # "*": all the tools
+PROJECT_FILES = {"claude": ".mcp.json", "copilot": ".github/mcp.json", "cursor": ".cursor/mcp.json"}
 CLAUDE_ADD = ["claude", "mcp", "add", "--scope", "user", "--transport", "stdio", "gitpro", "--", "gitpro", "mcp"]
 CLAUDE_REMOVE = ["claude", "mcp", "remove", "--scope", "user", "gitpro"]
 
@@ -794,6 +795,8 @@ def _user_target(agent: str, home: Path) -> Tuple[Path, str, dict]:
     if agent == "claude-desktop":
         base = home / "Library/Application Support/Claude" if sys.platform == "darwin" else xdg / "Claude"
         return base / "claude_desktop_config.json", "mcpServers", PLAIN_ENTRY
+    if agent == "copilot":
+        return home / ".copilot/mcp-config.json", "mcpServers", COPILOT_ENTRY
     if agent == "cursor":
         return home / ".cursor/mcp.json", "mcpServers", ENTRY
     if agent == "gemini":
@@ -814,7 +817,7 @@ def _target(args: argparse.Namespace) -> Tuple[Path, str, dict]:
     top = resolve.is_repo(Path.cwd())
     if top is None:
         raise ConfigError(f"{Path.cwd()}: not a git repository (--scope project edits the repo's {rel})")
-    return top / rel, "mcpServers", ENTRY
+    return top / rel, "mcpServers", COPILOT_ENTRY if args.agent == "copilot" else ENTRY
 
 
 def _ours(value: object, entry: dict) -> bool:
@@ -1027,7 +1030,7 @@ def register(sub, common, confirm) -> None:
         a = actions.add_parser(name, parents=[confirm], help=text)
         a.add_argument("--agent", choices=AGENTS, default="claude", help="which assistant (default: claude)")
         a.add_argument("--scope", choices=("user", "project"), default="user",
-                       help="user config (default) or the repo's tracked file (claude, cursor; needs --write)")
+                       help="user config (default) or the repo's tracked file (claude, copilot, cursor; needs --write)")
         a.add_argument("--json", action="store_true", help="machine-readable output (needs -y)")
         if name == "install":
             a.add_argument("--force", action="store_true",

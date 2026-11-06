@@ -50,7 +50,7 @@ def test_setup_does_not_create_a_key_over_an_orphan_pub(home, cfg, capsys):
 
 # ---------------------------------------------------------------- the reflog and the walk
 
-def test_commit_identity_does_not_hang_on_a_fifo(tmp_path):
+def test_commit_identity_does_not_hang_on_a_fifo(tmp_path, home):
     repo = repo_with_remote(tmp_path, "app", WORK, commits=1, author=JANE)
     log = repo / ".git" / "logs" / "HEAD"
     log.unlink()

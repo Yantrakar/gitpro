@@ -13,9 +13,12 @@ earlier versions are on [GitHub releases](https://github.com/Yantrakar/gitpro/re
   problem). `commit.would_block` stays the agent hook's verdict and is now
   documented as that.
 - `setup -n --json`: `agents` (per agent, `hook` and `mcp` as `installed`,
-  `plugin`, `missing` or `unavailable`), `uncovered` and `skills`. `setup
-  --agent copilot` is accepted so that it can say gitpro has no hook or MCP
-  registration for GitHub Copilot CLI.
+  `plugin`, `missing` or `unavailable`), `uncovered` and `skills`.
+- `mcp install --agent copilot` and `setup --agent copilot` register the gitpro MCP
+  server for GitHub Copilot CLI in `~/.copilot/mcp-config.json` (with
+  `--scope project`, in the repo's `.github/mcp.json`). Copilot CLI still has no
+  gitpro hook, so `setup` reports its hook as `unavailable` and exits 0 once the MCP
+  entry is in place, as it does for Claude Desktop and opencode.
 - `setup -n` reports an installed gitpro skill (`~/.claude/skills/gitpro`,
   `~/.copilot/skills/gitpro`, `~/.agents/skills/gitpro`) that differs from the
   one in this gitpro, and `setup -y` updates only those copies, with a backup in
@@ -29,9 +32,10 @@ earlier versions are on [GitHub releases](https://github.com/Yantrakar/gitpro/re
 - `scan --fix --json` without `-y` only previews, like `-n`, and prints
   `"dry_run": true`. 0.3 to 0.4.5 wrote without `-y`. Use `-y`; the VS Code
   extension already does.
-- `setup --agent NAME` for an agent gitpro cannot cover (Codex, Copilot CLI)
-  prints a `✗` line and exits 1, in `-n` and in `-y`. `setup -n` also exits 1
-  when an installed skill copy differs.
+- `setup --agent NAME` for an agent gitpro cannot cover (Codex) prints a `✗` line
+  and exits 1, in `-n` and in `-y`. `setup --agent copilot` does not: it registers
+  the MCP server and the hook shows as unavailable. `setup -n` also exits 1 when an
+  installed skill copy differs.
 - The skill: a rule set for committing, pushing and opening a pull request
   (check that gitpro is there, read `commit.problems` and not the exit code, a
   blocked commit is not done, push and PR fail closed), the missing deprecation

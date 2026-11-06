@@ -613,6 +613,8 @@ def test_project_scope_outside_repo(home, capsys):
 
 
 @pytest.mark.parametrize("agent,rel,key,entry", [
+    ("copilot", ".copilot/mcp-config.json", "mcpServers",
+     {"type": "local", "command": "gitpro", "args": ["mcp"], "tools": ["*"]}),
     ("cursor", ".cursor/mcp.json", "mcpServers", ENTRY),
     ("gemini", ".gemini/settings.json", "mcpServers", {"command": "gitpro", "args": ["mcp"]}),
     ("opencode", ".config/opencode/opencode.json", "mcp", {"type": "local", "command": ["gitpro", "mcp"]}),
@@ -628,7 +630,7 @@ def test_install_other_agents(home, capsys, agent, rel, key, entry):
     assert json.loads((home / rel).read_text())[key] == {}
 
 
-def test_project_scope_only_for_claude_and_cursor(home, tmp_path, monkeypatch, capsys):
+def test_project_scope_only_for_claude_copilot_and_cursor(home, tmp_path, monkeypatch, capsys):
     repo = repo_with_remote(tmp_path, "team", WORK_URL)
     monkeypatch.chdir(repo)
     assert run("mcp", "install", "--agent", "gemini", "--scope", "project", "--write", "-y") == 2
@@ -636,6 +638,31 @@ def test_project_scope_only_for_claude_and_cursor(home, tmp_path, monkeypatch, c
     assert ".cursor/mcp.json is shared with your team" in capsys.readouterr().err
     assert run("mcp", "install", "--agent", "cursor", "--scope", "project", "--write", "-y") == 0
     assert json.loads((repo / ".cursor/mcp.json").read_text())["mcpServers"]["gitpro"] == ENTRY
+    assert run("mcp", "install", "--agent", "copilot", "--scope", "project", "-y") == 2
+    assert ".github/mcp.json is shared with your team" in capsys.readouterr().err
+    assert run("mcp", "install", "--agent", "copilot", "--scope", "project", "--write", "-y") == 0
+    assert json.loads((repo / ".github/mcp.json").read_text())["mcpServers"]["gitpro"] == \
+        {"type": "local", "command": "gitpro", "args": ["mcp"], "tools": ["*"]}
+
+
+def test_copilot_install_keeps_other_servers_and_is_idempotent(home, capsys):
+    path = home / ".copilot/mcp-config.json"
+    path.parent.mkdir()
+    other = {"type": "http", "url": "https://mcp.example.test/mcp", "tools": ["*"], "headers": {"X-Key": "k"}}
+    path.write_text(json.dumps({"mcpServers": {"other": other}, "extra": [1]}))
+    assert run("mcp", "install", "--agent", "copilot") == 0
+    assert "Would register gitpro in" in capsys.readouterr().out
+    assert json.loads(path.read_text())["mcpServers"] == {"other": other}
+    assert run("mcp", "install", "--agent", "copilot", "-y", "--json") == 0
+    data = json.loads(capsys.readouterr().out)
+    assert data["changed"] is True and data["backup"] and data["undo"]
+    obj = json.loads(path.read_text())
+    assert obj["mcpServers"]["other"] == other and obj["extra"] == [1]
+    assert obj["mcpServers"]["gitpro"]["tools"] == ["*"]
+    assert run("mcp", "install", "--agent", "copilot", "-y", "--json") == 0
+    assert json.loads(capsys.readouterr().out)["changed"] is False
+    assert run("mcp", "uninstall", "--agent", "copilot", "-y") == 0
+    assert json.loads(path.read_text()) == {"mcpServers": {"other": other}, "extra": [1]}
 
 
 def test_capabilities(capsys):

@@ -22,14 +22,11 @@ from .config import ConfigError, check
 
 Snapshot = Optional[Tuple[bytes, os.stat_result]]
 # agents.INSTALL_CHOICES + mcp.AGENTS (a test keeps them in step), and none
-# plus copilot, which is accepted so that asking for it says plainly that gitpro cannot cover it
 AGENTS = ("claude", "claude-desktop", "codex", "copilot", "cursor", "gemini", "opencode", "none")
 TITLE = {"claude": "Claude Code", "claude-desktop": "Claude Desktop", "codex": "Codex",
          "copilot": "GitHub Copilot CLI", "cursor": "Cursor", "gemini": "Gemini CLI", "opencode": "opencode"}
 # Agents that gitpro has no hook or MCP registration for, and why (shown when one is asked for by name).
-NO_COVERAGE = {"codex": "gitpro has no hook or MCP registration for Codex",
-               "copilot": "gitpro has no hook or MCP registration for GitHub Copilot CLI (its MCP servers are in "
-                          "~/.copilot/mcp-config.json, but its own help does not show that file's format)"}
+NO_COVERAGE = {"codex": "gitpro has no hook or MCP registration for Codex"}
 QUESTION = "Apply these changes?"
 LEARN = "Look through your repos to find your identities?"
 LEARN_BUDGET = 20.0    # seconds for inspecting the repos found

@@ -21,7 +21,7 @@ def out_json(capsys):
 
 # ---------------------------------------------------------------- the commit identity (§5.3)
 
-def test_commit_identity_is_the_most_frequent_committer(tmp_path):
+def test_commit_identity_is_the_most_frequent_committer(tmp_path, home):
     repo = repo_with_remote(tmp_path, "app", WORK, commits=3, author=JANE)
     commit(repo, "other", author=("Jo", "jo@corp.test"))
     git(repo, "checkout", "-q", "-b", "topic")               # a checkout line is not a commit
